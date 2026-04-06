@@ -36,8 +36,10 @@ stackport
 
 ### Docker Compose (MiniStack + StackPort)
 
+This example uses [MiniStack](https://github.com/Nahuel990/ministack) as the emulator, but you can swap it for LocalStack, Moto, or any AWS-compatible endpoint — just update `AWS_ENDPOINT_URL`.
+
 ```bash
-curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.yml
 docker compose up -d
 # Open http://localhost:8080
 ```
