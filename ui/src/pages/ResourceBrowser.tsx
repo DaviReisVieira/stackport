@@ -12,11 +12,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { SERVICE_VIEWS } from '@/components/service-views'
 import { getServiceIcon } from '@/lib/service-icons'
-import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100]
 
@@ -75,6 +76,7 @@ export default function ResourceBrowser() {
   const [resourceError, setResourceError] = useState<string | null>(null)
   const [pages, setPages] = useState<Record<string, number>>({})
   const [pageSize, setPageSize] = useState(25)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     if (!service) {
@@ -85,6 +87,7 @@ export default function ResourceBrowser() {
     setLoadingResources(true)
     setResourceError(null)
     setPages({})
+    setSearchQuery('')
     fetchResources(service)
       .then((data: ResourceListResponse) => setResources(data.resources ?? {}))
       .catch((e) => {
@@ -195,15 +198,56 @@ export default function ResourceBrowser() {
 
         {service && !SERVICE_VIEWS[service] && resources && (
           <div className="space-y-6">
-            <div className="flex items-center gap-3">
-              {(() => { const Icon = getServiceIcon(service); return <Icon className="h-5 w-5 text-muted-foreground" /> })()}
-              <h2 className="text-xl font-bold">{service}</h2>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {(() => { const Icon = getServiceIcon(service); return <Icon className="h-5 w-5 text-muted-foreground" /> })()}
+                <h2 className="text-xl font-bold">{service}</h2>
+              </div>
+              <div className="relative w-64">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search resources..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                    setPages({})
+                  }}
+                  className="pl-8 pr-8 h-8 text-sm"
+                  aria-label="Search resources"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0.5 top-0.5 h-7 w-7"
+                    onClick={() => {
+                      setSearchQuery('')
+                      setPages({})
+                    }}
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
             </div>
 
             {Object.entries(resources).map(([type, items]) => {
               const arr = Array.isArray(items) ? items as Record<string, unknown>[] : []
+
+              // Filter resources based on search query
+              const filteredArr = searchQuery
+                ? arr.filter((item) => {
+                    const searchLower = searchQuery.toLowerCase()
+                    return Object.values(item).some((value) => {
+                      if (value === null || value === undefined) return false
+                      return String(value).toLowerCase().includes(searchLower)
+                    })
+                  })
+                : arr
+
               const currentPage = pages[type] ?? 0
-              const paginatedItems = arr.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+              const paginatedItems = filteredArr.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
 
               return (
                 <Card key={type}>
@@ -211,15 +255,25 @@ export default function ResourceBrowser() {
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-medium">{type}</CardTitle>
                       <Badge variant="secondary" className="text-[10px]">
-                        {arr.length} items
+                        {searchQuery && filteredArr.length !== arr.length
+                          ? `${filteredArr.length} of ${arr.length} items`
+                          : `${arr.length} items`}
                       </Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="p-0">
-                    {arr.length === 0 && (
+                    {filteredArr.length === 0 && searchQuery && (
+                      <div className="px-4 py-6 text-center space-y-1">
+                        <div className="flex justify-center">
+                          <Search className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <p className="text-sm text-muted-foreground">No matches for "{searchQuery}"</p>
+                      </div>
+                    )}
+                    {filteredArr.length === 0 && !searchQuery && (
                       <div className="px-4 py-6 text-center text-sm text-muted-foreground">Empty</div>
                     )}
-                    {arr.length > 0 && (
+                    {filteredArr.length > 0 && (
                       <>
                         <Table>
                           <TableBody>
@@ -244,7 +298,7 @@ export default function ResourceBrowser() {
                           </TableBody>
                         </Table>
                         <PaginationBar
-                          total={arr.length}
+                          total={filteredArr.length}
                           page={currentPage}
                           pageSize={pageSize}
                           onPageChange={(p) => setPages((prev) => ({ ...prev, [type]: p }))}
