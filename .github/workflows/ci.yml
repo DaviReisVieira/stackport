@@ -34,8 +34,14 @@ jobs:
       - name: Build UI
         run: cd ui && npm run build
 
+      - name: Frontend tests
+        run: cd ui && npx vitest run
+
       - name: Install Python package
-        run: pip install .
+        run: pip install ".[dev]"
 
       - name: Verify CLI entry point
         run: python -c "from backend.main import app; print('OK')"
+
+      - name: Backend tests
+        run: python -m pytest -x --tb=short

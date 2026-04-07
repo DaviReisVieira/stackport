@@ -26,6 +26,13 @@ Homepage = "https://github.com/DaviReisVieira/stackport"
 Repository = "https://github.com/DaviReisVieira/stackport"
 Issues = "https://github.com/DaviReisVieira/stackport/issues"
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27.0", "moto[s3,sqs,lambda,dynamodb,iam]>=5.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
