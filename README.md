@@ -9,8 +9,16 @@
 
 Universal AWS resource browser for local emulators. Built to work with [**MiniStack**](https://github.com/Nahuel990/ministack), and also compatible with LocalStack, Moto, or any AWS-compatible endpoint.
 
-<!-- TODO: Add screenshot here -->
-<!-- ![StackPort Dashboard](docs/screenshot.png) -->
+## Screenshots
+
+**Dashboard** — Service overview with resource counts and health status
+![StackPort Dashboard](docs/images/dashboard.jpeg)
+
+**DynamoDB Browser** — Generic resource table with search, pagination, and detail view
+![DynamoDB Resources](docs/images/dynamo.jpeg)
+
+**S3 Browser** — File browser with folder navigation and object preview
+![S3 Browser](docs/images/s3.jpeg)
 
 ## Features
 
