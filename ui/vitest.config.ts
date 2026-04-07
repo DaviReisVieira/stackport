@@ -15,5 +15,10 @@ export default defineConfig({
     pool: 'vmThreads',
     setupFiles: ['./src/__tests__/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    server: {
+      deps: {
+        inline: ['react-router', 'react-router-dom'],
+      },
+    },
   },
 })
