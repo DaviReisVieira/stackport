@@ -21,6 +21,17 @@ import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100]
 
+function getTimeAgo(date: Date | null): string {
+  if (!date) return ''
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
+  if (seconds < 10) return 'just now'
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ago`
+}
+
 function PaginationBar({
   total,
   page,
@@ -77,11 +88,14 @@ export default function ResourceBrowser() {
   const [pages, setPages] = useState<Record<string, number>>({})
   const [pageSize, setPageSize] = useState(25)
   const [searchQuery, setSearchQuery] = useState('')
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [, setTimestamp] = useState(0)
 
   useEffect(() => {
     if (!service) {
       setResources(null)
       setResourceError(null)
+      setLastUpdated(null)
       return
     }
     setLoadingResources(true)
@@ -89,13 +103,24 @@ export default function ResourceBrowser() {
     setPages({})
     setSearchQuery('')
     fetchResources(service)
-      .then((data: ResourceListResponse) => setResources(data.resources ?? {}))
+      .then((data: ResourceListResponse) => {
+        setResources(data.resources ?? {})
+        setLastUpdated(new Date())
+      })
       .catch((e) => {
         setResources(null)
         setResourceError(e instanceof Error ? e.message : 'Failed to load resources')
       })
       .finally(() => setLoadingResources(false))
   }, [service])
+
+  // Update timestamp display every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimestamp(Date.now())
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   const openDetail = async (svc: string, type: string, id: string) => {
     try {
@@ -107,12 +132,15 @@ export default function ResourceBrowser() {
     }
   }
 
-  const retryResources = () => {
+  const refreshResources = () => {
     if (!service) return
     setLoadingResources(true)
     setResourceError(null)
     fetchResources(service)
-      .then((data: ResourceListResponse) => setResources(data.resources ?? {}))
+      .then((data: ResourceListResponse) => {
+        setResources(data.resources ?? {})
+        setLastUpdated(new Date())
+      })
       .catch((e) => {
         setResources(null)
         setResourceError(e instanceof Error ? e.message : 'Failed to load resources')
@@ -188,7 +216,7 @@ export default function ResourceBrowser() {
             <div className="text-center space-y-3">
               <AlertTriangle className="h-8 w-8 text-destructive mx-auto" />
               <p className="text-sm text-muted-foreground">{resourceError}</p>
-              <Button variant="outline" size="sm" onClick={retryResources}>
+              <Button variant="outline" size="sm" onClick={refreshResources}>
                 <RefreshCw className="h-3.5 w-3.5 mr-2" />
                 Retry
               </Button>
@@ -202,6 +230,24 @@ export default function ResourceBrowser() {
               <div className="flex items-center gap-3">
                 {(() => { const Icon = getServiceIcon(service); return <Icon className="h-5 w-5 text-muted-foreground" /> })()}
                 <h2 className="text-xl font-bold">{service}</h2>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={refreshResources}
+                    disabled={loadingResources}
+                    className="h-7 gap-1.5"
+                    aria-label="Refresh resources"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${loadingResources ? 'animate-spin' : ''}`} />
+                    <span className="text-xs">Refresh</span>
+                  </Button>
+                  {lastUpdated && (
+                    <span className="text-xs text-muted-foreground">
+                      {getTimeAgo(lastUpdated)}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="relative w-64">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
