@@ -10,7 +10,9 @@
  */
 import type { ComponentType } from 'react'
 import { S3Browser } from './S3Browser'
+import { DynamoDBBrowser } from './DynamoDBBrowser'
 
 export const SERVICE_VIEWS: Record<string, ComponentType> = {
   s3: S3Browser,
+  dynamodb: DynamoDBBrowser,
 }

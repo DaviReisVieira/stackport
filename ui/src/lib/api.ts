@@ -1,4 +1,16 @@
-import type { StatsResponse, ResourceListResponse, ResourceDetailResponse, S3Bucket, S3ObjectsResponse, S3ObjectDetail } from './types'
+import type {
+  StatsResponse,
+  ResourceListResponse,
+  ResourceDetailResponse,
+  S3Bucket,
+  S3ObjectsResponse,
+  S3ObjectDetail,
+  DynamoDBTable,
+  DynamoDBTableDetail,
+  DynamoDBScanResponse,
+  DynamoDBQueryRequest,
+  DynamoDBQueryResponse,
+} from './types'
 
 const API_BASE = '/api'
 
@@ -40,4 +52,32 @@ export async function fetchS3Object(bucket: string, key: string): Promise<S3Obje
 
 export function getS3DownloadUrl(bucket: string, key: string): string {
   return `${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/${key}?download=1`
+}
+
+export async function fetchDynamoDBTables(): Promise<{ tables: DynamoDBTable[] }> {
+  return fetchJSON<{ tables: DynamoDBTable[] }>(`${API_BASE}/dynamodb/tables`)
+}
+
+export async function fetchDynamoDBTable(name: string): Promise<DynamoDBTableDetail> {
+  return fetchJSON<DynamoDBTableDetail>(`${API_BASE}/dynamodb/tables/${encodeURIComponent(name)}`)
+}
+
+export async function fetchDynamoDBItems(
+  name: string,
+  limit = 25,
+  nextToken?: string | null
+): Promise<DynamoDBScanResponse> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (nextToken) params.set('exclusive_start_key', nextToken)
+  return fetchJSON<DynamoDBScanResponse>(`${API_BASE}/dynamodb/tables/${encodeURIComponent(name)}/items?${params}`)
+}
+
+export async function queryDynamoDBTable(name: string, request: DynamoDBQueryRequest): Promise<DynamoDBQueryResponse> {
+  const res = await fetch(`${API_BASE}/dynamodb/tables/${encodeURIComponent(name)}/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
 }

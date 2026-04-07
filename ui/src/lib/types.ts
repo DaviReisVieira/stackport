@@ -67,3 +67,57 @@ export interface S3ObjectDetail {
   preserved_headers: Record<string, string>
   tags: Record<string, string>
 }
+
+export interface DynamoDBTable {
+  name: string
+  status: string
+  item_count: number
+  size_bytes: number
+  partition_key: string | null
+  sort_key: string | null
+  billing_mode: string
+  created: string | null
+}
+
+export interface DynamoDBTableDetail {
+  name: string
+  status: string
+  item_count: number
+  size_bytes: number
+  partition_key: string | null
+  partition_key_type: string | null
+  sort_key: string | null
+  sort_key_type: string | null
+  billing_mode: string
+  created: string | null
+  attribute_definitions: Record<string, string>
+  key_schema: Array<{ AttributeName: string; KeyType: string }>
+  global_secondary_indexes: unknown[]
+  local_secondary_indexes: unknown[]
+}
+
+export interface DynamoDBItem {
+  [key: string]: unknown
+}
+
+export interface DynamoDBScanResponse {
+  table: string
+  items: DynamoDBItem[]
+  count: number
+  scanned_count: number
+  next_token: string | null
+}
+
+export interface DynamoDBQueryRequest {
+  partition_key_value: string
+  sort_key_value?: string | null
+  sort_key_operator?: string
+  limit?: number
+}
+
+export interface DynamoDBQueryResponse {
+  table: string
+  items: DynamoDBItem[]
+  count: number
+  scanned_count: number
+}
