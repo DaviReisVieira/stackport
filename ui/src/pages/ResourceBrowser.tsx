@@ -17,7 +17,8 @@ import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { SERVICE_VIEWS } from '@/components/service-views'
 import { getServiceIcon } from '@/lib/service-icons'
-import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X, Download } from 'lucide-react'
+import { handleExport } from '../lib/export'
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100]
 
@@ -299,7 +300,19 @@ export default function ResourceBrowser() {
                 <Card key={type}>
                   <CardHeader className="p-4 pb-2">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-medium">{type}</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-sm font-medium">{type}</CardTitle>
+                        <Select onValueChange={(format: 'json' | 'csv') => handleExport(arr, format, service, type)}>
+                          <SelectTrigger className="h-6 w-auto border-none bg-transparent hover:bg-accent px-2 gap-1 text-[10px]">
+                            <Download className="h-3 w-3" />
+                            <span className="sr-only">Export</span>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="json">Export JSON</SelectItem>
+                            <SelectItem value="csv">Export CSV</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <Badge variant="secondary" className="text-[10px]">
                         {searchQuery && filteredArr.length !== arr.length
                           ? `${filteredArr.length} of ${arr.length} items`
