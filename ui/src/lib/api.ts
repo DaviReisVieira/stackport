@@ -36,6 +36,9 @@ import type {
   EC2VPC,
   EC2KeyPair,
   EC2ActionResponse,
+  LogGroupsResponse,
+  LogStreamsResponse,
+  LogEventsResponse,
 } from './types'
 
 const API_BASE = '/api'
@@ -274,4 +277,53 @@ export async function fetchEC2VPCs(): Promise<{ vpcs: EC2VPC[] }> {
 
 export async function fetchEC2KeyPairs(): Promise<{ keyPairs: EC2KeyPair[] }> {
   return fetchJSON<{ keyPairs: EC2KeyPair[] }>(`${API_BASE}/ec2/key-pairs`)
+}
+
+export async function fetchLogGroups(prefix = '', nextToken = ''): Promise<LogGroupsResponse> {
+  const params = new URLSearchParams()
+  if (prefix) params.set('prefix', prefix)
+  if (nextToken) params.set('next_token', nextToken)
+  const query = params.toString() ? `?${params}` : ''
+  return fetchJSON<LogGroupsResponse>(`${API_BASE}/logs/groups${query}`)
+}
+
+export async function fetchLogStreams(
+  logGroupName: string,
+  prefix = '',
+  orderBy = 'LastEventTime',
+  descending = true,
+  limit = 50,
+  nextToken = ''
+): Promise<LogStreamsResponse> {
+  const params = new URLSearchParams({
+    order_by: orderBy,
+    descending: String(descending),
+    limit: String(limit),
+  })
+  if (prefix) params.set('prefix', prefix)
+  if (nextToken) params.set('next_token', nextToken)
+  return fetchJSON<LogStreamsResponse>(
+    `${API_BASE}/logs/groups/${encodeURIComponent(logGroupName)}/streams?${params}`
+  )
+}
+
+export async function fetchLogEvents(
+  logGroupName: string,
+  logStreamName: string,
+  startTime = 0,
+  endTime = 0,
+  filterPattern = '',
+  limit = 100,
+  nextToken = ''
+): Promise<LogEventsResponse> {
+  const params = new URLSearchParams({
+    start_time: String(startTime),
+    end_time: String(endTime),
+    limit: String(limit),
+  })
+  if (filterPattern) params.set('filter_pattern', filterPattern)
+  if (nextToken) params.set('next_token', nextToken)
+  return fetchJSON<LogEventsResponse>(
+    `${API_BASE}/logs/groups/${encodeURIComponent(logGroupName)}/streams/${encodeURIComponent(logStreamName)}/events?${params}`
+  )
 }

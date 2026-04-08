@@ -503,3 +503,47 @@ export interface EC2ActionResponse {
   }
   message?: string
 }
+
+export interface LogGroup {
+  name: string
+  arn: string
+  creation_time: string | null
+  retention_days: number | null
+  stored_bytes: number
+  metric_filter_count: number
+}
+
+export interface LogGroupsResponse {
+  log_groups: LogGroup[]
+  next_token: string | null
+}
+
+export interface LogStream {
+  name: string
+  creation_time: string | null
+  first_event_time: string | null
+  last_event_time: string | null
+  last_ingestion_time: string | null
+  stored_bytes: number
+}
+
+export interface LogStreamsResponse {
+  log_group: string
+  log_streams: LogStream[]
+  next_token: string | null
+}
+
+export interface LogEvent {
+  timestamp: string
+  timestamp_millis: number
+  message: string
+  ingestion_time: string | null
+  event_id: string
+}
+
+export interface LogEventsResponse {
+  log_group: string
+  log_stream: string
+  events: LogEvent[]
+  next_token: string | null
+}
