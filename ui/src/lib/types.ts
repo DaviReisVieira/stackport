@@ -121,3 +121,130 @@ export interface DynamoDBQueryResponse {
   count: number
   scanned_count: number
 }
+
+export interface LambdaFunction {
+  FunctionName: string
+  FunctionArn: string
+  Runtime: string
+  Role: string
+  Handler: string
+  CodeSize: number
+  Description?: string
+  Timeout: number
+  MemorySize: number
+  LastModified: string
+  CodeSha256: string
+  Version: string
+  State?: string
+  StateReason?: string
+  StateReasonCode?: string
+  LastUpdateStatus?: string
+  PackageType?: string
+  Architectures?: string[]
+  Environment?: {
+    Variables?: Record<string, string>
+  }
+  Layers?: Array<{
+    Arn: string
+    CodeSize: number
+  }>
+}
+
+export interface LambdaFunctionDetail {
+  configuration: {
+    FunctionName: string
+    FunctionArn: string
+    Runtime: string
+    Role: string
+    Handler: string
+    CodeSize: number
+    Description?: string
+    Timeout: number
+    MemorySize: number
+    LastModified: string
+    CodeSha256: string
+    Version: string
+    State?: string
+    StateReason?: string
+    StateReasonCode?: string
+    PackageType?: string
+    Architectures?: string[]
+    Environment?: {
+      Variables?: Record<string, string>
+    }
+    Layers?: Array<{
+      Arn: string
+      CodeSize: number
+    }>
+    VpcConfig?: {
+      SubnetIds?: string[]
+      SecurityGroupIds?: string[]
+      VpcId?: string
+    }
+    LoggingConfig?: {
+      LogFormat?: string
+      ApplicationLogLevel?: string
+      SystemLogLevel?: string
+      LogGroup?: string
+    }
+    TracingConfig?: {
+      Mode?: string
+    }
+  }
+  code: {
+    Location?: string
+    RepositoryType?: string
+  }
+  tags: Record<string, string>
+  concurrency?: {
+    ReservedConcurrentExecutions?: number
+  }
+}
+
+export interface LambdaInvokeRequest {
+  payload: Record<string, unknown>
+}
+
+export interface LambdaInvokeResponse {
+  statusCode: number
+  functionError?: string
+  executedVersion: string
+  payload: unknown
+  logs?: string
+}
+
+export interface LambdaEventSourceMapping {
+  UUID: string
+  EventSourceArn: string
+  FunctionArn: string
+  State: string
+  StateTransitionReason?: string
+  LastModified: string
+  LastProcessingResult?: string
+  BatchSize?: number
+  MaximumBatchingWindowInSeconds?: number
+  ParallelizationFactor?: number
+}
+
+export interface LambdaAlias {
+  AliasArn: string
+  Name: string
+  FunctionVersion: string
+  Description?: string
+  RoutingConfig?: {
+    AdditionalVersionWeights?: Record<string, number>
+  }
+  RevisionId: string
+}
+
+export interface LambdaVersion {
+  FunctionName: string
+  FunctionArn: string
+  Version: string
+  Description?: string
+  CodeSize: number
+  CodeSha256: string
+  LastModified: string
+  State?: string
+  StateReason?: string
+}

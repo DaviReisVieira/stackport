@@ -10,6 +10,13 @@ import type {
   DynamoDBScanResponse,
   DynamoDBQueryRequest,
   DynamoDBQueryResponse,
+  LambdaFunction,
+  LambdaFunctionDetail,
+  LambdaInvokeRequest,
+  LambdaInvokeResponse,
+  LambdaEventSourceMapping,
+  LambdaAlias,
+  LambdaVersion,
 } from './types'
 
 const API_BASE = '/api'
@@ -80,4 +87,38 @@ export async function queryDynamoDBTable(name: string, request: DynamoDBQueryReq
   })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()
+}
+
+export async function fetchLambdaFunctions(): Promise<{ functions: LambdaFunction[] }> {
+  return fetchJSON<{ functions: LambdaFunction[] }>(`${API_BASE}/lambda/functions`)
+}
+
+export async function fetchLambdaFunction(functionName: string): Promise<LambdaFunctionDetail> {
+  return fetchJSON<LambdaFunctionDetail>(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}`)
+}
+
+export function getLambdaCodeDownloadUrl(functionName: string): string {
+  return `${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/code`
+}
+
+export async function invokeLambdaFunction(functionName: string, payload: LambdaInvokeRequest): Promise<LambdaInvokeResponse> {
+  const res = await fetch(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/invoke`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function fetchLambdaEventSources(functionName: string): Promise<{ eventSourceMappings: LambdaEventSourceMapping[] }> {
+  return fetchJSON<{ eventSourceMappings: LambdaEventSourceMapping[] }>(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/event-sources`)
+}
+
+export async function fetchLambdaAliases(functionName: string): Promise<{ aliases: LambdaAlias[] }> {
+  return fetchJSON<{ aliases: LambdaAlias[] }>(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/aliases`)
+}
+
+export async function fetchLambdaVersions(functionName: string): Promise<{ versions: LambdaVersion[] }> {
+  return fetchJSON<{ versions: LambdaVersion[] }>(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/versions`)
 }

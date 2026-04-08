@@ -1,6 +1,5 @@
 import logging
 import os
-import time
 
 import uvicorn
 from fastapi import FastAPI
@@ -9,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import STACKPORT_PORT
-from backend.routes import dynamodb, resources, s3, stats
+from backend.routes import dynamodb, lambda_svc, resources, s3, stats
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +28,7 @@ app.add_middleware(
 app.include_router(stats.router, prefix="/api")
 app.include_router(s3.router, prefix="/api/s3")
 app.include_router(dynamodb.router, prefix="/api/dynamodb")
+app.include_router(lambda_svc.router, prefix="/api/lambda", tags=["lambda"])
 app.include_router(resources.router, prefix="/api")
 
 # Serve UI static files — mount assets under /assets, SPA fallback for everything else
