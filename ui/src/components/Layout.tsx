@@ -15,6 +15,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       {/* Sidebar */}
       <nav aria-label="Main navigation" className="w-56 bg-card border-r flex flex-col">
         <div className="px-4 py-4 flex items-center gap-3">
+          <img src="/favicon.svg" alt="StackPort" className="h-8 w-8" />
           <div>
             <h1 className="text-lg font-bold tracking-tight leading-tight">StackPort</h1>
             <p className="text-xs text-muted-foreground">AWS Resource Browser</p>

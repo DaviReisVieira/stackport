@@ -72,3 +72,12 @@ jobs:
             davireis/stackport:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: davireis
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: davireis/stackport
+          readme-filepath: ./README.md
+          short-description: "Universal AWS resource browser for local emulators (MiniStack, LocalStack, Moto)"
