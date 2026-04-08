@@ -301,3 +301,120 @@ export interface SQSSendMessageResponse {
   md5OfMessageBody: string
   sequenceNumber?: string
 }
+
+export interface IAMUser {
+  UserName: string
+  UserId: string
+  Arn: string
+  Path: string
+  CreateDate: string
+}
+
+export interface IAMRole {
+  RoleName: string
+  RoleId: string
+  Arn: string
+  Path: string
+  CreateDate: string
+  MaxSessionDuration?: number
+}
+
+export interface IAMGroup {
+  GroupName: string
+  GroupId: string
+  Arn: string
+  Path: string
+  CreateDate: string
+}
+
+export interface IAMPolicy {
+  PolicyName: string
+  PolicyId: string
+  Arn: string
+  Path: string
+  DefaultVersionId?: string
+  AttachmentCount: number
+  CreateDate: string
+  UpdateDate: string
+}
+
+export interface IAMAttachedPolicy {
+  PolicyName: string
+  PolicyArn: string
+}
+
+export interface IAMInlinePolicy {
+  name: string
+  document: Record<string, unknown>
+}
+
+export interface IAMAccessKey {
+  UserName: string
+  AccessKeyId: string
+  Status: string
+  CreateDate: string
+}
+
+export interface IAMUserDetail {
+  user: {
+    UserName: string
+    UserId: string
+    Arn: string
+    Path: string
+    CreateDate: string
+    PasswordLastUsed?: string | null
+  }
+  attached_policies: IAMAttachedPolicy[]
+  inline_policies: IAMInlinePolicy[]
+  groups: IAMGroup[]
+  access_keys: IAMAccessKey[]
+  tags: Record<string, string>
+}
+
+export interface IAMRoleDetail {
+  role: {
+    RoleName: string
+    RoleId: string
+    Arn: string
+    Path: string
+    CreateDate: string
+    MaxSessionDuration?: number
+  }
+  trust_policy: Record<string, unknown>
+  attached_policies: IAMAttachedPolicy[]
+  inline_policies: IAMInlinePolicy[]
+  tags: Record<string, string>
+}
+
+export interface IAMGroupDetail {
+  group: {
+    GroupName: string
+    GroupId: string
+    Arn: string
+    Path: string
+    CreateDate: string
+  }
+  users: IAMUser[]
+  attached_policies: IAMAttachedPolicy[]
+  inline_policies: IAMInlinePolicy[]
+}
+
+export interface IAMPolicyDetail {
+  policy: {
+    PolicyName: string
+    PolicyId: string
+    Arn: string
+    Path: string
+    DefaultVersionId?: string
+    AttachmentCount: number
+    CreateDate: string
+    UpdateDate: string
+  }
+  document: Record<string, unknown>
+  attached_to: {
+    users: Array<{ UserName: string }>
+    roles: Array<{ RoleName: string }>
+    groups: Array<{ GroupName: string }>
+  }
+  tags: Record<string, string>
+}

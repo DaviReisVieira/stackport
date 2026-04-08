@@ -22,6 +22,14 @@ import type {
   SQSMessage,
   SQSSendMessageRequest,
   SQSSendMessageResponse,
+  IAMUser,
+  IAMRole,
+  IAMGroup,
+  IAMPolicy,
+  IAMUserDetail,
+  IAMRoleDetail,
+  IAMGroupDetail,
+  IAMPolicyDetail,
 } from './types'
 
 const API_BASE = '/api'
@@ -175,4 +183,37 @@ export async function purgeSQSQueue(queueName: string): Promise<{ success: boole
   })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()
+}
+
+export async function fetchIAMUsers(): Promise<{ users: IAMUser[] }> {
+  return fetchJSON<{ users: IAMUser[] }>(`${API_BASE}/iam/users`)
+}
+
+export async function fetchIAMUserDetail(userName: string): Promise<IAMUserDetail> {
+  return fetchJSON<IAMUserDetail>(`${API_BASE}/iam/users/${encodeURIComponent(userName)}`)
+}
+
+export async function fetchIAMRoles(): Promise<{ roles: IAMRole[] }> {
+  return fetchJSON<{ roles: IAMRole[] }>(`${API_BASE}/iam/roles`)
+}
+
+export async function fetchIAMRoleDetail(roleName: string): Promise<IAMRoleDetail> {
+  return fetchJSON<IAMRoleDetail>(`${API_BASE}/iam/roles/${encodeURIComponent(roleName)}`)
+}
+
+export async function fetchIAMGroups(): Promise<{ groups: IAMGroup[] }> {
+  return fetchJSON<{ groups: IAMGroup[] }>(`${API_BASE}/iam/groups`)
+}
+
+export async function fetchIAMGroupDetail(groupName: string): Promise<IAMGroupDetail> {
+  return fetchJSON<IAMGroupDetail>(`${API_BASE}/iam/groups/${encodeURIComponent(groupName)}`)
+}
+
+export async function fetchIAMPolicies(scope = 'Local'): Promise<{ policies: IAMPolicy[] }> {
+  const params = new URLSearchParams({ scope })
+  return fetchJSON<{ policies: IAMPolicy[] }>(`${API_BASE}/iam/policies?${params}`)
+}
+
+export async function fetchIAMPolicyDetail(policyArn: string): Promise<IAMPolicyDetail> {
+  return fetchJSON<IAMPolicyDetail>(`${API_BASE}/iam/policies/${encodeURIComponent(policyArn)}`)
 }
