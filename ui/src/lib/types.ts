@@ -248,3 +248,56 @@ export interface LambdaVersion {
   State?: string
   StateReason?: string
 }
+
+export interface SQSQueue {
+  name: string
+  url: string
+  type: 'Standard' | 'FIFO'
+  approximateNumberOfMessages: number
+  approximateNumberOfMessagesNotVisible: number
+  approximateNumberOfMessagesDelayed: number
+  visibilityTimeout: number
+  messageRetentionPeriod: number
+  delaySeconds: number
+  redrivePolicy?: {
+    deadLetterTargetArn: string
+    maxReceiveCount: number
+  } | null
+  tags: Record<string, string>
+}
+
+export interface SQSQueueDetail extends SQSQueue {
+  arn: string
+  maximumMessageSize: number
+  contentBasedDeduplication: boolean
+}
+
+export interface SQSMessage {
+  messageId: string
+  receiptHandle: string
+  body: string
+  md5OfBody: string
+  attributes: Record<string, string>
+  messageAttributes: Record<string, {
+    StringValue?: string
+    BinaryValue?: string
+    DataType: string
+  }>
+}
+
+export interface SQSSendMessageRequest {
+  messageBody: string
+  delaySeconds?: number
+  messageAttributes?: Record<string, {
+    stringValue: string
+    dataType: string
+  }>
+  messageDeduplicationId?: string
+  messageGroupId?: string
+}
+
+export interface SQSSendMessageResponse {
+  messageId: string
+  md5OfMessageBody: string
+  sequenceNumber?: string
+}

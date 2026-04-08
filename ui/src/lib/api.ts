@@ -17,6 +17,11 @@ import type {
   LambdaEventSourceMapping,
   LambdaAlias,
   LambdaVersion,
+  SQSQueue,
+  SQSQueueDetail,
+  SQSMessage,
+  SQSSendMessageRequest,
+  SQSSendMessageResponse,
 } from './types'
 
 const API_BASE = '/api'
@@ -121,4 +126,53 @@ export async function fetchLambdaAliases(functionName: string): Promise<{ aliase
 
 export async function fetchLambdaVersions(functionName: string): Promise<{ versions: LambdaVersion[] }> {
   return fetchJSON<{ versions: LambdaVersion[] }>(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/versions`)
+}
+
+export async function fetchSQSQueues(): Promise<{ queues: SQSQueue[] }> {
+  return fetchJSON<{ queues: SQSQueue[] }>(`${API_BASE}/sqs/queues`)
+}
+
+export async function fetchSQSQueueDetail(queueName: string): Promise<SQSQueueDetail> {
+  return fetchJSON<SQSQueueDetail>(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}`)
+}
+
+export async function sendSQSMessage(queueName: string, request: SQSSendMessageRequest): Promise<SQSSendMessageResponse> {
+  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function receiveSQSMessages(
+  queueName: string,
+  maxMessages = 10,
+  visibilityTimeout = 0
+): Promise<{ messages: SQSMessage[] }> {
+  const params = new URLSearchParams({
+    max_messages: String(maxMessages),
+    visibility_timeout: String(visibilityTimeout),
+  })
+  return fetchJSON<{ messages: SQSMessage[] }>(
+    `${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/messages?${params}`
+  )
+}
+
+export async function deleteSQSMessage(queueName: string, receiptHandle: string): Promise<void> {
+  const params = new URLSearchParams({ receipt_handle: receiptHandle })
+  const res = await fetch(
+    `${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/messages?${params}`,
+    { method: 'DELETE' }
+  )
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+}
+
+export async function purgeSQSQueue(queueName: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/purge`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
 }
