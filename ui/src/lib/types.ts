@@ -418,3 +418,88 @@ export interface IAMPolicyDetail {
   }
   tags: Record<string, string>
 }
+
+export interface EC2Instance {
+  instanceId: string
+  name: string
+  state: string
+  instanceType: string
+  imageId?: string
+  launchTime?: string | null
+  publicIpAddress?: string
+  privateIpAddress?: string
+  vpcId?: string
+  subnetId?: string
+  keyName?: string
+  platform?: string
+  securityGroups: Array<{ GroupId: string; GroupName: string }>
+  tags: Array<{ Key: string; Value: string }>
+}
+
+export interface EC2InstanceDetail {
+  instance: {
+    instanceId: string
+    name: string
+    state: string
+    stateCode: number
+    instanceType: string
+    imageId?: string
+    launchTime?: string | null
+    publicIpAddress?: string
+    privateIpAddress?: string
+    vpcId?: string
+    subnetId?: string
+    keyName?: string
+    platform?: string
+    securityGroups: Array<{ GroupId: string; GroupName: string }>
+    networkInterfaces: Array<Record<string, unknown>>
+    blockDeviceMappings: Array<Record<string, unknown>>
+    tags: Array<{ Key: string; Value: string }>
+    userData?: string | null
+  }
+}
+
+export interface EC2SecurityGroup {
+  groupId: string
+  groupName: string
+  description: string
+  vpcId?: string
+  ipPermissions: Array<Record<string, unknown>>
+  ipPermissionsEgress: Array<Record<string, unknown>>
+  tags: Array<{ Key: string; Value: string }>
+}
+
+export interface EC2VPC {
+  vpcId: string
+  cidrBlock: string
+  state: string
+  isDefault: boolean
+  tags: Array<{ Key: string; Value: string }>
+  subnets: EC2Subnet[]
+}
+
+export interface EC2Subnet {
+  subnetId: string
+  cidrBlock: string
+  availabilityZone: string
+  availableIpAddressCount: number
+  state: string
+  tags: Array<{ Key: string; Value: string }>
+}
+
+export interface EC2KeyPair {
+  keyPairId?: string
+  keyName: string
+  keyFingerprint?: string
+  keyType: string
+  tags: Array<{ Key: string; Value: string }>
+}
+
+export interface EC2ActionResponse {
+  success: boolean
+  state?: {
+    previous: string
+    current: string
+  }
+  message?: string
+}

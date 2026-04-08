@@ -30,6 +30,12 @@ import type {
   IAMRoleDetail,
   IAMGroupDetail,
   IAMPolicyDetail,
+  EC2Instance,
+  EC2InstanceDetail,
+  EC2SecurityGroup,
+  EC2VPC,
+  EC2KeyPair,
+  EC2ActionResponse,
 } from './types'
 
 const API_BASE = '/api'
@@ -216,4 +222,56 @@ export async function fetchIAMPolicies(scope = 'Local'): Promise<{ policies: IAM
 
 export async function fetchIAMPolicyDetail(policyArn: string): Promise<IAMPolicyDetail> {
   return fetchJSON<IAMPolicyDetail>(`${API_BASE}/iam/policies/${encodeURIComponent(policyArn)}`)
+}
+
+export async function fetchEC2Instances(): Promise<{ instances: EC2Instance[] }> {
+  return fetchJSON<{ instances: EC2Instance[] }>(`${API_BASE}/ec2/instances`)
+}
+
+export async function fetchEC2InstanceDetail(instanceId: string): Promise<EC2InstanceDetail> {
+  return fetchJSON<EC2InstanceDetail>(`${API_BASE}/ec2/instances/${encodeURIComponent(instanceId)}`)
+}
+
+export async function startEC2Instance(instanceId: string): Promise<EC2ActionResponse> {
+  const res = await fetch(`${API_BASE}/ec2/instances/${encodeURIComponent(instanceId)}/start`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function stopEC2Instance(instanceId: string): Promise<EC2ActionResponse> {
+  const res = await fetch(`${API_BASE}/ec2/instances/${encodeURIComponent(instanceId)}/stop`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function rebootEC2Instance(instanceId: string): Promise<EC2ActionResponse> {
+  const res = await fetch(`${API_BASE}/ec2/instances/${encodeURIComponent(instanceId)}/reboot`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function terminateEC2Instance(instanceId: string): Promise<EC2ActionResponse> {
+  const res = await fetch(`${API_BASE}/ec2/instances/${encodeURIComponent(instanceId)}/terminate`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function fetchEC2SecurityGroups(): Promise<{ securityGroups: EC2SecurityGroup[] }> {
+  return fetchJSON<{ securityGroups: EC2SecurityGroup[] }>(`${API_BASE}/ec2/security-groups`)
+}
+
+export async function fetchEC2VPCs(): Promise<{ vpcs: EC2VPC[] }> {
+  return fetchJSON<{ vpcs: EC2VPC[] }>(`${API_BASE}/ec2/vpcs`)
+}
+
+export async function fetchEC2KeyPairs(): Promise<{ keyPairs: EC2KeyPair[] }> {
+  return fetchJSON<{ keyPairs: EC2KeyPair[] }>(`${API_BASE}/ec2/key-pairs`)
 }
