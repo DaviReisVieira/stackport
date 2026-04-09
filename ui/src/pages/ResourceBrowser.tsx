@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useCallback, useEffect, useState, useRef } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useFetch } from '../hooks/useFetch'
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { fetchStats, fetchResources, fetchResourceDetail } from '../lib/api'
 import type { StatsResponse, ResourceListResponse, ResourceDetailResponse } from '../lib/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -16,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { SERVICE_VIEWS } from '@/components/service-views'
+import { KeyboardShortcutsModal } from '@/components/KeyboardShortcutsModal'
 import { getServiceIcon } from '@/lib/service-icons'
 import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 
@@ -79,6 +81,7 @@ function PaginationBar({
 
 export default function ResourceBrowser() {
   const { service } = useParams<{ service?: string }>()
+  const navigate = useNavigate()
   const statsFetcher = useCallback(() => fetchStats(), [])
   const { data: stats } = useFetch<StatsResponse>(statsFetcher, 10000)
   const [resources, setResources] = useState<Record<string, unknown[]> | null>(null)
@@ -90,6 +93,8 @@ export default function ResourceBrowser() {
   const [searchQuery, setSearchQuery] = useState('')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [, setTimestamp] = useState(0)
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!service) {
@@ -150,9 +155,38 @@ export default function ResourceBrowser() {
 
   const services = stats ? Object.entries(stats.services) : []
 
+  // Keyboard shortcuts
+  useKeyboardShortcuts(
+    [
+      { key: '?', handler: () => setShowShortcuts(true), shift: true },
+      { key: '/', handler: () => searchInputRef.current?.focus() },
+      { key: 'Escape', handler: () => {
+        if (detail) setDetail(null)
+        else searchInputRef.current?.blur()
+      }},
+      { key: 'r', handler: () => refreshResources() },
+      { key: '[', handler: () => {
+        if (!service) return
+        const idx = services.findIndex(([name]) => name === service)
+        if (idx > 0) navigate(`/resources/${services[idx - 1][0]}`)
+      }},
+      { key: ']', handler: () => {
+        if (!service) return
+        const idx = services.findIndex(([name]) => name === service)
+        if (idx >= 0 && idx < services.length - 1) navigate(`/resources/${services[idx + 1][0]}`)
+      }},
+    ],
+    [
+      { sequence: ['g', 'd'], handler: () => navigate('/') },
+      { sequence: ['g', 'r'], handler: () => navigate('/resources') },
+    ]
+  )
+
   return (
-    <div className="flex h-full">
-      {/* Service sidebar */}
+    <>
+      <KeyboardShortcutsModal open={showShortcuts} onOpenChange={setShowShortcuts} />
+      <div className="flex h-full">
+        {/* Service sidebar */}
       <ScrollArea className="w-52 border-r bg-card/50">
         <div className="px-3 py-3 border-b">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Services</h3>
@@ -252,6 +286,7 @@ export default function ResourceBrowser() {
               <div className="relative w-64">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
+                  ref={searchInputRef}
                   placeholder="Search resources..."
                   value={searchQuery}
                   onChange={(e) => {
@@ -375,5 +410,6 @@ export default function ResourceBrowser() {
         </Sheet>
       </div>
     </div>
+    </>
   )
 }

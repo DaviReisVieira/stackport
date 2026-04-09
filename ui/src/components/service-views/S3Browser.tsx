@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { fetchS3Buckets, fetchS3Objects, fetchS3Object, getS3DownloadUrl } from '@/lib/api'
 import type { S3Bucket, S3File, S3ObjectsResponse, S3ObjectDetail } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { useFetch } from '@/hooks/useFetch'
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { Input } from '@/components/ui/input'
 import {
   HardDrive,
@@ -137,6 +138,25 @@ export function S3Browser() {
   const [bucketPage, setBucketPage] = useState(0)
   const [filePage, setFilePage] = useState(0)
   const [pageSize, setPageSize] = useState(25)
+  const bucketSearchRef = useRef<HTMLInputElement>(null)
+  const fileSearchRef = useRef<HTMLInputElement>(null)
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts(
+    [
+      { key: 'Backspace', handler: () => {
+        if (selectedBucket && prefix) navigateUp()
+      }},
+      { key: 'Escape', handler: () => {
+        if (objectDetail) setObjectDetail(null)
+      }},
+      { key: '/', handler: () => {
+        if (selectedBucket) fileSearchRef.current?.focus()
+        else bucketSearchRef.current?.focus()
+      }},
+    ],
+    []
+  )
 
   useEffect(() => {
     if (!selectedBucket) {
@@ -242,6 +262,7 @@ export function S3Browser() {
               <div className="relative w-56">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
+                  ref={bucketSearchRef}
                   placeholder="Search buckets..."
                   value={bucketSearch}
                   onChange={(e) => { setBucketSearch(e.target.value); setBucketPage(0) }}
@@ -385,6 +406,7 @@ export function S3Browser() {
               <div className="relative w-56">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
+                  ref={fileSearchRef}
                   placeholder="Search files..."
                   value={fileSearch}
                   onChange={(e) => { setFileSearch(e.target.value); setFilePage(0) }}
