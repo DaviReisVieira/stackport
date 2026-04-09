@@ -6,6 +6,7 @@ import {
   fetchDynamoDBItems,
   queryDynamoDBTable,
 } from '@/lib/api'
+import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import type {
   DynamoDBTable,
   DynamoDBTableDetail,
@@ -28,7 +29,6 @@ import { Label } from '@/components/ui/label'
 import {
   Database,
   Table as TableIcon,
-  ArrowLeft,
   Search,
   Key,
   Hash,
@@ -282,6 +282,7 @@ export function DynamoDBBrowser() {
 
     return (
       <div className="space-y-4">
+        <Breadcrumb segments={[createHomeSegment(), { label: 'DynamoDB', icon: Database }]} />
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Database className="h-5 w-5 text-muted-foreground" />
@@ -391,20 +392,11 @@ export function DynamoDBBrowser() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            setSelectedTable(null)
-            setMode('scan')
-          }}
-          className="h-8"
-        >
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Tables
-        </Button>
-        <Separator orientation="vertical" className="h-5" />
-        <span className="text-sm font-medium">{selectedTable}</span>
+        <Breadcrumb segments={[
+          createHomeSegment(),
+          { label: 'DynamoDB', href: '/resources/dynamodb', icon: Database },
+          { label: selectedTable },
+        ]} />
         {tableDetail && (
           <>
             <Badge variant="secondary" className="text-xs">

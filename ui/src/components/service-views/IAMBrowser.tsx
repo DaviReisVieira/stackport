@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import {
   fetchIAMUsers,
   fetchIAMUserDetail,
@@ -811,6 +812,7 @@ export function IAMBrowser() {
 
   return (
     <div className="space-y-6 p-6">
+      <Breadcrumb segments={[createHomeSegment(), { label: 'IAM', icon: Shield }]} />
       <div>
         <h2 className="text-2xl font-bold flex items-center gap-2">
           <Shield className="h-6 w-6" />

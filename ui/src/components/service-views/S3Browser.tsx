@@ -295,6 +295,7 @@ export function S3Browser() {
 
     return (
       <div className="space-y-4">
+        <Breadcrumb segments={[createHomeSegment(), { label: 'S3', icon: HardDrive }]} />
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <HardDrive className="h-5 w-5 text-muted-foreground" />

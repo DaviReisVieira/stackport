@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import {
   fetchSQSQueues,
   fetchSQSQueueDetail,
@@ -32,7 +33,6 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  ArrowLeft,
   Tag as TagIcon,
   AlertTriangle,
   Eye,
@@ -551,14 +551,11 @@ export function SQSBrowser() {
 
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setSelectedQueue(null)}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Queues
-          </Button>
-          <Separator orientation="vertical" className="h-4" />
-          <span className="text-sm text-muted-foreground">{queueDetail.name}</span>
-        </div>
+        <Breadcrumb segments={[
+          createHomeSegment(),
+          { label: 'SQS', href: '/resources/sqs', icon: Inbox },
+          { label: queueDetail.name },
+        ]} />
 
         <div className="flex items-start justify-between">
           <div>
@@ -768,6 +765,7 @@ export function SQSBrowser() {
 
   return (
     <div className="space-y-4">
+      <Breadcrumb segments={[createHomeSegment(), { label: 'SQS', icon: Inbox }]} />
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

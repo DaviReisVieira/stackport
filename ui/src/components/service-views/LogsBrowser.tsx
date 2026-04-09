@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import { fetchLogGroups, fetchLogStreams, fetchLogEvents } from '@/lib/api'
 import type { LogEvent, LogGroupsResponse, LogStreamsResponse } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -265,7 +266,9 @@ export function LogsBrowser() {
   const filteredStreams = streamsData?.log_streams || []
 
   return (
-    <div className="grid grid-cols-[300px,1fr,1fr] gap-4 h-full">
+    <div className="space-y-4 h-full flex flex-col">
+      <Breadcrumb segments={[createHomeSegment(), { label: 'CloudWatch Logs', icon: ScrollText }]} />
+      <div className="grid grid-cols-[300px,1fr,1fr] gap-4 flex-1 min-h-0">
       {/* Log Groups Panel */}
       <Card className="flex flex-col">
         <CardHeader className="pb-3">
@@ -567,6 +570,7 @@ export function LogsBrowser() {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   )
 }
