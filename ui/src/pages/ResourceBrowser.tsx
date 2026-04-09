@@ -17,7 +17,6 @@ import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { SERVICE_VIEWS } from '@/components/service-views'
-import { KeyboardShortcutsModal } from '@/components/KeyboardShortcutsModal'
 import { getServiceIcon } from '@/lib/service-icons'
 import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 
@@ -93,7 +92,7 @@ export default function ResourceBrowser() {
   const [searchQuery, setSearchQuery] = useState('')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [, setTimestamp] = useState(0)
-  const [showShortcuts, setShowShortcuts] = useState(false)
+  const [selectedRow, setSelectedRow] = useState(-1)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -155,38 +154,81 @@ export default function ResourceBrowser() {
 
   const services = stats ? Object.entries(stats.services) : []
 
-  // Keyboard shortcuts
+  // Compute flat list of all visible resource items for j/k navigation
+  const allVisibleItems: { service: string; type: string; id: string }[] = []
+  if (service && !SERVICE_VIEWS[service] && resources) {
+    for (const [type, items] of Object.entries(resources)) {
+      const arr = Array.isArray(items) ? items as Record<string, unknown>[] : []
+      const filteredArr = searchQuery
+        ? arr.filter((item) => {
+            const searchLower = searchQuery.toLowerCase()
+            return Object.values(item).some((value) => {
+              if (value === null || value === undefined) return false
+              return String(value).toLowerCase().includes(searchLower)
+            })
+          })
+        : arr
+      const currentPage = pages[type] ?? 0
+      const paginatedItems = filteredArr.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+      for (const item of paginatedItems) {
+        allVisibleItems.push({ service, type, id: String((item as Record<string, unknown>).id ?? '') })
+      }
+    }
+  }
+
+  // Reset row selection when service or resources change
+  useEffect(() => {
+    setSelectedRow(-1)
+  }, [service, resources, searchQuery])
+
+  // Page-level keyboard shortcuts
   useKeyboardShortcuts(
     [
-      { key: '?', handler: () => setShowShortcuts(true), shift: true },
       { key: '/', handler: () => searchInputRef.current?.focus() },
       { key: 'Escape', handler: () => {
         if (detail) setDetail(null)
+        else if (selectedRow >= 0) setSelectedRow(-1)
         else searchInputRef.current?.blur()
       }},
       { key: 'r', handler: () => refreshResources() },
       { key: '[', handler: () => {
-        if (!service) return
+        if (services.length === 0) return
+        if (!service) {
+          navigate(`/resources/${services[services.length - 1][0]}`)
+          return
+        }
         const idx = services.findIndex(([name]) => name === service)
         if (idx > 0) navigate(`/resources/${services[idx - 1][0]}`)
       }},
       { key: ']', handler: () => {
-        if (!service) return
+        if (services.length === 0) return
+        if (!service) {
+          navigate(`/resources/${services[0][0]}`)
+          return
+        }
         const idx = services.findIndex(([name]) => name === service)
         if (idx >= 0 && idx < services.length - 1) navigate(`/resources/${services[idx + 1][0]}`)
       }},
-    ],
-    [
-      { sequence: ['g', 'd'], handler: () => navigate('/') },
-      { sequence: ['g', 'r'], handler: () => navigate('/resources') },
+      { key: 'j', handler: () => {
+        if (allVisibleItems.length === 0) return
+        setSelectedRow((prev) => Math.min(prev + 1, allVisibleItems.length - 1))
+      }},
+      { key: 'k', handler: () => {
+        if (allVisibleItems.length === 0) return
+        setSelectedRow((prev) => Math.max(prev - 1, 0))
+      }},
+      { key: 'Enter', handler: () => {
+        if (selectedRow >= 0 && selectedRow < allVisibleItems.length) {
+          const item = allVisibleItems[selectedRow]
+          openDetail(item.service, item.type, item.id)
+        }
+      }},
     ]
   )
 
   return (
-    <>
-      <KeyboardShortcutsModal open={showShortcuts} onOpenChange={setShowShortcuts} />
-      <div className="flex h-full">
-        {/* Service sidebar */}
+    <div className="flex h-full">
+      {/* Service sidebar */}
       <ScrollArea className="w-52 border-r bg-card/50">
         <div className="px-3 py-3 border-b">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Services</h3>
@@ -258,7 +300,10 @@ export default function ResourceBrowser() {
           </div>
         )}
 
-        {service && !SERVICE_VIEWS[service] && resources && (
+        {service && !SERVICE_VIEWS[service] && resources && (() => {
+          let globalRowIdx = 0
+
+          return (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -358,11 +403,15 @@ export default function ResourceBrowser() {
                       <>
                         <Table>
                           <TableBody>
-                            {paginatedItems.map((item, i) => (
+                            {paginatedItems.map((item, i) => {
+                              const rowIdx = globalRowIdx++
+                              const isSelected = rowIdx === selectedRow
+                              return (
                               <TableRow
                                 key={i}
-                                className="cursor-pointer"
+                                className={`cursor-pointer ${isSelected ? 'bg-accent' : ''}`}
                                 onClick={() => openDetail(service, type, String(item.id ?? i))}
+                                data-row-index={rowIdx}
                               >
                                 <TableCell className="text-primary font-mono font-medium text-xs">
                                   {String(item.id ?? i)}
@@ -375,7 +424,8 @@ export default function ResourceBrowser() {
                                     .join(' | ')}
                                 </TableCell>
                               </TableRow>
-                            ))}
+                              )
+                            })}
                           </TableBody>
                         </Table>
                         <PaginationBar
@@ -392,7 +442,8 @@ export default function ResourceBrowser() {
               )
             })}
           </div>
-        )}
+          )
+        })()}
 
         {/* Detail Sheet */}
         <Sheet open={!!detail} onOpenChange={(open) => !open && setDetail(null)}>
@@ -410,6 +461,5 @@ export default function ResourceBrowser() {
         </Sheet>
       </div>
     </div>
-    </>
   )
 }

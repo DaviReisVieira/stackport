@@ -3,13 +3,12 @@ import { useFetch } from '../hooks/useFetch'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { fetchStats } from '../lib/api'
 import type { StatsResponse } from '../lib/types'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getServiceIcon } from '@/lib/service-icons'
-import { KeyboardShortcutsModal } from '@/components/KeyboardShortcutsModal'
 import { RefreshCw, AlertTriangle } from 'lucide-react'
 
 function formatUptime(seconds: number): string {
@@ -38,24 +37,15 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function Dashboard() {
-  const navigate = useNavigate()
   const statsFetcher = useCallback(() => fetchStats(), [])
   const { data: stats, error, refresh } = useFetch<StatsResponse>(statsFetcher, 5000)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [, setTick] = useState(0)
-  const [showShortcuts, setShowShortcuts] = useState(false)
 
-  // Keyboard shortcuts
-  useKeyboardShortcuts(
-    [
-      { key: '?', handler: () => setShowShortcuts(true), shift: true },
-      { key: 'r', handler: () => refresh() },
-    ],
-    [
-      { sequence: ['g', 'd'], handler: () => navigate('/') },
-      { sequence: ['g', 'r'], handler: () => navigate('/resources') },
-    ]
-  )
+  // Page-level keyboard shortcuts
+  useKeyboardShortcuts([
+    { key: 'r', handler: () => refresh() },
+  ])
 
   useEffect(() => {
     if (stats) setLastUpdated(new Date())
@@ -106,9 +96,7 @@ export default function Dashboard() {
   const services = Object.entries(stats.services)
 
   return (
-    <>
-      <KeyboardShortcutsModal open={showShortcuts} onOpenChange={setShowShortcuts} />
-      <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -168,6 +156,5 @@ export default function Dashboard() {
         })}
       </div>
     </div>
-    </>
   )
 }

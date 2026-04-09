@@ -1,7 +1,11 @@
-import { NavLink } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import { LayoutDashboard, FolderOpen } from 'lucide-react'
+import { LayoutDashboard, FolderOpen, Keyboard } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
+import { Button } from '@/components/ui/button'
+import { KeyboardShortcutsModal } from '@/components/KeyboardShortcutsModal'
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import type { LucideIcon } from 'lucide-react'
 
 const NAV_ITEMS: { to: string; label: string; icon: LucideIcon }[] = [
@@ -10,8 +14,25 @@ const NAV_ITEMS: { to: string; label: string; icon: LucideIcon }[] = [
 ]
 
 export default function Layout({ children }: { children: ReactNode }) {
+  const navigate = useNavigate()
+  const [showShortcuts, setShowShortcuts] = useState(false)
+
+  // Global keyboard shortcuts (available on all pages)
+  useKeyboardShortcuts(
+    [
+      { key: '?', handler: () => setShowShortcuts(true), shift: true },
+      { key: 'Escape', handler: () => setShowShortcuts(false) },
+    ],
+    [
+      { sequence: ['g', 'd'], handler: () => navigate('/') },
+      { sequence: ['g', 'r'], handler: () => navigate('/resources') },
+    ]
+  )
+
   return (
     <div className="flex h-screen bg-background text-foreground">
+      <KeyboardShortcutsModal open={showShortcuts} onOpenChange={setShowShortcuts} />
+
       {/* Sidebar */}
       <nav aria-label="Main navigation" className="w-56 bg-card border-r flex flex-col">
         <div className="px-4 py-4 flex items-center gap-3">
@@ -43,8 +64,18 @@ export default function Layout({ children }: { children: ReactNode }) {
           ))}
         </ul>
         <Separator />
-        <div className="px-4 py-3 text-xs text-muted-foreground">
-          StackPort
+        <div className="px-4 py-2.5 flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">StackPort</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 gap-1.5 text-muted-foreground hover:text-foreground px-1.5"
+            onClick={() => setShowShortcuts(true)}
+            title="Keyboard shortcuts"
+          >
+            <Keyboard className="h-3.5 w-3.5" />
+            <kbd className="text-[10px] bg-muted px-1 rounded">?</kbd>
+          </Button>
         </div>
       </nav>
 
