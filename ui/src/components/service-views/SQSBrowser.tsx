@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   fetchSQSQueues,
   fetchSQSQueueDetail,
@@ -434,10 +435,22 @@ function MessageViewerSheet({
 }
 
 export function SQSBrowser() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const queuesFetcher = useCallback(() => fetchSQSQueues(), [])
   const { data: queuesData, loading: queuesLoading } = useFetch<{ queues: SQSQueue[] }>(queuesFetcher, 10000)
 
-  const [selectedQueue, setSelectedQueue] = useState<string | null>(null)
+  // Read selected queue from URL params
+  const selectedQueue = searchParams.get('queue')
+
+  // Helper to update URL params
+  const setSelectedQueue = (queue: string | null) => {
+    if (queue === null) {
+      setSearchParams({})
+    } else {
+      setSearchParams({ queue })
+    }
+  }
+
   const [queueDetail, setQueueDetail] = useState<SQSQueueDetail | null>(null)
   const [messages, setMessages] = useState<SQSMessage[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)

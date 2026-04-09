@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   fetchDynamoDBTables,
   fetchDynamoDBTable,
@@ -143,10 +144,22 @@ function PaginationBar({
 }
 
 export function DynamoDBBrowser() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const tablesFetcher = useCallback(() => fetchDynamoDBTables(), [])
   const { data: tablesData, loading: tablesLoading } = useFetch<{ tables: DynamoDBTable[] }>(tablesFetcher, 10000)
 
-  const [selectedTable, setSelectedTable] = useState<string | null>(null)
+  // Read selected table from URL params
+  const selectedTable = searchParams.get('table')
+
+  // Helper to update URL params
+  const setSelectedTable = (table: string | null) => {
+    if (table === null) {
+      setSearchParams({})
+    } else {
+      setSearchParams({ table })
+    }
+  }
+
   const [tableDetail, setTableDetail] = useState<DynamoDBTableDetail | null>(null)
   const [itemsData, setItemsData] = useState<DynamoDBScanResponse | null>(null)
   const [loadingItems, setLoadingItems] = useState(false)

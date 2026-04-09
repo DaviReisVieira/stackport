@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useFetch } from '../hooks/useFetch'
@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
+import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/components/Breadcrumb'
 import { SERVICE_VIEWS } from '@/components/service-views'
 import { getServiceIcon } from '@/lib/service-icons'
 import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
@@ -153,6 +154,16 @@ export default function ResourceBrowser() {
   }
 
   const services = stats ? Object.entries(stats.services) : []
+
+  // Build breadcrumb segments for generic resource view
+  const breadcrumbSegments = useMemo<BreadcrumbSegment[]>(() => {
+    if (!service || SERVICE_VIEWS[service]) return [] // Service views manage their own breadcrumbs
+    return [
+      createHomeSegment(),
+      { label: 'Resources', href: '/resources' },
+      { label: service, icon: getServiceIcon(service) },
+    ]
+  }, [service])
 
   // Compute flat list of all visible resource items for j/k navigation
   const allVisibleItems: { service: string; type: string; id: string }[] = []
@@ -304,7 +315,12 @@ export default function ResourceBrowser() {
           let globalRowIdx = 0
 
           return (
-          <div className="space-y-6">
+          <div className="space-y-4">
+            {/* Breadcrumb */}
+            {breadcrumbSegments.length > 0 && (
+              <Breadcrumb segments={breadcrumbSegments} />
+            )}
+
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {(() => { const Icon = getServiceIcon(service); return <Icon className="h-5 w-5 text-muted-foreground" /> })()}

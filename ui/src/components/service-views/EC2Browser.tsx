@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   fetchEC2Instances,
   fetchEC2InstanceDetail,
@@ -315,12 +316,25 @@ export function EC2Browser() {
   const sgFetcher = useCallback(() => fetchEC2SecurityGroups(), [])
   const vpcsFetcher = useCallback(() => fetchEC2VPCs(), [])
 
+  const [searchParams, setSearchParams] = useSearchParams()
+
   const { data: instancesData, loading: instancesLoading, refresh: refreshInstances } = useFetch<{ instances: EC2Instance[] }>(instancesFetcher, 10000)
   const { data: sgData, loading: sgLoading } = useFetch<{ securityGroups: EC2SecurityGroup[] }>(sgFetcher, 10000)
   const { data: vpcsData, loading: vpcsLoading } = useFetch<{ vpcs: EC2VPC[] }>(vpcsFetcher, 10000)
 
+  // Read selected instance from URL params
+  const selectedInstance = searchParams.get('instance')
+
+  // Helper to update URL params
+  const setSelectedInstance = (instance: string | null) => {
+    if (instance === null) {
+      setSearchParams({})
+    } else {
+      setSearchParams({ instance })
+    }
+  }
+
   const [instanceSearch, setInstanceSearch] = useState('')
-  const [selectedInstance, setSelectedInstance] = useState<string | null>(null)
 
   const filteredInstances = useMemo(() => {
     if (!instancesData?.instances) return []

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   fetchLambdaFunctions,
   fetchLambdaFunction,
@@ -331,13 +332,25 @@ function InvokeSheet({
 }
 
 export function LambdaBrowser() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const functionsFetcher = useCallback(() => fetchLambdaFunctions(), [])
   const { data: functionsData, loading: functionsLoading } = useFetch<{ functions: LambdaFunction[] }>(
     functionsFetcher,
     10000
   )
 
-  const [selectedFunction, setSelectedFunction] = useState<string | null>(null)
+  // Read selected function from URL params
+  const selectedFunction = searchParams.get('function')
+
+  // Helper to update URL params
+  const setSelectedFunction = (func: string | null) => {
+    if (func === null) {
+      setSearchParams({})
+    } else {
+      setSearchParams({ function: func })
+    }
+  }
+
   const [functionDetail, setFunctionDetail] = useState<LambdaFunctionDetail | null>(null)
   const [eventSources, setEventSources] = useState<LambdaEventSourceMapping[]>([])
   const [aliases, setAliases] = useState<LambdaAlias[]>([])

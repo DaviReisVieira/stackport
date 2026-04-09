@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { fetchLogGroups, fetchLogStreams, fetchLogEvents } from '@/lib/api'
 import type { LogEvent, LogGroupsResponse, LogStreamsResponse } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -106,10 +107,33 @@ function LogEventView({ event }: { event: LogEvent }) {
 }
 
 export function LogsBrowser() {
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Read selected group and stream from URL params
+  const selectedGroup = searchParams.get('group')
+  const selectedStream = searchParams.get('stream')
+
+  // Helpers to update URL params
+  const setSelectedGroup = (group: string | null) => {
+    if (group === null) {
+      setSearchParams({})
+    } else {
+      setSearchParams({ group })
+    }
+  }
+
+  const setSelectedStream = (stream: string | null) => {
+    if (stream === null && selectedGroup) {
+      setSearchParams({ group: selectedGroup })
+    } else if (stream && selectedGroup) {
+      setSearchParams({ group: selectedGroup, stream })
+    } else {
+      setSearchParams({})
+    }
+  }
+
   const [groupSearch, setGroupSearch] = useState('')
   const [streamSearch, setStreamSearch] = useState('')
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
-  const [selectedStream, setSelectedStream] = useState<string | null>(null)
 
   // Events state
   const [events, setEvents] = useState<LogEvent[]>([])
