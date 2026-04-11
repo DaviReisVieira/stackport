@@ -15,12 +15,19 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/components/Breadcrumb'
 import { SERVICE_VIEWS } from '@/components/service-views'
 import { getServiceIcon } from '@/lib/service-icons'
-import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X, Star } from 'lucide-react'
+import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X, Star, Download } from 'lucide-react'
+import { exportData } from '@/lib/export'
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100]
 
@@ -463,11 +470,60 @@ export default function ResourceBrowser() {
                   <CardHeader className="p-4 pb-2">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-medium">{type}</CardTitle>
-                      <Badge variant="secondary" className="text-[10px]">
-                        {searchQuery && filteredArr.length !== arr.length
-                          ? `${filteredArr.length} of ${arr.length} items`
-                          : `${arr.length} items`}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-[10px]">
+                          {searchQuery && filteredArr.length !== arr.length
+                            ? `${filteredArr.length} of ${arr.length} items`
+                            : `${arr.length} items`}
+                        </Badge>
+                        {filteredArr.length > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-6 w-6" title="Export">
+                                <Download className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  try {
+                                    exportData({
+                                      service,
+                                      resourceType: type,
+                                      data: filteredArr,
+                                      format: 'json',
+                                    })
+                                  } catch (e) {
+                                    toast.error('Export failed', {
+                                      description: e instanceof Error ? e.message : 'Unknown error',
+                                    })
+                                  }
+                                }}
+                              >
+                                Export as JSON
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  try {
+                                    exportData({
+                                      service,
+                                      resourceType: type,
+                                      data: filteredArr,
+                                      format: 'csv',
+                                    })
+                                  } catch (e) {
+                                    toast.error('Export failed', {
+                                      description: e instanceof Error ? e.message : 'Unknown error',
+                                    })
+                                  }
+                                }}
+                              >
+                                Export as CSV
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="p-0">
