@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect } from 'react'
 import { useFetch } from '../hooks/useFetch'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useFavorites } from '../hooks/useFavorites'
 import { fetchStats } from '../lib/api'
 import type { StatsResponse } from '../lib/types'
 import { Link } from 'react-router-dom'
@@ -9,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getServiceIcon } from '@/lib/service-icons'
-import { RefreshCw, AlertTriangle } from 'lucide-react'
+import { RefreshCw, AlertTriangle, Star } from 'lucide-react'
 
 function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600)
@@ -39,6 +40,7 @@ function StatusBadge({ status }: { status: string }) {
 export default function Dashboard() {
   const statsFetcher = useCallback(() => fetchStats(), [])
   const { data: stats, error, refresh } = useFetch<StatsResponse>(statsFetcher, 5000)
+  const { favorites, toggleFavorite, isFavorite } = useFavorites()
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [, setTick] = useState(0)
 
@@ -95,6 +97,71 @@ export default function Dashboard() {
 
   const services = Object.entries(stats.services)
 
+  // Split services into favorites and non-favorites
+  const favoriteServices = favorites
+    .map((favName) => services.find(([name]) => name === favName))
+    .filter((s): s is [string, typeof stats.services[string]] => s !== undefined)
+
+  const nonFavoriteServices = services
+    .filter(([name]) => !favorites.includes(name))
+    .sort((a, b) => a[0].localeCompare(b[0]))
+
+  const renderServiceCard = ([name, svc]: [string, typeof stats.services[string]]) => {
+    const totalRes = Object.values(svc.resources).reduce((a, b) => a + b, 0)
+    const Icon = getServiceIcon(name)
+    const favorite = isFavorite(name)
+
+    return (
+      <Card key={name} className="hover:bg-accent/50 transition-colors h-full group">
+        <CardHeader className="p-4 pb-2">
+          <div className="flex items-center justify-between">
+            <Link to={`/resources/${name}`} className="flex items-center gap-2 flex-1 min-w-0">
+              <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <CardTitle className="text-sm font-medium truncate">{name}</CardTitle>
+            </Link>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => {
+                  e.preventDefault()
+                  toggleFavorite(name)
+                }}
+                title={favorite ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <Star className={`h-3.5 w-3.5 ${favorite ? 'fill-yellow-500 text-yellow-500' : ''}`} />
+              </Button>
+              <StatusBadge status={svc.status} />
+            </div>
+          </div>
+        </CardHeader>
+        <Link to={`/resources/${name}`}>
+          <CardContent className="p-4 pt-0">
+            <div className="space-y-1">
+              {Object.entries(svc.resources).map(([label, count]) => (
+                <div key={label} className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className={count > 0 ? 'text-primary font-medium' : 'text-muted-foreground/50'}>
+                    {count}
+                  </span>
+                </div>
+              ))}
+              {Object.keys(svc.resources).length === 0 && (
+                <div className="text-xs text-muted-foreground/50">No tracked resources</div>
+              )}
+            </div>
+            {totalRes > 0 && (
+              <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
+                {totalRes} total
+              </div>
+            )}
+          </CardContent>
+        </Link>
+      </Card>
+    )
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -113,47 +180,24 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      {/* Service Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-        {services.map(([name, svc]) => {
-          const totalRes = Object.values(svc.resources).reduce((a, b) => a + b, 0)
-          const Icon = getServiceIcon(name)
-          return (
-            <Link key={name} to={`/resources/${name}`}>
-              <Card className="hover:bg-accent/50 transition-colors h-full">
-                <CardHeader className="p-4 pb-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Icon className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-sm font-medium">{name}</CardTitle>
-                    </div>
-                    <StatusBadge status={svc.status} />
-                  </div>
-                </CardHeader>
-                <CardContent className="p-4 pt-0">
-                  <div className="space-y-1">
-                    {Object.entries(svc.resources).map(([label, count]) => (
-                      <div key={label} className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">{label}</span>
-                        <span className={count > 0 ? 'text-primary font-medium' : 'text-muted-foreground/50'}>
-                          {count}
-                        </span>
-                      </div>
-                    ))}
-                    {Object.keys(svc.resources).length === 0 && (
-                      <div className="text-xs text-muted-foreground/50">No tracked resources</div>
-                    )}
-                  </div>
-                  {totalRes > 0 && (
-                    <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
-                      {totalRes} total
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </Link>
-          )
-        })}
+      {/* Favorites Section */}
+      {favoriteServices.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Favorites</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {favoriteServices.map(renderServiceCard)}
+          </div>
+        </div>
+      )}
+
+      {/* All Services Section */}
+      <div className="space-y-3">
+        {favoriteServices.length > 0 && (
+          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">All Services</h3>
+        )}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          {nonFavoriteServices.map(renderServiceCard)}
+        </div>
       </div>
     </div>
   )

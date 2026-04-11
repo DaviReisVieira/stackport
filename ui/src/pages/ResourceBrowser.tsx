@@ -3,8 +3,9 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useFetch } from '../hooks/useFetch'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useFavorites } from '../hooks/useFavorites'
 import { fetchStats, fetchResources, fetchResourceDetail } from '../lib/api'
-import type { StatsResponse, ResourceListResponse, ResourceDetailResponse } from '../lib/types'
+import type { StatsResponse, ServiceStats, ResourceListResponse, ResourceDetailResponse } from '../lib/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -19,7 +20,7 @@ import { JsonViewer } from '@/components/JsonViewer'
 import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/components/Breadcrumb'
 import { SERVICE_VIEWS } from '@/components/service-views'
 import { getServiceIcon } from '@/lib/service-icons'
-import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X, Star } from 'lucide-react'
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100]
 
@@ -84,6 +85,7 @@ export default function ResourceBrowser() {
   const navigate = useNavigate()
   const statsFetcher = useCallback(() => fetchStats(), [])
   const { data: stats } = useFetch<StatsResponse>(statsFetcher, 10000)
+  const { favorites, toggleFavorite } = useFavorites()
   const [resources, setResources] = useState<Record<string, unknown[]> | null>(null)
   const [detail, setDetail] = useState<ResourceDetailResponse | null>(null)
   const [loadingResources, setLoadingResources] = useState(false)
@@ -153,7 +155,19 @@ export default function ResourceBrowser() {
       .finally(() => setLoadingResources(false))
   }
 
-  const services = stats ? Object.entries(stats.services) : []
+  const allServices = stats ? Object.entries(stats.services) : []
+
+  // Split services into favorites and non-favorites for sidebar
+  const favoriteSidebarServices = favorites
+    .map((favName) => allServices.find(([name]) => name === favName))
+    .filter((s): s is [string, ServiceStats] => s !== undefined)
+
+  const nonFavoriteSidebarServices = allServices
+    .filter(([name]) => !favorites.includes(name))
+    .sort((a, b) => a[0].localeCompare(b[0]))
+
+  // Combined list for keyboard navigation (favorites first, then rest)
+  const services = [...favoriteSidebarServices, ...nonFavoriteSidebarServices]
 
   // Build breadcrumb segments for generic resource view
   const breadcrumbSegments = useMemo<BreadcrumbSegment[]>(() => {
@@ -244,30 +258,83 @@ export default function ResourceBrowser() {
         <div className="px-3 py-3 border-b">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Services</h3>
         </div>
+        {favoriteSidebarServices.length > 0 && (
+          <>
+            <div className="px-3 pt-2 pb-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Favorites</span>
+            </div>
+            <ul className="py-0.5">
+              {favoriteSidebarServices.map(([name, svc]) => {
+                const total = Object.values(svc.resources).reduce((a, b) => a + b, 0)
+                const Icon = getServiceIcon(name)
+                return (
+                  <li key={name} className="group">
+                    <div className={`flex items-center px-3 py-2 text-sm transition-colors ${
+                      service === name
+                        ? 'bg-accent text-accent-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    }`}>
+                      <Link to={`/resources/${name}`} className="flex items-center gap-2 truncate flex-1 min-w-0">
+                        <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="truncate">{name}</span>
+                      </Link>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => toggleFavorite(name)}
+                          className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Remove from favorites"
+                        >
+                          <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
+                        </button>
+                        {total > 0 && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-1">
+                            {total}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="mx-3 border-b" />
+          </>
+        )}
+        {favoriteSidebarServices.length > 0 && (
+          <div className="px-3 pt-2 pb-1">
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">All Services</span>
+          </div>
+        )}
         <ul className="py-1">
-          {services.map(([name, svc]) => {
+          {nonFavoriteSidebarServices.map(([name, svc]) => {
             const total = Object.values(svc.resources).reduce((a, b) => a + b, 0)
             const Icon = getServiceIcon(name)
             return (
-              <li key={name}>
-                <Link
-                  to={`/resources/${name}`}
-                  className={`flex items-center justify-between px-3 py-2 text-sm transition-colors ${
-                    service === name
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                  }`}
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <Icon className="h-3.5 w-3.5" />
-                    {name}
-                  </span>
-                  {total > 0 && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-2">
-                      {total}
-                    </Badge>
-                  )}
-                </Link>
+              <li key={name} className="group">
+                <div className={`flex items-center px-3 py-2 text-sm transition-colors ${
+                  service === name
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                }`}>
+                  <Link to={`/resources/${name}`} className="flex items-center gap-2 truncate flex-1 min-w-0">
+                    <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="truncate">{name}</span>
+                  </Link>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => toggleFavorite(name)}
+                      className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Add to favorites"
+                    >
+                      <Star className="h-3 w-3" />
+                    </button>
+                    {total > 0 && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-1">
+                        {total}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
               </li>
             )
           })}
