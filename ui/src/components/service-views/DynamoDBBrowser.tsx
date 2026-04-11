@@ -22,6 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
+import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
@@ -288,6 +289,7 @@ export function DynamoDBBrowser() {
             <Database className="h-5 w-5 text-muted-foreground" />
             <h2 className="text-xl font-bold">DynamoDB Tables</h2>
             <Badge variant="secondary">{tables.length}</Badge>
+            {filteredTables.length > 0 && <ExportDropdown service="dynamodb" resourceType="tables" data={filteredTables as unknown as Record<string, unknown>[]} />}
           </div>
           {tables.length > 0 && (
             <div className="flex items-center gap-2">
@@ -438,6 +440,7 @@ export function DynamoDBBrowser() {
                   {itemsData.count} items (scanned {itemsData.scanned_count})
                 </span>
               )}
+              {items.length > 0 && <ExportDropdown service="dynamodb" resourceType="items" data={items as unknown as Record<string, unknown>[]} />}
             </div>
             {mode === 'scan' && (
               <Button size="sm" onClick={loadItems} disabled={loadingItems} className="h-8">

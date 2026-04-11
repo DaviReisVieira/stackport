@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/EmptyState'
+import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
@@ -750,6 +751,7 @@ export function LambdaBrowser() {
             className="pl-9"
           />
         </div>
+        {filteredFunctions.length > 0 && <ExportDropdown service="lambda" resourceType="functions" data={filteredFunctions as unknown as Record<string, unknown>[]} />}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

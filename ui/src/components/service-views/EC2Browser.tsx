@@ -25,6 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
+import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
@@ -393,13 +394,16 @@ export function EC2Browser() {
             <CardHeader>
               <CardTitle className="text-base flex items-center justify-between">
                 <span>EC2 Instances</span>
-                <Input
-                  type="text"
-                  placeholder="Search instances..."
-                  value={instanceSearch}
-                  onChange={(e) => setInstanceSearch(e.target.value)}
-                  className="w-64"
-                />
+                <div className="flex items-center gap-2">
+                  {filteredInstances.length > 0 && <ExportDropdown service="ec2" resourceType="instances" data={filteredInstances as unknown as Record<string, unknown>[]} />}
+                  <Input
+                    type="text"
+                    placeholder="Search instances..."
+                    value={instanceSearch}
+                    onChange={(e) => setInstanceSearch(e.target.value)}
+                    className="w-64"
+                  />
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -452,7 +456,10 @@ export function EC2Browser() {
         <TabsContent value="security-groups" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Security Groups</CardTitle>
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>Security Groups</span>
+                {sgData && sgData.securityGroups.length > 0 && <ExportDropdown service="ec2" resourceType="security-groups" data={sgData.securityGroups as unknown as Record<string, unknown>[]} />}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {sgLoading && <Skeleton className="h-64 w-full" />}
@@ -494,7 +501,10 @@ export function EC2Browser() {
         <TabsContent value="vpcs" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">VPCs</CardTitle>
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>VPCs</span>
+                {vpcsData && vpcsData.vpcs.length > 0 && <ExportDropdown service="ec2" resourceType="vpcs" data={vpcsData.vpcs as unknown as Record<string, unknown>[]} />}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {vpcsLoading && <Skeleton className="h-64 w-full" />}

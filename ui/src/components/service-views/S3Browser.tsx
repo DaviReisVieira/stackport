@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
+import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/components/Breadcrumb'
 import { useFetch } from '@/hooks/useFetch'
@@ -301,6 +302,7 @@ export function S3Browser() {
             <HardDrive className="h-5 w-5 text-muted-foreground" />
             <h2 className="text-xl font-bold">S3 Buckets</h2>
             <Badge variant="secondary">{buckets.length}</Badge>
+            {filteredBuckets.length > 0 && <ExportDropdown service="s3" resourceType="buckets" data={filteredBuckets as unknown as Record<string, unknown>[]} />}
           </div>
           {buckets.length > 0 && (
             <div className="flex items-center gap-2">
@@ -431,16 +433,19 @@ export function S3Browser() {
               )}
             </div>
             {objectsData && (objectsData.folders.length > 0 || objectsData.files.length > 0) && (
-              <div className="relative w-56">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  ref={fileSearchRef}
-                  placeholder="Search files..."
-                  value={fileSearch}
-                  onChange={(e) => { setFileSearch(e.target.value); setFilePage(0) }}
-                  className="pl-8 h-8 text-sm"
-                  aria-label="Search files and folders"
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative w-56">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    ref={fileSearchRef}
+                    placeholder="Search files..."
+                    value={fileSearch}
+                    onChange={(e) => { setFileSearch(e.target.value); setFilePage(0) }}
+                    className="pl-8 h-8 text-sm"
+                    aria-label="Search files and folders"
+                  />
+                </div>
+                {filteredFiles.length > 0 && <ExportDropdown service="s3" resourceType="objects" data={filteredFiles as unknown as Record<string, unknown>[]} />}
               </div>
             )}
           </div>

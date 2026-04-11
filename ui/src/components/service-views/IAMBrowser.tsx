@@ -32,6 +32,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
+import { ExportDropdown } from '@/components/ExportDropdown'
 import {
   Users,
   User,
@@ -855,13 +856,16 @@ export function IAMBrowser() {
             <CardHeader>
               <CardTitle className="text-base flex items-center justify-between">
                 <span>IAM Users</span>
-                <Input
-                  type="text"
-                  placeholder="Search users..."
-                  value={userSearch}
-                  onChange={(e) => setUserSearch(e.target.value)}
-                  className="w-64"
-                />
+                <div className="flex items-center gap-2">
+                  {filteredUsers.length > 0 && <ExportDropdown service="iam" resourceType="users" data={filteredUsers as unknown as Record<string, unknown>[]} />}
+                  <Input
+                    type="text"
+                    placeholder="Search users..."
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    className="w-64"
+                  />
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -908,13 +912,16 @@ export function IAMBrowser() {
             <CardHeader>
               <CardTitle className="text-base flex items-center justify-between">
                 <span>IAM Groups</span>
-                <Input
-                  type="text"
-                  placeholder="Search groups..."
-                  value={groupSearch}
-                  onChange={(e) => setGroupSearch(e.target.value)}
-                  className="w-64"
-                />
+                <div className="flex items-center gap-2">
+                  {filteredGroups.length > 0 && <ExportDropdown service="iam" resourceType="groups" data={filteredGroups as unknown as Record<string, unknown>[]} />}
+                  <Input
+                    type="text"
+                    placeholder="Search groups..."
+                    value={groupSearch}
+                    onChange={(e) => setGroupSearch(e.target.value)}
+                    className="w-64"
+                  />
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -961,13 +968,16 @@ export function IAMBrowser() {
             <CardHeader>
               <CardTitle className="text-base flex items-center justify-between">
                 <span>IAM Roles</span>
-                <Input
-                  type="text"
-                  placeholder="Search roles..."
-                  value={roleSearch}
-                  onChange={(e) => setRoleSearch(e.target.value)}
-                  className="w-64"
-                />
+                <div className="flex items-center gap-2">
+                  {filteredRoles.length > 0 && <ExportDropdown service="iam" resourceType="roles" data={filteredRoles as unknown as Record<string, unknown>[]} />}
+                  <Input
+                    type="text"
+                    placeholder="Search roles..."
+                    value={roleSearch}
+                    onChange={(e) => setRoleSearch(e.target.value)}
+                    className="w-64"
+                  />
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1014,13 +1024,16 @@ export function IAMBrowser() {
             <CardHeader>
               <CardTitle className="text-base flex items-center justify-between">
                 <span>IAM Policies (Customer Managed)</span>
-                <Input
-                  type="text"
-                  placeholder="Search policies..."
-                  value={policySearch}
-                  onChange={(e) => setPolicySearch(e.target.value)}
-                  className="w-64"
-                />
+                <div className="flex items-center gap-2">
+                  {filteredPolicies.length > 0 && <ExportDropdown service="iam" resourceType="policies" data={filteredPolicies as unknown as Record<string, unknown>[]} />}
+                  <Input
+                    type="text"
+                    placeholder="Search policies..."
+                    value={policySearch}
+                    onChange={(e) => setPolicySearch(e.target.value)}
+                    className="w-64"
+                  />
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>

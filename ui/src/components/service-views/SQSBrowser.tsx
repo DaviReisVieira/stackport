@@ -25,6 +25,7 @@ import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { ExportDropdown } from '@/components/ExportDropdown'
 import { toast } from 'sonner'
 import {
   Inbox,
@@ -779,6 +780,7 @@ export function SQSBrowser() {
             className="pl-9"
           />
         </div>
+        {filteredQueues.length > 0 && <ExportDropdown service="sqs" resourceType="queues" data={filteredQueues as unknown as Record<string, unknown>[]} />}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

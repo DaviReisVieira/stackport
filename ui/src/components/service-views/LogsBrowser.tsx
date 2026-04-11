@@ -14,6 +14,7 @@ import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { useFetch } from '@/hooks/useFetch'
+import { ExportDropdown } from '@/components/ExportDropdown'
 import { ScrollText, Search, FileText, Clock, Play, Pause, Copy, Filter, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -435,6 +436,7 @@ export function LogsBrowser() {
                 {events.length}
               </Badge>
             )}
+            {events.length > 0 && <ExportDropdown service="logs" resourceType="events" data={events as unknown as Record<string, unknown>[]} />}
           </div>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col gap-3 overflow-hidden">
