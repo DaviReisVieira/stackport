@@ -12,13 +12,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { SERVICE_VIEWS } from '@/components/service-views'
 import { getServiceIcon } from '@/lib/service-icons'
 import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X, Download } from 'lucide-react'
-import { handleExport } from '../lib/export'
+import { handleExport } from '@/lib/export'
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100]
 
@@ -302,16 +303,22 @@ export default function ResourceBrowser() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <CardTitle className="text-sm font-medium">{type}</CardTitle>
-                        <Select onValueChange={(format: 'json' | 'csv') => handleExport(arr, format, service, type)}>
-                          <SelectTrigger className="h-6 w-auto border-none bg-transparent hover:bg-accent px-2 gap-1 text-[10px]">
-                            <Download className="h-3 w-3" />
-                            <span className="sr-only">Export</span>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="json">Export JSON</SelectItem>
-                            <SelectItem value="csv">Export CSV</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-6 w-6">
+                              <Download className="h-3 w-3" />
+                              <span className="sr-only">Export</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            <DropdownMenuItem onClick={() => handleExport(arr, 'json', service, type)}>
+                              Export JSON
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleExport(arr, 'csv', service, type)}>
+                              Export CSV
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                       <Badge variant="secondary" className="text-[10px]">
                         {searchQuery && filteredArr.length !== arr.length

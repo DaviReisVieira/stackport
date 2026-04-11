@@ -12,6 +12,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { handleExport } from '@/lib/export'
 import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
 import {
@@ -239,6 +241,22 @@ export function S3Browser() {
           </div>
           {buckets.length > 0 && (
             <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <Download className="h-4 w-4" />
+                    <span className="sr-only">Export buckets</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => handleExport(buckets as unknown as Record<string, unknown>[], 'json', 's3', 'buckets')}>
+                    Export JSON
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport(buckets as unknown as Record<string, unknown>[], 'csv', 's3', 'buckets')}>
+                    Export CSV
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <div className="relative w-56">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
