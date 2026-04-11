@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   fetchDynamoDBTables,
   fetchDynamoDBTable,
   fetchDynamoDBItems,
   queryDynamoDBTable,
 } from '@/lib/api'
+import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import type {
   DynamoDBTable,
   DynamoDBTableDetail,
@@ -27,7 +29,6 @@ import { Label } from '@/components/ui/label'
 import {
   Database,
   Table as TableIcon,
-  ArrowLeft,
   Search,
   Key,
   Hash,
@@ -143,10 +144,22 @@ function PaginationBar({
 }
 
 export function DynamoDBBrowser() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const tablesFetcher = useCallback(() => fetchDynamoDBTables(), [])
   const { data: tablesData, loading: tablesLoading } = useFetch<{ tables: DynamoDBTable[] }>(tablesFetcher, 10000)
 
-  const [selectedTable, setSelectedTable] = useState<string | null>(null)
+  // Read selected table from URL params
+  const selectedTable = searchParams.get('table')
+
+  // Helper to update URL params
+  const setSelectedTable = (table: string | null) => {
+    if (table === null) {
+      setSearchParams({})
+    } else {
+      setSearchParams({ table })
+    }
+  }
+
   const [tableDetail, setTableDetail] = useState<DynamoDBTableDetail | null>(null)
   const [itemsData, setItemsData] = useState<DynamoDBScanResponse | null>(null)
   const [loadingItems, setLoadingItems] = useState(false)
@@ -269,6 +282,7 @@ export function DynamoDBBrowser() {
 
     return (
       <div className="space-y-4">
+        <Breadcrumb segments={[createHomeSegment(), { label: 'DynamoDB', icon: Database }]} />
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Database className="h-5 w-5 text-muted-foreground" />
@@ -378,20 +392,11 @@ export function DynamoDBBrowser() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            setSelectedTable(null)
-            setMode('scan')
-          }}
-          className="h-8"
-        >
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Tables
-        </Button>
-        <Separator orientation="vertical" className="h-5" />
-        <span className="text-sm font-medium">{selectedTable}</span>
+        <Breadcrumb segments={[
+          createHomeSegment(),
+          { label: 'DynamoDB', href: '/resources/dynamodb', icon: Database },
+          { label: selectedTable },
+        ]} />
         {tableDetail && (
           <>
             <Badge variant="secondary" className="text-xs">

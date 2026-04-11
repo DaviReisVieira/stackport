@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { fetchS3Buckets, fetchS3Objects, fetchS3Object, getS3DownloadUrl } from '@/lib/api'
 import type { S3Bucket, S3File, S3ObjectsResponse, S3ObjectDetail } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,7 +15,9 @@ import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { handleExport } from '@/lib/export'
+import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/components/Breadcrumb'
 import { useFetch } from '@/hooks/useFetch'
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { Input } from '@/components/ui/input'
 import {
   HardDrive,
@@ -126,11 +129,14 @@ function PaginationBar({
 }
 
 export function S3Browser() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const bucketsFetcher = useCallback(() => fetchS3Buckets(), [])
   const { data: bucketsData, loading: bucketsLoading } = useFetch<{ buckets: S3Bucket[] }>(bucketsFetcher, 10000)
 
-  const [selectedBucket, setSelectedBucket] = useState<string | null>(null)
-  const [prefix, setPrefix] = useState('')
+  // Read bucket and prefix from URL params
+  const selectedBucket = searchParams.get('bucket')
+  const prefix = searchParams.get('prefix') || ''
+
   const [objectsData, setObjectsData] = useState<S3ObjectsResponse | null>(null)
   const [loadingObjects, setLoadingObjects] = useState(false)
   const [objectDetail, setObjectDetail] = useState<S3ObjectDetail | null>(null)
@@ -139,6 +145,42 @@ export function S3Browser() {
   const [bucketPage, setBucketPage] = useState(0)
   const [filePage, setFilePage] = useState(0)
   const [pageSize, setPageSize] = useState(25)
+  const bucketSearchRef = useRef<HTMLInputElement>(null)
+  const fileSearchRef = useRef<HTMLInputElement>(null)
+
+  // Helper to update URL params
+  const setSelectedBucket = (bucket: string | null) => {
+    if (bucket === null) {
+      setSearchParams({})
+    } else {
+      setSearchParams({ bucket })
+    }
+  }
+
+  const setPrefix = (newPrefix: string) => {
+    if (selectedBucket) {
+      const params: Record<string, string> = { bucket: selectedBucket }
+      if (newPrefix) params.prefix = newPrefix
+      setSearchParams(params)
+    }
+  }
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts(
+    [
+      { key: 'Backspace', handler: () => {
+        if (selectedBucket && prefix) navigateUp()
+      }},
+      { key: 'Escape', handler: () => {
+        if (objectDetail) setObjectDetail(null)
+      }},
+      { key: '/', handler: () => {
+        if (selectedBucket) fileSearchRef.current?.focus()
+        else bucketSearchRef.current?.focus()
+      }},
+    ],
+    []
+  )
 
   useEffect(() => {
     if (!selectedBucket) {
@@ -175,7 +217,29 @@ export function S3Browser() {
     setFilePage(0)
   }
 
-  const breadcrumbs = prefix ? prefix.replace(/\/$/, '').split('/') : []
+  // Build breadcrumb segments from current state
+  const breadcrumbSegments: BreadcrumbSegment[] = useMemo(() => {
+    if (!selectedBucket) return []
+
+    const segments: BreadcrumbSegment[] = [
+      createHomeSegment(),
+      { label: 'S3', href: '/resources/s3' },
+      { label: selectedBucket, href: `/resources/s3?bucket=${selectedBucket}` },
+    ]
+
+    if (prefix) {
+      const folders = prefix.replace(/\/$/, '').split('/')
+      folders.forEach((folder, idx) => {
+        const folderPrefix = folders.slice(0, idx + 1).join('/') + '/'
+        segments.push({
+          label: folder,
+          href: `/resources/s3?bucket=${selectedBucket}&prefix=${encodeURIComponent(folderPrefix)}`,
+        })
+      })
+    }
+
+    return segments
+  }, [selectedBucket, prefix])
 
   const buckets = bucketsData?.buckets ?? []
   const filteredBuckets = bucketSearch
@@ -233,6 +297,7 @@ export function S3Browser() {
 
     return (
       <div className="space-y-4">
+        <Breadcrumb segments={[createHomeSegment(), { label: 'S3', icon: HardDrive }]} />
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <HardDrive className="h-5 w-5 text-muted-foreground" />
@@ -260,6 +325,7 @@ export function S3Browser() {
               <div className="relative w-56">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
+                  ref={bucketSearchRef}
                   placeholder="Search buckets..."
                   value={bucketSearch}
                   onChange={(e) => { setBucketSearch(e.target.value); setBucketPage(0) }}
@@ -359,30 +425,13 @@ export function S3Browser() {
   // Object browser view
   return (
     <div className="space-y-4">
-      {/* Header with breadcrumb */}
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => { setSelectedBucket(null); setPrefix('') }} className="h-8">
+      {/* Breadcrumb navigation */}
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={() => setSelectedBucket(null)} className="h-8">
           <ArrowLeft className="h-4 w-4 mr-1" />
-          Buckets
+          Back
         </Button>
-        <Separator orientation="vertical" className="h-5" />
-        <button
-          onClick={() => setPrefix('')}
-          className="text-sm font-medium hover:text-primary transition-colors"
-        >
-          {selectedBucket}
-        </button>
-        {breadcrumbs.map((crumb, i) => (
-          <span key={i} className="flex items-center gap-1">
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            <button
-              onClick={() => setPrefix(breadcrumbs.slice(0, i + 1).join('/') + '/')}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
-            >
-              {crumb}
-            </button>
-          </span>
-        ))}
+        <Breadcrumb segments={breadcrumbSegments} />
       </div>
 
       {/* Objects table */}
@@ -403,6 +452,7 @@ export function S3Browser() {
               <div className="relative w-56">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
+                  ref={fileSearchRef}
                   placeholder="Search files..."
                   value={fileSearch}
                   onChange={(e) => { setFileSearch(e.target.value); setFilePage(0) }}

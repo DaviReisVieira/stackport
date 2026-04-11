@@ -1,13 +1,19 @@
-# StackPort
+<p align="center">
+  <img src="docs/images/stackport_logo.svg" alt="StackPort — Universal AWS Resource Browser" width="150"/>
+</p>
 
-<p>
+<h1 align="center">StackPort</h1>
+<p align="center"><strong>Universal AWS resource browser for local emulators. Built to work with MiniStack, and also compatible with LocalStack, Moto, or any AWS-compatible endpoint.</strong></p>
+
+<p align="center">
   <a href="https://github.com/DaviReisVieira/stackport/actions/workflows/ci.yml"><img src="https://github.com/DaviReisVieira/stackport/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://pypi.org/project/stackport/"><img src="https://img.shields.io/pypi/v/stackport" alt="PyPI Version"></a>
   <a href="https://hub.docker.com/r/davireis/stackport"><img src="https://img.shields.io/docker/pulls/davireis/stackport" alt="Docker Pulls"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://hub.docker.com/r/davireis/stackport"><img src="https://img.shields.io/docker/image-size/davireis/stackport/latest" alt="Docker Image Size"></a>
+  <a href="https://github.com/DaviReisVieira/stackport/blob/master/LICENSE"><img src="https://img.shields.io/github/license/DaviReisVieira/stackport" alt="License"></a>
+  <img src="https://img.shields.io/badge/python-3.12-slim" alt="Python">
+  <a href="https://github.com/DaviReisVieira/stackport/stargazers"><img src="https://img.shields.io/github/stars/DaviReisVieira/stackport" alt="GitHub stars"></a>
 </p>
-
-Universal AWS resource browser for local emulators. Built to work with [**MiniStack**](https://github.com/Nahuel990/ministack), and also compatible with LocalStack, Moto, or any AWS-compatible endpoint.
 
 ## Screenshots
 

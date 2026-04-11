@@ -11,8 +11,18 @@
 import type { ComponentType } from 'react'
 import { S3Browser } from './S3Browser'
 import { DynamoDBBrowser } from './DynamoDBBrowser'
+import { LambdaBrowser } from './LambdaBrowser'
+import { SQSBrowser } from './SQSBrowser'
+import { IAMBrowser } from './IAMBrowser'
+import { EC2Browser } from './EC2Browser'
+import { LogsBrowser } from './LogsBrowser'
 
 export const SERVICE_VIEWS: Record<string, ComponentType> = {
   s3: S3Browser,
   dynamodb: DynamoDBBrowser,
+  lambda: LambdaBrowser,
+  sqs: SQSBrowser,
+  iam: IAMBrowser,
+  ec2: EC2Browser,
+  logs: LogsBrowser,
 }

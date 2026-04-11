@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useCallback, useEffect, useState, useRef, useMemo } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useFetch } from '../hooks/useFetch'
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useFavorites } from '../hooks/useFavorites'
 import { fetchStats, fetchResources, fetchResourceDetail } from '../lib/api'
-import type { StatsResponse, ResourceListResponse, ResourceDetailResponse } from '../lib/types'
+import type { StatsResponse, ServiceStats, ResourceListResponse, ResourceDetailResponse } from '../lib/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -14,12 +16,21 @@ import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
+import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/components/Breadcrumb'
 import { SERVICE_VIEWS } from '@/components/service-views'
 import { getServiceIcon } from '@/lib/service-icons'
 import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X, Download } from 'lucide-react'
 import { handleExport } from '@/lib/export'
+import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X, Star, Download } from 'lucide-react'
+import { exportData } from '@/lib/export'
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100]
 
@@ -81,8 +92,10 @@ function PaginationBar({
 
 export default function ResourceBrowser() {
   const { service } = useParams<{ service?: string }>()
+  const navigate = useNavigate()
   const statsFetcher = useCallback(() => fetchStats(), [])
   const { data: stats } = useFetch<StatsResponse>(statsFetcher, 10000)
+  const { favorites, toggleFavorite } = useFavorites()
   const [resources, setResources] = useState<Record<string, unknown[]> | null>(null)
   const [detail, setDetail] = useState<ResourceDetailResponse | null>(null)
   const [loadingResources, setLoadingResources] = useState(false)
@@ -92,6 +105,8 @@ export default function ResourceBrowser() {
   const [searchQuery, setSearchQuery] = useState('')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [, setTimestamp] = useState(0)
+  const [selectedRow, setSelectedRow] = useState(-1)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!service) {
@@ -150,7 +165,101 @@ export default function ResourceBrowser() {
       .finally(() => setLoadingResources(false))
   }
 
-  const services = stats ? Object.entries(stats.services) : []
+  const allServices = stats ? Object.entries(stats.services) : []
+
+  // Split services into favorites and non-favorites for sidebar
+  const favoriteSidebarServices = favorites
+    .map((favName) => allServices.find(([name]) => name === favName))
+    .filter((s): s is [string, ServiceStats] => s !== undefined)
+
+  const nonFavoriteSidebarServices = allServices
+    .filter(([name]) => !favorites.includes(name))
+    .sort((a, b) => a[0].localeCompare(b[0]))
+
+  // Combined list for keyboard navigation (favorites first, then rest)
+  const services = [...favoriteSidebarServices, ...nonFavoriteSidebarServices]
+
+  // Build breadcrumb segments for generic resource view
+  const breadcrumbSegments = useMemo<BreadcrumbSegment[]>(() => {
+    if (!service || SERVICE_VIEWS[service]) return [] // Service views manage their own breadcrumbs
+    return [
+      createHomeSegment(),
+      { label: 'Resources', href: '/resources' },
+      { label: service, icon: getServiceIcon(service) },
+    ]
+  }, [service])
+
+  // Compute flat list of all visible resource items for j/k navigation
+  const allVisibleItems: { service: string; type: string; id: string }[] = []
+  if (service && !SERVICE_VIEWS[service] && resources) {
+    for (const [type, items] of Object.entries(resources)) {
+      const arr = Array.isArray(items) ? items as Record<string, unknown>[] : []
+      const filteredArr = searchQuery
+        ? arr.filter((item) => {
+            const searchLower = searchQuery.toLowerCase()
+            return Object.values(item).some((value) => {
+              if (value === null || value === undefined) return false
+              return String(value).toLowerCase().includes(searchLower)
+            })
+          })
+        : arr
+      const currentPage = pages[type] ?? 0
+      const paginatedItems = filteredArr.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+      for (const item of paginatedItems) {
+        allVisibleItems.push({ service, type, id: String((item as Record<string, unknown>).id ?? '') })
+      }
+    }
+  }
+
+  // Reset row selection when service or resources change
+  useEffect(() => {
+    setSelectedRow(-1)
+  }, [service, resources, searchQuery])
+
+  // Page-level keyboard shortcuts
+  useKeyboardShortcuts(
+    [
+      { key: '/', handler: () => searchInputRef.current?.focus() },
+      { key: 'Escape', handler: () => {
+        if (detail) setDetail(null)
+        else if (selectedRow >= 0) setSelectedRow(-1)
+        else searchInputRef.current?.blur()
+      }},
+      { key: 'r', handler: () => refreshResources() },
+      { key: '[', handler: () => {
+        if (services.length === 0) return
+        if (!service) {
+          navigate(`/resources/${services[services.length - 1][0]}`)
+          return
+        }
+        const idx = services.findIndex(([name]) => name === service)
+        if (idx > 0) navigate(`/resources/${services[idx - 1][0]}`)
+      }},
+      { key: ']', handler: () => {
+        if (services.length === 0) return
+        if (!service) {
+          navigate(`/resources/${services[0][0]}`)
+          return
+        }
+        const idx = services.findIndex(([name]) => name === service)
+        if (idx >= 0 && idx < services.length - 1) navigate(`/resources/${services[idx + 1][0]}`)
+      }},
+      { key: 'j', handler: () => {
+        if (allVisibleItems.length === 0) return
+        setSelectedRow((prev) => Math.min(prev + 1, allVisibleItems.length - 1))
+      }},
+      { key: 'k', handler: () => {
+        if (allVisibleItems.length === 0) return
+        setSelectedRow((prev) => Math.max(prev - 1, 0))
+      }},
+      { key: 'Enter', handler: () => {
+        if (selectedRow >= 0 && selectedRow < allVisibleItems.length) {
+          const item = allVisibleItems[selectedRow]
+          openDetail(item.service, item.type, item.id)
+        }
+      }},
+    ]
+  )
 
   return (
     <div className="flex h-full">
@@ -159,30 +268,83 @@ export default function ResourceBrowser() {
         <div className="px-3 py-3 border-b">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Services</h3>
         </div>
+        {favoriteSidebarServices.length > 0 && (
+          <>
+            <div className="px-3 pt-2 pb-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Favorites</span>
+            </div>
+            <ul className="py-0.5">
+              {favoriteSidebarServices.map(([name, svc]) => {
+                const total = Object.values(svc.resources).reduce((a, b) => a + b, 0)
+                const Icon = getServiceIcon(name)
+                return (
+                  <li key={name} className="group">
+                    <div className={`flex items-center px-3 py-2 text-sm transition-colors ${
+                      service === name
+                        ? 'bg-accent text-accent-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    }`}>
+                      <Link to={`/resources/${name}`} className="flex items-center gap-2 truncate flex-1 min-w-0">
+                        <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="truncate">{name}</span>
+                      </Link>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => toggleFavorite(name)}
+                          className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Remove from favorites"
+                        >
+                          <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
+                        </button>
+                        {total > 0 && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-1">
+                            {total}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="mx-3 border-b" />
+          </>
+        )}
+        {favoriteSidebarServices.length > 0 && (
+          <div className="px-3 pt-2 pb-1">
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">All Services</span>
+          </div>
+        )}
         <ul className="py-1">
-          {services.map(([name, svc]) => {
+          {nonFavoriteSidebarServices.map(([name, svc]) => {
             const total = Object.values(svc.resources).reduce((a, b) => a + b, 0)
             const Icon = getServiceIcon(name)
             return (
-              <li key={name}>
-                <Link
-                  to={`/resources/${name}`}
-                  className={`flex items-center justify-between px-3 py-2 text-sm transition-colors ${
-                    service === name
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                  }`}
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <Icon className="h-3.5 w-3.5" />
-                    {name}
-                  </span>
-                  {total > 0 && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-2">
-                      {total}
-                    </Badge>
-                  )}
-                </Link>
+              <li key={name} className="group">
+                <div className={`flex items-center px-3 py-2 text-sm transition-colors ${
+                  service === name
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                }`}>
+                  <Link to={`/resources/${name}`} className="flex items-center gap-2 truncate flex-1 min-w-0">
+                    <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="truncate">{name}</span>
+                  </Link>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => toggleFavorite(name)}
+                      className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Add to favorites"
+                    >
+                      <Star className="h-3 w-3" />
+                    </button>
+                    {total > 0 && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-1">
+                        {total}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
               </li>
             )
           })}
@@ -226,8 +388,16 @@ export default function ResourceBrowser() {
           </div>
         )}
 
-        {service && !SERVICE_VIEWS[service] && resources && (
-          <div className="space-y-6">
+        {service && !SERVICE_VIEWS[service] && resources && (() => {
+          let globalRowIdx = 0
+
+          return (
+          <div className="space-y-4">
+            {/* Breadcrumb */}
+            {breadcrumbSegments.length > 0 && (
+              <Breadcrumb segments={breadcrumbSegments} />
+            )}
+
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {(() => { const Icon = getServiceIcon(service); return <Icon className="h-5 w-5 text-muted-foreground" /> })()}
@@ -254,6 +424,7 @@ export default function ResourceBrowser() {
               <div className="relative w-64">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
+                  ref={searchInputRef}
                   placeholder="Search resources..."
                   value={searchQuery}
                   onChange={(e) => {
@@ -325,6 +496,61 @@ export default function ResourceBrowser() {
                           ? `${filteredArr.length} of ${arr.length} items`
                           : `${arr.length} items`}
                       </Badge>
+                      <CardTitle className="text-sm font-medium">{type}</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-[10px]">
+                          {searchQuery && filteredArr.length !== arr.length
+                            ? `${filteredArr.length} of ${arr.length} items`
+                            : `${arr.length} items`}
+                        </Badge>
+                        {filteredArr.length > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-6 w-6" title="Export">
+                                <Download className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  try {
+                                    exportData({
+                                      service,
+                                      resourceType: type,
+                                      data: filteredArr,
+                                      format: 'json',
+                                    })
+                                  } catch (e) {
+                                    toast.error('Export failed', {
+                                      description: e instanceof Error ? e.message : 'Unknown error',
+                                    })
+                                  }
+                                }}
+                              >
+                                Export as JSON
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  try {
+                                    exportData({
+                                      service,
+                                      resourceType: type,
+                                      data: filteredArr,
+                                      format: 'csv',
+                                    })
+                                  } catch (e) {
+                                    toast.error('Export failed', {
+                                      description: e instanceof Error ? e.message : 'Unknown error',
+                                    })
+                                  }
+                                }}
+                              >
+                                Export as CSV
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="p-0">
@@ -343,11 +569,15 @@ export default function ResourceBrowser() {
                       <>
                         <Table>
                           <TableBody>
-                            {paginatedItems.map((item, i) => (
+                            {paginatedItems.map((item, i) => {
+                              const rowIdx = globalRowIdx++
+                              const isSelected = rowIdx === selectedRow
+                              return (
                               <TableRow
                                 key={i}
-                                className="cursor-pointer"
+                                className={`cursor-pointer ${isSelected ? 'bg-accent' : ''}`}
                                 onClick={() => openDetail(service, type, String(item.id ?? i))}
+                                data-row-index={rowIdx}
                               >
                                 <TableCell className="text-primary font-mono font-medium text-xs">
                                   {String(item.id ?? i)}
@@ -360,7 +590,8 @@ export default function ResourceBrowser() {
                                     .join(' | ')}
                                 </TableCell>
                               </TableRow>
-                            ))}
+                              )
+                            })}
                           </TableBody>
                         </Table>
                         <PaginationBar
@@ -377,7 +608,8 @@ export default function ResourceBrowser() {
               )
             })}
           </div>
-        )}
+          )
+        })()}
 
         {/* Detail Sheet */}
         <Sheet open={!!detail} onOpenChange={(open) => !open && setDetail(null)}>
