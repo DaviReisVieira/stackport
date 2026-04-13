@@ -71,6 +71,15 @@ DESCRIBE_REGISTRY: dict[tuple[str, str], tuple[str, str, str, str | None]] = {
     ("elasticmapreduce", "clusters"): ("emr", "describe_cluster", "ClusterId", "Cluster"),
 }
 
+# Override the generic _ID_FIELDS for services where the default order picks
+# the wrong field (e.g. Arn before Name, or Name before Id).
+_PREFERRED_ID_FIELD: dict[tuple[str, str], str] = {
+    ("route53", "hosted_zones"): "Id",
+    ("events", "rules"): "Name",
+    ("events", "event_buses"): "Name",
+    ("wafv2", "web_acls"): "Name",
+}
+
 # Known ID field names for extracting a resource identifier from list results
 _ID_FIELDS = [
     "BucketName",
@@ -119,11 +128,13 @@ _ID_FIELDS = [
 ]
 
 
-def _extract_id(item) -> str:
+def _extract_id(item, preferred_field: str | None = None) -> str:
     """Extract a usable ID from a list API result item."""
     if isinstance(item, str):
         return item
     if isinstance(item, dict):
+        if preferred_field and preferred_field in item:
+            return str(item[preferred_field])
         for field in _ID_FIELDS:
             if field in item:
                 return str(item[field])
@@ -134,12 +145,12 @@ def _extract_id(item) -> str:
     return str(item)
 
 
-def _summarize_item(item) -> dict:
+def _summarize_item(item, preferred_field: str | None = None) -> dict:
     """Create a summary dict from a list API result item."""
     if isinstance(item, str):
         return {"id": item}
     if isinstance(item, dict):
-        summary = {"id": _extract_id(item)}
+        summary = {"id": _extract_id(item, preferred_field)}
         for key, value in item.items():
             if isinstance(value, (str, int, float, bool)) or value is None:
                 summary[key] = value
@@ -171,7 +182,8 @@ def list_resources(service: str):
             # Handle nested structures (e.g., cloudfront DistributionList.Items)
             if isinstance(items, dict) and "Items" in items:
                 items = items.get("Items", []) or []
-            resources[resource_type] = [_summarize_item(item) for item in items]
+            preferred = _PREFERRED_ID_FIELD.get((service, resource_type))
+            resources[resource_type] = [_summarize_item(item, preferred) for item in items]
         except Exception:
             logger.debug("Failed to list %s/%s", service, resource_type, exc_info=True)
             resources[resource_type] = []
@@ -187,6 +199,26 @@ def get_resource_detail(service: str, res_type: str, res_id: str):
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
+
+    # WAFv2 get_web_acl requires Name, Scope, AND Id — resolve Id from list first
+    if (service, res_type) == ("wafv2", "web_acls"):
+        try:
+            client = get_client("wafv2")
+            acls = client.list_web_acls(Scope="REGIONAL").get("WebACLs", [])
+            match = next((a for a in acls if a.get("Name") == res_id), None)
+            if not match:
+                raise HTTPException(404, f"Web ACL '{res_id}' not found")
+            resp = client.get_web_acl(Name=res_id, Scope="REGIONAL", Id=match["Id"])
+            resp.pop("ResponseMetadata", None)
+            detail = _serialize(resp.get("WebACL", resp))
+            result = {"service": service, "type": res_type, "id": res_id, "detail": detail}
+            cache.set(cache_key, result, ttl=5)
+            return result
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("Failed to get detail for %s/%s/%s", service, res_type, res_id, exc_info=True)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     lookup = DESCRIBE_REGISTRY.get((service, res_type))
     if not lookup:
