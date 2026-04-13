@@ -1,13 +1,24 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 
 <head>
   <meta charset="UTF-8" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>StackPort</title>
-  <script type="module" crossorigin src="/assets/index-DeaAXMzy.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-BFwEzJQQ.css">
+  <script>
+    // Prevent FOUC by setting theme before React loads
+    (function() {
+      const stored = localStorage.getItem('stackport:theme');
+      const theme = stored || 'system';
+      const effectiveTheme = theme === 'system'
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : theme;
+      document.documentElement.classList.add(effectiveTheme);
+    })();
+  </script>
+  <script type="module" crossorigin src="/assets/index-EQwfV0wJ.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CPdegaPP.css">
 </head>
 
 <body>
