@@ -1,3 +1,4 @@
+import importlib.metadata
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -8,7 +9,7 @@ from backend.aws_client import get_client
 
 logger = logging.getLogger(__name__)
 from backend.cache import cache
-from backend.config import STACKPORT_SERVICES
+from backend.config import AWS_ENDPOINT_URL, AWS_REGION, STACKPORT_SERVICES
 
 router = APIRouter()
 
@@ -83,7 +84,19 @@ _start_time = time.time()
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "uptime_seconds": round(time.time() - _start_time, 1)}
+    try:
+        version = importlib.metadata.version("stackport")
+    except importlib.metadata.PackageNotFoundError:
+        version = "dev"
+    enabled = [s.strip() for s in STACKPORT_SERVICES.split(",") if s.strip()]
+    return {
+        "status": "ok",
+        "version": version,
+        "uptime_seconds": round(time.time() - _start_time, 1),
+        "endpoint_url": AWS_ENDPOINT_URL,
+        "region": AWS_REGION,
+        "services_count": len(enabled),
+    }
 
 
 # Some APIs require extra parameters to call

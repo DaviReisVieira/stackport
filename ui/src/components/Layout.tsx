@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import { LayoutDashboard, FolderOpen, Keyboard, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { LayoutDashboard, FolderOpen, Keyboard, PanelLeftClose, PanelLeft, Info } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { KeyboardShortcutsModal } from '@/components/KeyboardShortcutsModal'
@@ -13,6 +13,7 @@ import type { LucideIcon } from 'lucide-react'
 const NAV_ITEMS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/resources', label: 'Resources', icon: FolderOpen },
+  { to: '/about', label: 'About', icon: Info },
 ]
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -38,6 +39,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     [
       { sequence: ['g', 'd'], handler: () => navigate('/') },
       { sequence: ['g', 'r'], handler: () => navigate('/resources') },
+      { sequence: ['g', 'a'], handler: () => navigate('/about') },
     ]
   )
 

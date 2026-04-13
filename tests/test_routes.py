@@ -23,6 +23,12 @@ class TestHealth:
         assert data["status"] == "ok"
         assert "uptime_seconds" in data
         assert isinstance(data["uptime_seconds"], (int, float))
+        assert "version" in data
+        assert isinstance(data["version"], str)
+        assert "endpoint_url" in data
+        assert "region" in data
+        assert "services_count" in data
+        assert isinstance(data["services_count"], int)
 
 
 class TestStats:

@@ -26,6 +26,7 @@ const SHORTCUTS: ShortcutSection[] = [
       { keys: ['t'], description: 'Toggle theme' },
       { keys: ['g', 'd'], description: 'Go to Dashboard' },
       { keys: ['g', 'r'], description: 'Go to Resource Browser' },
+      { keys: ['g', 'a'], description: 'Go to About' },
       { keys: ['/'], description: 'Focus search input' },
       { keys: ['Esc'], description: 'Close modal or blur search' },
     ],

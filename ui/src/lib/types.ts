@@ -1,3 +1,12 @@
+export interface HealthResponse {
+  status: string
+  version: string
+  uptime_seconds: number
+  endpoint_url: string
+  region: string
+  services_count: number
+}
+
 export interface ServiceStats {
   status: 'available' | 'unavailable'
   resources: Record<string, number>

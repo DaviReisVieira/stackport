@@ -10,16 +10,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getServiceIcon } from '@/lib/service-icons'
+import { formatUptime } from '@/lib/utils'
 import { RefreshCw, AlertTriangle, Star } from 'lucide-react'
-
-function formatUptime(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = Math.floor(seconds % 60)
-  if (h > 0) return `${h}h ${m}m`
-  if (m > 0) return `${m}m ${s}s`
-  return `${s}s`
-}
 
 function formatRelativeTime(date: Date): string {
   const diff = Math.floor((Date.now() - date.getTime()) / 1000)
