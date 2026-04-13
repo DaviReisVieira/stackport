@@ -24,11 +24,11 @@ services:
         condition: service_healthy
 
   ministack:
-    image: nahuelnucera/ministack:latest
+    image: ministackorg/ministack:latest
     ports:
       - "4566:4566"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')" ]
       interval: 5s
       timeout: 3s
       retries: 5

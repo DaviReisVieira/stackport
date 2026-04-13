@@ -89,6 +89,7 @@ AWS_ENDPOINT_URL=http://my-emulator:4566 stackport
 | `AWS_SECRET_ACCESS_KEY` | `test` | AWS secret key |
 | `STACKPORT_PORT` | `8080` | StackPort server port |
 | `STACKPORT_SERVICES` | *(35 services)* | Comma-separated services to probe |
+| `LOG_LEVEL` | `INFO` | Python log level (DEBUG shows healthcheck logs) |
 
 ## Supported Services (35)
 

@@ -65,6 +65,7 @@ Requires a running AWS-compatible emulator (MiniStack on :4566 by default).
 | `AWS_SECRET_ACCESS_KEY` | `test` | Credentials |
 | `STACKPORT_PORT` | `8080` | HTTP port |
 | `STACKPORT_SERVICES` | *(35 services)* | Comma-separated list to probe |
+| `LOG_LEVEL` | `INFO` | Python log level (DEBUG shows healthcheck logs) |
 
 ## Adding a New Service to the Backend
 

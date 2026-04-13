@@ -7,14 +7,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.config import STACKPORT_PORT
+from backend.config import LOG_LEVEL, STACKPORT_PORT
 from backend.routes import dynamodb, ec2, iam, lambda_svc, logs, resources, s3, sqs, stats
 
+
+class HealthcheckFilter(logging.Filter):
+    """Suppress healthcheck access logs unless LOG_LEVEL is DEBUG."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if getattr(logging, LOG_LEVEL, logging.INFO) <= logging.DEBUG:
+            return True
+        message = record.getMessage()
+        return "/health" not in message
+
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=LOG_LEVEL,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Suppress noisy healthcheck access logs at non-DEBUG levels
+logging.getLogger("uvicorn.access").addFilter(HealthcheckFilter())
 
 app = FastAPI(title="StackPort", docs_url="/api/docs")
 
@@ -51,7 +65,7 @@ if os.path.isdir(ui_dist):
 
 
 def cli():
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=STACKPORT_PORT, reload=False)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=STACKPORT_PORT, log_level=LOG_LEVEL.lower(), reload=False)
 
 
 if __name__ == "__main__":

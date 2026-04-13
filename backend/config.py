@@ -12,3 +12,4 @@ STACKPORT_SERVICES: str = os.environ.get(
     "ecr,elasticache,glue,athena,apigateway,firehose,cognito-idp,cognito-identity,"
     "elasticmapreduce,elasticloadbalancing,elasticfilesystem,cloudfront,appsync",
 )
+LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
