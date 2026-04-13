@@ -24,6 +24,7 @@ import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
+import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -283,7 +284,7 @@ export function DynamoDBBrowser() {
 
     return (
       <div className="space-y-4">
-        <Breadcrumb segments={[createHomeSegment(), { label: 'DynamoDB', icon: Database }]} />
+        <Breadcrumb segments={[createHomeSegment(), { label: 'DynamoDB', icon: getServiceIcon('dynamodb') }]} />
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Database className="h-5 w-5 text-muted-foreground" />
@@ -396,7 +397,7 @@ export function DynamoDBBrowser() {
       <div className="flex items-center gap-2">
         <Breadcrumb segments={[
           createHomeSegment(),
-          { label: 'DynamoDB', href: '/resources/dynamodb', icon: Database },
+          { label: 'DynamoDB', href: '/resources/dynamodb', icon: getServiceIcon('dynamodb') },
           { label: selectedTable },
         ]} />
         {tableDetail && (

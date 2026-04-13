@@ -50,8 +50,8 @@ describe('Dashboard', () => {
 
     expect(screen.getByText('s3')).toBeInTheDocument()
     expect(screen.getByText('sqs')).toBeInTheDocument()
-    expect(screen.getByText('available')).toBeInTheDocument()
-    expect(screen.getByText('unavailable')).toBeInTheDocument()
+    expect(screen.getByTitle('available')).toBeInTheDocument()
+    expect(screen.getByTitle('unavailable')).toBeInTheDocument()
     expect(screen.getByText('buckets')).toBeInTheDocument()
   })
 

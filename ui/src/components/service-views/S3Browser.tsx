@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/components/Breadcrumb'
+import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { Input } from '@/components/ui/input'
@@ -296,7 +297,7 @@ export function S3Browser() {
 
     return (
       <div className="space-y-4">
-        <Breadcrumb segments={[createHomeSegment(), { label: 'S3', icon: HardDrive }]} />
+        <Breadcrumb segments={[createHomeSegment(), { label: 'S3', icon: getServiceIcon('s3') }]} />
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <HardDrive className="h-5 w-5 text-muted-foreground" />

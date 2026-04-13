@@ -21,6 +21,7 @@ import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
+import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -554,7 +555,7 @@ export function SQSBrowser() {
       <div className="space-y-4">
         <Breadcrumb segments={[
           createHomeSegment(),
-          { label: 'SQS', href: '/resources/sqs', icon: Inbox },
+          { label: 'SQS', href: '/resources/sqs', icon: getServiceIcon('sqs') },
           { label: queueDetail.name },
         ]} />
 
@@ -766,7 +767,7 @@ export function SQSBrowser() {
 
   return (
     <div className="space-y-4">
-      <Breadcrumb segments={[createHomeSegment(), { label: 'SQS', icon: Inbox }]} />
+      <Breadcrumb segments={[createHomeSegment(), { label: 'SQS', icon: getServiceIcon('sqs') }]} />
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

@@ -30,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/EmptyState'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
+import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -431,7 +432,7 @@ export function LambdaBrowser() {
       <div className="space-y-4">
         <Breadcrumb segments={[
           createHomeSegment(),
-          { label: 'Lambda', href: '/resources/lambda', icon: Zap },
+          { label: 'Lambda', href: '/resources/lambda', icon: getServiceIcon('lambda') },
           { label: config.FunctionName },
         ]} />
 
@@ -737,7 +738,7 @@ export function LambdaBrowser() {
 
   return (
     <div className="space-y-4">
-      <Breadcrumb segments={[createHomeSegment(), { label: 'Lambda', icon: Zap }]} />
+      <Breadcrumb segments={[createHomeSegment(), { label: 'Lambda', icon: getServiceIcon('lambda') }]} />
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

@@ -32,6 +32,13 @@ const SHORTCUTS: ShortcutSection[] = [
     ],
   },
   {
+    title: 'Dashboard',
+    shortcuts: [
+      { keys: ['v'], description: 'Toggle grid/list view' },
+      { keys: ['r'], description: 'Refresh' },
+    ],
+  },
+  {
     title: 'Resource Browser',
     shortcuts: [
       { keys: ['j'], description: 'Move selection down' },

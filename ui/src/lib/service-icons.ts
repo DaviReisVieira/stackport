@@ -29,7 +29,11 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
-const SERVICE_ICON_MAP: Record<string, LucideIcon> = {
+import { AWS_ICON_MAP } from "./aws-icons"
+
+export type ServiceIcon = React.FC<{ className?: string }>
+
+const LUCIDE_ICON_MAP: Record<string, LucideIcon> = {
   s3: HardDrive,
   dynamodb: Database,
   lambda: Zap,
@@ -73,6 +77,9 @@ const SERVICE_ICON_MAP: Record<string, LucideIcon> = {
   appsync: Search,
 }
 
-export function getServiceIcon(service: string): LucideIcon {
-  return SERVICE_ICON_MAP[service.toLowerCase()] ?? Server
+export const FALLBACK_ICON: ServiceIcon = Server
+
+export function getServiceIcon(service: string): ServiceIcon {
+  const key = service.toLowerCase()
+  return (AWS_ICON_MAP[key] as ServiceIcon) ?? (LUCIDE_ICON_MAP[key] as ServiceIcon) ?? FALLBACK_ICON
 }

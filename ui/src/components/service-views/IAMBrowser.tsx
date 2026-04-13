@@ -30,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
+import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
 import { ExportDropdown } from '@/components/ExportDropdown'
@@ -813,7 +814,7 @@ export function IAMBrowser() {
 
   return (
     <div className="space-y-6 p-6">
-      <Breadcrumb segments={[createHomeSegment(), { label: 'IAM', icon: Shield }]} />
+      <Breadcrumb segments={[createHomeSegment(), { label: 'IAM', icon: getServiceIcon('iam') }]} />
       <div>
         <h2 className="text-2xl font-bold flex items-center gap-2">
           <Shield className="h-6 w-6" />

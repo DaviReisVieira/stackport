@@ -27,6 +27,7 @@ import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
+import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
 import { Input } from '@/components/ui/input'
 import {
@@ -355,7 +356,7 @@ export function EC2Browser() {
 
   return (
     <div className="space-y-6 p-6">
-      <Breadcrumb segments={[createHomeSegment(), { label: 'EC2', icon: Server }]} />
+      <Breadcrumb segments={[createHomeSegment(), { label: 'EC2', icon: getServiceIcon('ec2') }]} />
       <div>
         <h2 className="text-2xl font-bold flex items-center gap-2">
           <Server className="h-6 w-6" />
