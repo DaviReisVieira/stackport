@@ -9,7 +9,7 @@ services:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')" ]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -19,11 +19,11 @@ services:
         condition: service_healthy
 
   ministack:
-    image: nahuelnucera/ministack:latest
+    image: ministackorg/ministack:latest
     ports:
       - "4566:4566"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')" ]
       interval: 5s
       timeout: 3s
       retries: 5
