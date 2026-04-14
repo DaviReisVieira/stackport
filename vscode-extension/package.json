@@ -42,5 +42,61 @@
     "@types/node": "^18.0.0",
     "typescript": "^5.3.0",
     "@vscode/vsce": "^2.22.0"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "stackport",
+          "title": "StackPort",
+          "icon": "icon.png"
+        }
+      ]
+    },
+    "views": {
+      "stackport": [
+        {
+          "id": "stackport-explorer",
+          "name": "AWS Resources",
+          "icon": "icon.png"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "StackPort",
+      "properties": {
+        "stackport.endpoint": {
+          "type": "string",
+          "default": "http://localhost:8080",
+          "description": "StackPort backend endpoint URL"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "stackport.refreshEntry",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "stackport.invokeLambda",
+        "title": "StackPort: Invoke Lambda Function",
+        "category": "StackPort"
+      },
+      {
+        "command": "stackport.sendSqsMessage",
+        "title": "StackPort: Send SQS Message",
+        "category": "StackPort"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "stackport.refreshEntry",
+          "when": "view == stackport-explorer",
+          "group": "navigation"
+        }
+      ]
+    }
   }
 }
