@@ -39,6 +39,7 @@ import {
   Network,
   Tag,
   ChevronRight,
+  RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -322,8 +323,9 @@ export function EC2Browser() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const { data: instancesData, loading: instancesLoading, refresh: refreshInstances } = useFetch<{ instances: EC2Instance[] }>(instancesFetcher, 10000)
-  const { data: sgData, loading: sgLoading } = useFetch<{ securityGroups: EC2SecurityGroup[] }>(sgFetcher, 10000)
-  const { data: vpcsData, loading: vpcsLoading } = useFetch<{ vpcs: EC2VPC[] }>(vpcsFetcher, 10000)
+  const { data: sgData, loading: sgLoading, refresh: refreshSg } = useFetch<{ securityGroups: EC2SecurityGroup[] }>(sgFetcher, 10000)
+  const { data: vpcsData, loading: vpcsLoading, refresh: refreshVpcs } = useFetch<{ vpcs: EC2VPC[] }>(vpcsFetcher, 10000)
+  const [refreshing, setRefreshing] = useState(false)
 
   // Read selected instance from URL params
   const selectedInstance = searchParams.get('instance')
@@ -358,10 +360,21 @@ export function EC2Browser() {
     <div className="space-y-6 p-6">
       <Breadcrumb segments={[createHomeSegment(), { label: 'EC2', icon: getServiceIcon('ec2') }]} />
       <div>
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-          <Server className="h-6 w-6" />
-          EC2 Instance Explorer
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Server className="h-6 w-6" />
+            EC2 Instance Explorer
+          </h2>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={async () => { setRefreshing(true); await Promise.all([refreshInstances(), refreshSg(), refreshVpcs()]); setRefreshing(false) }}
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
         <p className="text-sm text-muted-foreground mt-1">
           Manage EC2 instances, security groups, and VPCs
         </p>

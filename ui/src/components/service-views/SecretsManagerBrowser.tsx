@@ -212,7 +212,7 @@ function SecretValueDisplay({ detail }: { detail: SecretDetail }) {
 export function SecretsManagerBrowser() {
   const [searchParams, setSearchParams] = useSearchParams()
   const secretsFetcher = useCallback(() => fetchSecrets(), [])
-  const { data: secretsData, loading: secretsLoading } = useFetch<{ secrets: Secret[] }>(
+  const { data: secretsData, loading: secretsLoading, refresh: refreshSecrets } = useFetch<{ secrets: Secret[] }>(
     secretsFetcher,
     10000
   )
@@ -232,6 +232,7 @@ export function SecretsManagerBrowser() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(25)
+  const [refreshing, setRefreshing] = useState(false)
 
   const loadSecretDetail = useCallback((secretName: string | null) => {
     if (!secretName) {
@@ -473,6 +474,15 @@ export function SecretsManagerBrowser() {
             data={filteredSecrets as unknown as Record<string, unknown>[]}
           />
         )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={async () => { setRefreshing(true); await refreshSecrets(); setRefreshing(false) }}
+          title="Refresh"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+        </Button>
       </div>
 
       <Card>

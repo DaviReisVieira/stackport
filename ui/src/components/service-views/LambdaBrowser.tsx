@@ -48,6 +48,7 @@ import {
   Tag as TagIcon,
   Link as LinkIcon,
   GitBranch,
+  RefreshCw,
 } from 'lucide-react'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
@@ -336,10 +337,11 @@ function InvokeSheet({
 export function LambdaBrowser() {
   const [searchParams, setSearchParams] = useSearchParams()
   const functionsFetcher = useCallback(() => fetchLambdaFunctions(), [])
-  const { data: functionsData, loading: functionsLoading } = useFetch<{ functions: LambdaFunction[] }>(
+  const { data: functionsData, loading: functionsLoading, refresh: refreshFunctions } = useFetch<{ functions: LambdaFunction[] }>(
     functionsFetcher,
     10000
   )
+  const [refreshing, setRefreshing] = useState(false)
 
   // Read selected function from URL params
   const selectedFunction = searchParams.get('function')
@@ -753,6 +755,15 @@ export function LambdaBrowser() {
           />
         </div>
         {filteredFunctions.length > 0 && <ExportDropdown service="lambda" resourceType="functions" data={filteredFunctions as unknown as Record<string, unknown>[]} />}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={async () => { setRefreshing(true); await refreshFunctions(); setRefreshing(false) }}
+          title="Refresh"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

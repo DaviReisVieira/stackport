@@ -16,7 +16,7 @@ import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
 import { ExportDropdown } from '@/components/ExportDropdown'
-import { ScrollText, Search, FileText, Clock, Play, Pause, Copy, Filter, ChevronDown, ChevronUp } from 'lucide-react'
+import { ScrollText, Search, FileText, Clock, Play, Pause, Copy, Filter, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
 function formatBytes(bytes: number): string {
@@ -137,6 +137,7 @@ export function LogsBrowser() {
 
   const [groupSearch, setGroupSearch] = useState('')
   const [streamSearch, setStreamSearch] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
 
   // Events state
   const [events, setEvents] = useState<LogEvent[]>([])
@@ -153,7 +154,7 @@ export function LogsBrowser() {
 
   // Fetch log groups
   const groupsFetcher = useCallback(() => fetchLogGroups(groupSearch), [groupSearch])
-  const { data: groupsData, loading: groupsLoading } = useFetch<LogGroupsResponse>(
+  const { data: groupsData, loading: groupsLoading, refresh: refreshGroups } = useFetch<LogGroupsResponse>(
     groupsFetcher,
     10000
   )
@@ -277,9 +278,18 @@ export function LogsBrowser() {
           <div className="flex items-center gap-2">
             <ScrollText className="h-5 w-5 text-muted-foreground" />
             <CardTitle className="text-base">Log Groups</CardTitle>
-            <Badge variant="secondary" className="ml-auto">
+            <Badge variant="secondary">
               {filteredGroups.length}
             </Badge>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 ml-auto"
+              onClick={async () => { setRefreshing(true); await refreshGroups(); setRefreshing(false) }}
+              title="Refresh"
+            >
+              <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col gap-3 overflow-hidden">

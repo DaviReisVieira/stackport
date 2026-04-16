@@ -1,14 +1,17 @@
+import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import LOG_LEVEL, STACKPORT_PORT
 from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, resources, s3, secretsmanager, sqs, stats
+from backend.websocket import probe_loop, websocket_endpoint
 
 
 class HealthcheckFilter(logging.Filter):
@@ -30,7 +33,16 @@ logger = logging.getLogger(__name__)
 # Suppress noisy healthcheck access logs at non-DEBUG levels
 logging.getLogger("uvicorn.access").addFilter(HealthcheckFilter())
 
-app = FastAPI(title="StackPort", docs_url="/api/docs")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: launch the WebSocket probe loop
+    task = asyncio.create_task(probe_loop())
+    yield
+    # Shutdown: cancel the background task
+    task.cancel()
+
+
+app = FastAPI(title="StackPort", docs_url="/api/docs", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,6 +62,13 @@ app.include_router(ec2.router, prefix="/api/ec2", tags=["ec2"])
 app.include_router(logs.router, prefix="/api/logs", tags=["logs"])
 app.include_router(secretsmanager.router, prefix="/api/secretsmanager", tags=["secretsmanager"])
 app.include_router(resources.router, prefix="/api")
+
+
+# WebSocket endpoint for real-time updates
+@app.websocket("/ws")
+async def ws(websocket: WebSocket):
+    await websocket_endpoint(websocket)
+
 
 # Serve UI static files — mount assets under /assets, SPA fallback for everything else
 ui_dist = os.path.join(os.path.dirname(__file__), "..", "ui", "dist")

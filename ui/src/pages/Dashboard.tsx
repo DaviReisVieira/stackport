@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from 'react'
-import { useFetch } from '../hooks/useFetch'
+import { useWebSocket } from '../hooks/useWebSocket'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFavorites } from '../hooks/useFavorites'
 import { fetchStats } from '../lib/api'
@@ -43,11 +43,16 @@ function StatusDot({ status }: { status: string }) {
 
 export default function Dashboard() {
   const statsFetcher = useCallback(() => fetchStats(), [])
-  const { data: stats, error, refresh } = useFetch<StatsResponse>(statsFetcher, 5000)
+  const { data: stats, error, refresh } = useWebSocket<StatsResponse>({
+    fallbackFetcher: statsFetcher,
+    fallbackInterval: 5000,
+    messageType: 'stats',
+  })
   const { favorites, toggleFavorite, isFavorite } = useFavorites()
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [, setTick] = useState(0)
   const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     localStorage.setItem('stackport:view-mode', viewMode)
@@ -312,8 +317,8 @@ export default function Dashboard() {
           >
             <List className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={refresh} title="Refresh">
-            <RefreshCw className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={async () => { setRefreshing(true); await refresh(); setRefreshing(false) }} title="Refresh">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </div>

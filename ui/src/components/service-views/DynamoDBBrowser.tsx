@@ -38,6 +38,7 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -148,7 +149,8 @@ function PaginationBar({
 export function DynamoDBBrowser() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tablesFetcher = useCallback(() => fetchDynamoDBTables(), [])
-  const { data: tablesData, loading: tablesLoading } = useFetch<{ tables: DynamoDBTable[] }>(tablesFetcher, 10000)
+  const { data: tablesData, loading: tablesLoading, refresh: refreshTables } = useFetch<{ tables: DynamoDBTable[] }>(tablesFetcher, 10000)
+  const [refreshing, setRefreshing] = useState(false)
 
   // Read selected table from URL params
   const selectedTable = searchParams.get('table')
@@ -307,6 +309,15 @@ export function DynamoDBBrowser() {
                   aria-label="Search tables"
                 />
               </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={async () => { setRefreshing(true); await refreshTables(); setRefreshing(false) }}
+                title="Refresh"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              </Button>
             </div>
           )}
         </div>

@@ -13,6 +13,17 @@ vi.mock('@/lib/api', () => ({
   fetchStats: vi.fn(),
 }))
 
+// Mock useWebSocket to delegate to useFetch
+vi.mock('@/hooks/useWebSocket', async () => {
+  const { useFetch } = await import('@/hooks/useFetch')
+  return {
+    useWebSocket: ({ fallbackFetcher, fallbackInterval }: { fallbackFetcher: () => Promise<unknown>; fallbackInterval?: number; messageType: string }) => {
+      const result = useFetch(fallbackFetcher, fallbackInterval)
+      return { ...result, connected: false }
+    },
+  }
+})
+
 import { fetchStats } from '@/lib/api'
 const mockFetchStats = vi.mocked(fetchStats)
 

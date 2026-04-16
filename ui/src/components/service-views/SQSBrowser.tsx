@@ -39,6 +39,7 @@ import {
   AlertTriangle,
   Eye,
   Copy,
+  RefreshCw,
 } from 'lucide-react'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
@@ -439,7 +440,8 @@ function MessageViewerSheet({
 export function SQSBrowser() {
   const [searchParams, setSearchParams] = useSearchParams()
   const queuesFetcher = useCallback(() => fetchSQSQueues(), [])
-  const { data: queuesData, loading: queuesLoading } = useFetch<{ queues: SQSQueue[] }>(queuesFetcher, 10000)
+  const { data: queuesData, loading: queuesLoading, refresh: refreshQueues } = useFetch<{ queues: SQSQueue[] }>(queuesFetcher, 10000)
+  const [refreshing, setRefreshing] = useState(false)
 
   // Read selected queue from URL params
   const selectedQueue = searchParams.get('queue')
@@ -782,6 +784,15 @@ export function SQSBrowser() {
           />
         </div>
         {filteredQueues.length > 0 && <ExportDropdown service="sqs" resourceType="queues" data={filteredQueues as unknown as Record<string, unknown>[]} />}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={async () => { setRefreshing(true); await refreshQueues(); setRefreshing(false) }}
+          title="Refresh"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

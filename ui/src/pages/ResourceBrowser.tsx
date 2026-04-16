@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { useFetch } from '../hooks/useFetch'
+import { useWebSocket } from '../hooks/useWebSocket'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFavorites } from '../hooks/useFavorites'
 import { fetchStats, fetchResources, fetchResourceDetail } from '../lib/api'
@@ -91,7 +91,11 @@ export default function ResourceBrowser() {
   const { service } = useParams<{ service?: string }>()
   const navigate = useNavigate()
   const statsFetcher = useCallback(() => fetchStats(), [])
-  const { data: stats } = useFetch<StatsResponse>(statsFetcher, 10000)
+  const { data: stats } = useWebSocket<StatsResponse>({
+    fallbackFetcher: statsFetcher,
+    fallbackInterval: 10000,
+    messageType: 'stats',
+  })
   const { favorites, toggleFavorite } = useFavorites()
   const [resources, setResources] = useState<Record<string, unknown[]> | null>(null)
   const [detail, setDetail] = useState<ResourceDetailResponse | null>(null)

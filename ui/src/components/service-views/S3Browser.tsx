@@ -37,6 +37,7 @@ import {
   Shield,
   Download,
   Search,
+  RefreshCw,
 } from 'lucide-react'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
@@ -131,7 +132,8 @@ function PaginationBar({
 export function S3Browser() {
   const [searchParams, setSearchParams] = useSearchParams()
   const bucketsFetcher = useCallback(() => fetchS3Buckets(), [])
-  const { data: bucketsData, loading: bucketsLoading } = useFetch<{ buckets: S3Bucket[] }>(bucketsFetcher, 10000)
+  const { data: bucketsData, loading: bucketsLoading, refresh: refreshBuckets } = useFetch<{ buckets: S3Bucket[] }>(bucketsFetcher, 10000)
+  const [refreshing, setRefreshing] = useState(false)
 
   // Read bucket and prefix from URL params
   const selectedBucket = searchParams.get('bucket')
@@ -318,6 +320,15 @@ export function S3Browser() {
                   aria-label="Search buckets"
                 />
               </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={async () => { setRefreshing(true); await refreshBuckets(); setRefreshing(false) }}
+                title="Refresh"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              </Button>
             </div>
           )}
         </div>

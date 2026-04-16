@@ -23,6 +23,7 @@ import type {
 } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -44,6 +45,7 @@ import {
   Tag,
   ExternalLink,
   ChevronRight,
+  RefreshCw,
 } from 'lucide-react'
 
 function formatDate(iso: string): string {
@@ -722,10 +724,11 @@ export function IAMBrowser() {
   const groupsFetcher = useCallback(() => fetchIAMGroups(), [])
   const policiesFetcher = useCallback(() => fetchIAMPolicies('Local'), [])
 
-  const { data: usersData, loading: usersLoading } = useFetch<{ users: IAMUser[] }>(usersFetcher, 10000)
-  const { data: rolesData, loading: rolesLoading } = useFetch<{ roles: IAMRole[] }>(rolesFetcher, 10000)
-  const { data: groupsData, loading: groupsLoading } = useFetch<{ groups: IAMGroup[] }>(groupsFetcher, 10000)
-  const { data: policiesData, loading: policiesLoading } = useFetch<{ policies: IAMPolicy[] }>(policiesFetcher, 10000)
+  const { data: usersData, loading: usersLoading, refresh: refreshUsers } = useFetch<{ users: IAMUser[] }>(usersFetcher, 10000)
+  const { data: rolesData, loading: rolesLoading, refresh: refreshRoles } = useFetch<{ roles: IAMRole[] }>(rolesFetcher, 10000)
+  const { data: groupsData, loading: groupsLoading, refresh: refreshGroups } = useFetch<{ groups: IAMGroup[] }>(groupsFetcher, 10000)
+  const { data: policiesData, loading: policiesLoading, refresh: refreshPolicies } = useFetch<{ policies: IAMPolicy[] }>(policiesFetcher, 10000)
+  const [refreshing, setRefreshing] = useState(false)
 
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -816,10 +819,21 @@ export function IAMBrowser() {
     <div className="space-y-6 p-6">
       <Breadcrumb segments={[createHomeSegment(), { label: 'IAM', icon: getServiceIcon('iam') }]} />
       <div>
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-          <Shield className="h-6 w-6" />
-          IAM Browser
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Shield className="h-6 w-6" />
+            IAM Browser
+          </h2>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={async () => { setRefreshing(true); await Promise.all([refreshUsers(), refreshRoles(), refreshGroups(), refreshPolicies()]); setRefreshing(false) }}
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
         <p className="text-sm text-muted-foreground mt-1">
           Navigate IAM entities, inspect policies, and understand relationships
         </p>
