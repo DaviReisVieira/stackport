@@ -13,3 +13,22 @@ STACKPORT_SERVICES: str = os.environ.get(
     "elasticmapreduce,elasticloadbalancing,elasticfilesystem,cloudfront,appsync",
 )
 LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+
+def _parse_endpoints() -> dict[str, str]:
+    """Parse STACKPORT_ENDPOINTS env var into dict."""
+    endpoints_str = os.environ.get("STACKPORT_ENDPOINTS", "")
+    if not endpoints_str:
+        # Backward compatibility: single endpoint
+        return {"default": AWS_ENDPOINT_URL}
+
+    endpoints = {}
+    for pair in endpoints_str.split(","):
+        if "=" in pair:
+            name, url = pair.split("=", 1)
+            endpoints[name.strip()] = url.strip()
+    return endpoints
+
+
+ENDPOINTS: dict[str, str] = _parse_endpoints()
+DEFAULT_ENDPOINT: str = next(iter(ENDPOINTS.values()))

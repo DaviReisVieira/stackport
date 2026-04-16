@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import LOG_LEVEL, STACKPORT_PORT
-from backend.routes import dynamodb, ec2, iam, lambda_svc, logs, resources, s3, secretsmanager, sqs, stats
+from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, resources, s3, secretsmanager, sqs, stats
 
 
 class HealthcheckFilter(logging.Filter):
@@ -40,6 +40,7 @@ app.add_middleware(
 )
 
 app.include_router(stats.router, prefix="/api")
+app.include_router(endpoints.router, prefix="/api")
 app.include_router(s3.router, prefix="/api/s3")
 app.include_router(dynamodb.router, prefix="/api/dynamodb")
 app.include_router(lambda_svc.router, prefix="/api/lambda", tags=["lambda"])

@@ -1,9 +1,10 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from backend.aws_client import get_client
 from backend.cache import cache
+from backend.routes.common import get_endpoint_url
 from backend.routes.stats import SERVICE_REGISTRY, _METHOD_KWARGS, _count_items
 
 logger = logging.getLogger(__name__)
@@ -161,8 +162,8 @@ def _summarize_item(item, preferred_field: str | None = None) -> dict:
 
 
 @router.get("/resources/{service}")
-def list_resources(service: str):
-    cache_key = f"resources:{service}"
+def list_resources(service: str, endpoint_url: str = Depends(get_endpoint_url)):
+    cache_key = f"{endpoint_url}:resources:{service}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -174,7 +175,7 @@ def list_resources(service: str):
     resources: dict[str, list[dict]] = {}
     for resource_type, boto3_service, method_name, response_key in registry_entries:
         try:
-            client = get_client(boto3_service)
+            client = get_client(boto3_service, endpoint_url)
             method = getattr(client, method_name)
             kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
             resp = method(**kwargs)
@@ -194,8 +195,8 @@ def list_resources(service: str):
 
 
 @router.get("/resources/{service}/{res_type}/{res_id:path}")
-def get_resource_detail(service: str, res_type: str, res_id: str):
-    cache_key = f"detail:{service}:{res_type}:{res_id}"
+def get_resource_detail(service: str, res_type: str, res_id: str, endpoint_url: str = Depends(get_endpoint_url)):
+    cache_key = f"{endpoint_url}:detail:{service}:{res_type}:{res_id}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -203,7 +204,7 @@ def get_resource_detail(service: str, res_type: str, res_id: str):
     # WAFv2 get_web_acl requires Name, Scope, AND Id — resolve Id from list first
     if (service, res_type) == ("wafv2", "web_acls"):
         try:
-            client = get_client("wafv2")
+            client = get_client("wafv2", endpoint_url)
             acls = client.list_web_acls(Scope="REGIONAL").get("WebACLs", [])
             match = next((a for a in acls if a.get("Name") == res_id), None)
             if not match:
@@ -236,7 +237,7 @@ def get_resource_detail(service: str, res_type: str, res_id: str):
     }
 
     try:
-        client = get_client(boto3_service)
+        client = get_client(boto3_service, endpoint_url)
         method = getattr(client, method_name)
         if id_param in _LIST_PARAMS:
             resp = method(**{id_param: [res_id]})
