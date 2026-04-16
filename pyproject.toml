@@ -19,7 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Testing",
 ]
-dependencies = ["fastapi>=0.115.0", "uvicorn>=0.30.0", "boto3>=1.35.0"]
+dependencies = ["fastapi>=0.115.0", "uvicorn>=0.30.0", "boto3>=1.35.0", "click>=8.0"]
 
 [project.urls]
 Homepage = "https://github.com/DaviReisVieira/stackport"

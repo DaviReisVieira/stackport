@@ -66,7 +66,10 @@ if os.path.isdir(ui_dist):
 
 
 def cli():
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=STACKPORT_PORT, log_level=LOG_LEVEL.lower(), reload=False)
+    """Entry point for stackport CLI."""
+    from backend.cli import cli as click_app
+
+    click_app()
 
 
 if __name__ == "__main__":
