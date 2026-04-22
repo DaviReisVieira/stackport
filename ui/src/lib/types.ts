@@ -77,6 +77,34 @@ export interface S3ObjectDetail {
   tags: Record<string, string>
 }
 
+export interface S3UploadResponse {
+  bucket: string
+  key: string
+  size: number
+  content_type: string
+}
+
+export interface S3UploadConfig {
+  max_upload_bytes: number
+}
+
+export interface S3DeleteObjectResponse {
+  bucket: string
+  deleted: boolean
+  key: string
+}
+
+export interface S3DeleteBatchResponse {
+  bucket: string
+  deleted: number
+  keys: string[]
+}
+
+export interface S3CreateFolderResponse {
+  bucket: string
+  prefix: string
+}
+
 export interface DynamoDBTable {
   name: string
   status: string

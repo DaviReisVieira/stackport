@@ -88,6 +88,7 @@ AWS_ENDPOINT_URL=http://my-emulator:4566 stackport
 | `AWS_ACCESS_KEY_ID` | `test` | AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | `test` | AWS secret key |
 | `STACKPORT_PORT` | `8080` | StackPort server port |
+| `STACKPORT_S3_MAX_UPLOAD_MB` | `100` | Max upload size for a single S3 object, in whole **mebibytes (MiB)** (× 1024²). Example: `1000` for about 1000 MiB. Omit for the default (100 MiB). |
 | `STACKPORT_SERVICES` | *(35 services)* | Comma-separated services to probe |
 | `LOG_LEVEL` | `INFO` | Python log level (DEBUG shows healthcheck logs) |
 

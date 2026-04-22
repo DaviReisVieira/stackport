@@ -1,15 +1,66 @@
 import logging
+import mimetypes
+import os
+from typing import Annotated
 
-from fastapi import APIRouter, Query
+from botocore.exceptions import ClientError
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, model_validator
 
 from backend.aws_client import get_client
 from backend.cache import cache
-from backend.config import AWS_REGION
+from backend.config import AWS_REGION, S3_MAX_UPLOAD_BYTES
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _is_s3_not_found(err: ClientError) -> bool:
+    code = err.response.get("Error", {}).get("Code", "")
+    status = err.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    return code in ("404", "NoSuchKey", "NotFound") or status == 404
+
+
+def _invalidate_bucket_stats(bucket_name: str) -> None:
+    cache.delete(f"s3:bucket_stats:{bucket_name}")
+
+
+def _validate_key_component(name: str) -> str:
+    base = os.path.basename(name.replace("\\", "/"))
+    if not base or base in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid file name")
+    return base
+
+
+def _validate_prefix_path(prefix: str) -> str:
+    if ".." in prefix or prefix.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid prefix")
+    return prefix
+
+
+def _compose_object_key(prefix: str, filename: str) -> str:
+    prefix = _validate_prefix_path(prefix or "")
+    fn = _validate_key_component(filename)
+    if prefix and not prefix.endswith("/"):
+        prefix = prefix + "/"
+    return prefix + fn
+
+
+def _resolve_upload_content_type(filename: str, browser_type: str | None) -> str:
+    guessed, _enc = mimetypes.guess_type(filename)
+    bt = (browser_type or "").strip() or None
+    if not bt or bt == "application/octet-stream":
+        return guessed or "application/octet-stream"
+    if guessed and guessed != bt:
+        return guessed
+    return bt or guessed or "application/octet-stream"
+
+
+@router.get("/upload-config")
+def s3_upload_config():
+    return {"max_upload_bytes": S3_MAX_UPLOAD_BYTES}
 
 
 def _get_bucket_stats(bucket_name: str) -> tuple[int, int]:
@@ -128,6 +179,132 @@ def list_objects(
     }
 
 
+class DeleteBatchBody(BaseModel):
+    """Delete by explicit keys or by prefix (recursive). Provide exactly one."""
+
+    keys: list[str] | None = None
+    prefix: str | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_mode(self):
+        has_keys = bool(self.keys)
+        has_prefix = bool(self.prefix and self.prefix.strip())
+        if has_keys == has_prefix:
+            raise ValueError('Provide exactly one of non-empty "keys" or "prefix"')
+        return self
+
+
+class CreateFolderBody(BaseModel):
+    prefix: str
+
+    @model_validator(mode="after")
+    def trailing_slash(self):
+        if not self.prefix.endswith("/"):
+            raise ValueError('Folder prefix must end with "/"')
+        if ".." in self.prefix or self.prefix.startswith("/"):
+            raise ValueError("Invalid prefix")
+        return self
+
+
+def _validate_object_key(key: str) -> None:
+    if ".." in key or key.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid key")
+
+
+@router.post("/buckets/{name}/objects/delete-batch")
+def delete_objects_batch(name: str, body: DeleteBatchBody):
+    """Delete multiple objects by key list or all keys under a prefix."""
+    s3 = get_client("s3")
+
+    keys_to_delete: list[str]
+    if body.prefix:
+        p = body.prefix
+        if not p.endswith("/"):
+            p = p + "/"
+        _validate_prefix_path(p.rstrip("/") or "")
+        keys_to_delete = []
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=name, Prefix=p):
+            for obj in page.get("Contents", []):
+                keys_to_delete.append(obj["Key"])
+        if not keys_to_delete:
+            _invalidate_bucket_stats(name)
+            return {"bucket": name, "deleted": 0, "keys": []}
+    else:
+        keys_to_delete = list(body.keys or [])
+        for k in keys_to_delete:
+            _validate_object_key(k)
+
+    deleted = 0
+    for i in range(0, len(keys_to_delete), 1000):
+        chunk = keys_to_delete[i : i + 1000]
+        resp = s3.delete_objects(
+            Bucket=name,
+            Delete={"Objects": [{"Key": k} for k in chunk], "Quiet": True},
+        )
+        deleted += len(chunk) - len(resp.get("Errors", []))
+        if resp.get("Errors"):
+            for err in resp["Errors"]:
+                logger.warning("S3 delete error: %s", err)
+
+    _invalidate_bucket_stats(name)
+    return {"bucket": name, "deleted": deleted, "keys": keys_to_delete}
+
+
+@router.post("/buckets/{name}/folders")
+def create_folder(name: str, body: CreateFolderBody):
+    """Create a folder marker (zero-byte object with trailing /)."""
+    prefix = body.prefix
+    _validate_prefix_path(prefix.rstrip("/"))
+    s3 = get_client("s3")
+    s3.put_object(Bucket=name, Key=prefix, Body=b"", ContentType="application/x-directory")
+    _invalidate_bucket_stats(name)
+    return {"bucket": name, "prefix": prefix}
+
+
+@router.post("/buckets/{name}/objects")
+def upload_object(
+    name: str,
+    prefix: Annotated[str, Query(description="Key prefix for uploaded object")] = "",
+    file: UploadFile = File(..., description="File to upload"),
+):
+    filename = file.filename or "object"
+    object_key = _compose_object_key(prefix, filename)
+
+    body = file.file.read(S3_MAX_UPLOAD_BYTES + 1)
+    if len(body) > S3_MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds maximum size of {S3_MAX_UPLOAD_BYTES} bytes",
+        )
+
+    content_type = _resolve_upload_content_type(filename, file.content_type)
+
+    s3 = get_client("s3")
+    s3.put_object(
+        Bucket=name,
+        Key=object_key,
+        Body=body,
+        ContentType=content_type,
+    )
+    _invalidate_bucket_stats(name)
+    return {
+        "bucket": name,
+        "key": object_key,
+        "size": len(body),
+        "content_type": content_type,
+    }
+
+
+@router.delete("/buckets/{name}/objects/{key:path}")
+def delete_object(name: str, key: str):
+    _validate_object_key(key)
+    s3 = get_client("s3")
+    s3.delete_object(Bucket=name, Key=key)
+    _invalidate_bucket_stats(name)
+    return {"bucket": name, "deleted": True, "key": key}
+
+
 @router.get("/buckets/{name}/objects/{key:path}")
 def get_object_detail(
     name: str,
@@ -137,7 +314,12 @@ def get_object_detail(
     s3 = get_client("s3")
 
     if download == 1:
-        resp = s3.get_object(Bucket=name, Key=key)
+        try:
+            resp = s3.get_object(Bucket=name, Key=key)
+        except ClientError as e:
+            if _is_s3_not_found(e):
+                raise HTTPException(status_code=404, detail="Object not found") from e
+            raise
         filename = key.rsplit("/", 1)[-1] or key
         return StreamingResponse(
             resp["Body"],
@@ -145,7 +327,12 @@ def get_object_detail(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    resp = s3.head_object(Bucket=name, Key=key)
+    try:
+        resp = s3.head_object(Bucket=name, Key=key)
+    except ClientError as e:
+        if _is_s3_not_found(e):
+            raise HTTPException(status_code=404, detail="Object not found") from e
+        raise
 
     tags: dict[str, str] = {}
     try:

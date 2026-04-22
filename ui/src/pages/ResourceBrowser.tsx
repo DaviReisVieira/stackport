@@ -263,7 +263,7 @@ export default function ResourceBrowser() {
   )
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0 min-w-0 w-full flex-1">
       {/* Service sidebar */}
       <ScrollArea className="w-52 border-r bg-card/50">
         <div className="px-3 py-3 border-b">
@@ -353,7 +353,7 @@ export default function ResourceBrowser() {
       </ScrollArea>
 
       {/* Resource content */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
         {!service && (
           <EmptyState
             icon={FolderOpen}
@@ -364,7 +364,11 @@ export default function ResourceBrowser() {
 
         {service && SERVICE_VIEWS[service] && (() => {
           const CustomBrowser = SERVICE_VIEWS[service]
-          return <CustomBrowser />
+          return (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <CustomBrowser />
+            </div>
+          )
         })()}
 
         {service && !SERVICE_VIEWS[service] && loadingResources && (
@@ -393,199 +397,242 @@ export default function ResourceBrowser() {
           let globalRowIdx = 0
 
           return (
-          <div className="space-y-4">
-            {/* Breadcrumb */}
-            {breadcrumbSegments.length > 0 && (
-              <Breadcrumb segments={breadcrumbSegments} />
-            )}
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {(() => { const Icon = getServiceIcon(service); return <Icon className="h-5 w-5 text-muted-foreground" /> })()}
-                <h2 className="text-xl font-bold">{service}</h2>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={refreshResources}
-                    disabled={loadingResources}
-                    className="h-7 gap-1.5"
-                    aria-label="Refresh resources"
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${loadingResources ? 'animate-spin' : ''}`} />
-                    <span className="text-xs">Refresh</span>
-                  </Button>
-                  {lastUpdated && (
-                    <span className="text-xs text-muted-foreground">
-                      {getTimeAgo(lastUpdated)}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="relative w-64">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  ref={searchInputRef}
-                  placeholder="Search resources..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value)
-                    setPages({})
-                  }}
-                  className="pl-8 pr-8 h-8 text-sm"
-                  aria-label="Search resources"
-                />
-                {searchQuery && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0.5 top-0.5 h-7 w-7"
-                    onClick={() => {
-                      setSearchQuery('')
-                      setPages({})
-                    }}
-                    aria-label="Clear search"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
+            <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+              <div className="space-y-4">
+                {/* Breadcrumb */}
+                {breadcrumbSegments.length > 0 && (
+                  <Breadcrumb segments={breadcrumbSegments} />
                 )}
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {(() => {
+                      const Icon = getServiceIcon(service);
+                      return <Icon className="h-5 w-5 text-muted-foreground" />;
+                    })()}
+                    <h2 className="text-xl font-bold">{service}</h2>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={refreshResources}
+                        disabled={loadingResources}
+                        className="h-7 gap-1.5"
+                        aria-label="Refresh resources"
+                      >
+                        <RefreshCw
+                          className={`h-3.5 w-3.5 ${loadingResources ? "animate-spin" : ""}`}
+                        />
+                        <span className="text-xs">Refresh</span>
+                      </Button>
+                      {lastUpdated && (
+                        <span className="text-xs text-muted-foreground">
+                          {getTimeAgo(lastUpdated)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="relative w-64">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      ref={searchInputRef}
+                      placeholder="Search resources..."
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setPages({});
+                      }}
+                      className="pl-8 pr-8 h-8 text-sm"
+                      aria-label="Search resources"
+                    />
+                    {searchQuery && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0.5 top-0.5 h-7 w-7"
+                        onClick={() => {
+                          setSearchQuery("");
+                          setPages({});
+                        }}
+                        aria-label="Clear search"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {Object.entries(resources).map(([type, items]) => {
+                  const arr = Array.isArray(items)
+                    ? (items as Record<string, unknown>[])
+                    : [];
+
+                  // Filter resources based on search query
+                  const filteredArr = searchQuery
+                    ? arr.filter((item) => {
+                        const searchLower = searchQuery.toLowerCase();
+                        return Object.values(item).some((value) => {
+                          if (value === null || value === undefined)
+                            return false;
+                          return String(value)
+                            .toLowerCase()
+                            .includes(searchLower);
+                        });
+                      })
+                    : arr;
+
+                  const currentPage = pages[type] ?? 0;
+                  const paginatedItems = filteredArr.slice(
+                    currentPage * pageSize,
+                    (currentPage + 1) * pageSize,
+                  );
+
+                  return (
+                    <Card key={type}>
+                      <CardHeader className="p-4 pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-sm font-medium">
+                            {type}
+                          </CardTitle>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="text-[10px]">
+                              {searchQuery && filteredArr.length !== arr.length
+                                ? `${filteredArr.length} of ${arr.length} items`
+                                : `${arr.length} items`}
+                            </Badge>
+                            {filteredArr.length > 0 && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    title="Export"
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      try {
+                                        exportData({
+                                          service,
+                                          resourceType: type,
+                                          data: filteredArr,
+                                          format: "json",
+                                        });
+                                      } catch (e) {
+                                        toast.error("Export failed", {
+                                          description:
+                                            e instanceof Error
+                                              ? e.message
+                                              : "Unknown error",
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    Export as JSON
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      try {
+                                        exportData({
+                                          service,
+                                          resourceType: type,
+                                          data: filteredArr,
+                                          format: "csv",
+                                        });
+                                      } catch (e) {
+                                        toast.error("Export failed", {
+                                          description:
+                                            e instanceof Error
+                                              ? e.message
+                                              : "Unknown error",
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    Export as CSV
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        {filteredArr.length === 0 && searchQuery && (
+                          <div className="px-4 py-6 text-center space-y-1">
+                            <div className="flex justify-center">
+                              <Search className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              No matches for "{searchQuery}"
+                            </p>
+                          </div>
+                        )}
+                        {filteredArr.length === 0 && !searchQuery && (
+                          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                            Empty
+                          </div>
+                        )}
+                        {filteredArr.length > 0 && (
+                          <>
+                            <Table>
+                              <TableBody>
+                                {paginatedItems.map((item, i) => {
+                                  const rowIdx = globalRowIdx++;
+                                  const isSelected = rowIdx === selectedRow;
+                                  return (
+                                    <TableRow
+                                      key={i}
+                                      className={`cursor-pointer ${isSelected ? "bg-accent" : ""}`}
+                                      onClick={() =>
+                                        openDetail(
+                                          service,
+                                          type,
+                                          String(item.id ?? i),
+                                        )
+                                      }
+                                      data-row-index={rowIdx}
+                                    >
+                                      <TableCell className="text-primary font-mono font-medium text-xs">
+                                        {String(item.id ?? i)}
+                                      </TableCell>
+                                      <TableCell className="text-muted-foreground text-xs truncate max-w-md">
+                                        {Object.entries(item)
+                                          .filter(([k]) => k !== "id")
+                                          .slice(0, 4)
+                                          .map(
+                                            ([k, v]) =>
+                                              `${k}: ${typeof v === "string" && v.length > 40 ? v.slice(0, 40) + "..." : v}`,
+                                          )
+                                          .join(" | ")}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                            <PaginationBar
+                              total={filteredArr.length}
+                              page={currentPage}
+                              pageSize={pageSize}
+                              onPageChange={(p) =>
+                                setPages((prev) => ({ ...prev, [type]: p }))
+                              }
+                              onPageSizeChange={setPageSize}
+                            />
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             </div>
-
-            {Object.entries(resources).map(([type, items]) => {
-              const arr = Array.isArray(items) ? items as Record<string, unknown>[] : []
-
-              // Filter resources based on search query
-              const filteredArr = searchQuery
-                ? arr.filter((item) => {
-                    const searchLower = searchQuery.toLowerCase()
-                    return Object.values(item).some((value) => {
-                      if (value === null || value === undefined) return false
-                      return String(value).toLowerCase().includes(searchLower)
-                    })
-                  })
-                : arr
-
-              const currentPage = pages[type] ?? 0
-              const paginatedItems = filteredArr.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
-
-              return (
-                <Card key={type}>
-                  <CardHeader className="p-4 pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-medium">{type}</CardTitle>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary" className="text-[10px]">
-                          {searchQuery && filteredArr.length !== arr.length
-                            ? `${filteredArr.length} of ${arr.length} items`
-                            : `${arr.length} items`}
-                        </Badge>
-                        {filteredArr.length > 0 && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-6 w-6" title="Export">
-                                <Download className="h-3.5 w-3.5" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  try {
-                                    exportData({
-                                      service,
-                                      resourceType: type,
-                                      data: filteredArr,
-                                      format: 'json',
-                                    })
-                                  } catch (e) {
-                                    toast.error('Export failed', {
-                                      description: e instanceof Error ? e.message : 'Unknown error',
-                                    })
-                                  }
-                                }}
-                              >
-                                Export as JSON
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  try {
-                                    exportData({
-                                      service,
-                                      resourceType: type,
-                                      data: filteredArr,
-                                      format: 'csv',
-                                    })
-                                  } catch (e) {
-                                    toast.error('Export failed', {
-                                      description: e instanceof Error ? e.message : 'Unknown error',
-                                    })
-                                  }
-                                }}
-                              >
-                                Export as CSV
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    {filteredArr.length === 0 && searchQuery && (
-                      <div className="px-4 py-6 text-center space-y-1">
-                        <div className="flex justify-center">
-                          <Search className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <p className="text-sm text-muted-foreground">No matches for "{searchQuery}"</p>
-                      </div>
-                    )}
-                    {filteredArr.length === 0 && !searchQuery && (
-                      <div className="px-4 py-6 text-center text-sm text-muted-foreground">Empty</div>
-                    )}
-                    {filteredArr.length > 0 && (
-                      <>
-                        <Table>
-                          <TableBody>
-                            {paginatedItems.map((item, i) => {
-                              const rowIdx = globalRowIdx++
-                              const isSelected = rowIdx === selectedRow
-                              return (
-                              <TableRow
-                                key={i}
-                                className={`cursor-pointer ${isSelected ? 'bg-accent' : ''}`}
-                                onClick={() => openDetail(service, type, String(item.id ?? i))}
-                                data-row-index={rowIdx}
-                              >
-                                <TableCell className="text-primary font-mono font-medium text-xs">
-                                  {String(item.id ?? i)}
-                                </TableCell>
-                                <TableCell className="text-muted-foreground text-xs truncate max-w-md">
-                                  {Object.entries(item)
-                                    .filter(([k]) => k !== 'id')
-                                    .slice(0, 4)
-                                    .map(([k, v]) => `${k}: ${typeof v === 'string' && v.length > 40 ? v.slice(0, 40) + '...' : v}`)
-                                    .join(' | ')}
-                                </TableCell>
-                              </TableRow>
-                              )
-                            })}
-                          </TableBody>
-                        </Table>
-                        <PaginationBar
-                          total={filteredArr.length}
-                          page={currentPage}
-                          pageSize={pageSize}
-                          onPageChange={(p) => setPages((prev) => ({ ...prev, [type]: p }))}
-                          onPageSizeChange={setPageSize}
-                        />
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-          )
+          );
         })()}
 
         {/* Detail Sheet */}

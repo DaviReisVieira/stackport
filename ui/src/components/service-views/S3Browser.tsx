@@ -1,12 +1,32 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { fetchS3Buckets, fetchS3Objects, fetchS3Object, getS3DownloadUrl } from '@/lib/api'
+import {
+  fetchS3Buckets,
+  fetchS3Objects,
+  fetchS3Object,
+  getS3DownloadUrl,
+  uploadS3Object,
+  deleteS3Object,
+  deleteS3ObjectsBatch,
+  createS3Folder,
+  fetchS3UploadConfig,
+} from '@/lib/api'
 import type { S3Bucket, S3File, S3ObjectsResponse, S3ObjectDetail } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -16,6 +36,7 @@ import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/components/Breadcrumb'
 import { getServiceIcon } from '@/lib/service-icons'
+import { toast } from 'sonner'
 import { useFetch } from '@/hooks/useFetch'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { Input } from '@/components/ui/input'
@@ -38,9 +59,18 @@ import {
   Download,
   Search,
   RefreshCw,
+  Upload,
+  Trash2,
+  FolderPlus,
 } from 'lucide-react'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
+
+function isFileDrag(e: React.DragEvent): boolean {
+  const types = e.dataTransfer?.types
+  if (!types) return false
+  return Array.from(types as unknown as Iterable<string>).includes('Files')
+}
 
 
 function formatBytes(bytes: number): string {
@@ -129,6 +159,11 @@ function PaginationBar({
   )
 }
 
+type ConfirmDialog =
+  | { type: 'delete-file'; key: string }
+  | { type: 'delete-bulk' }
+  | { type: 'delete-folder'; folderPrefix: string }
+
 export function S3Browser() {
   const [searchParams, setSearchParams] = useSearchParams()
   const bucketsFetcher = useCallback(() => fetchS3Buckets(), [])
@@ -149,6 +184,16 @@ export function S3Browser() {
   const [pageSize, setPageSize] = useState(25)
   const bucketSearchRef = useRef<HTMLInputElement>(null)
   const fileSearchRef = useRef<HTMLInputElement>(null)
+  const fileUploadRef = useRef<HTMLInputElement>(null)
+
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set())
+  const [fileDragActive, setFileDragActive] = useState(false)
+  const [maxUploadBytes, setMaxUploadBytes] = useState<number | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<{ name: string; percent: number } | null>(null)
+  const uploadAbortRef = useRef<(() => void) | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null)
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false)
+  const [newFolderSegment, setNewFolderSegment] = useState('')
 
   // Helper to update URL params
   const setSelectedBucket = (bucket: string | null) => {
@@ -184,16 +229,42 @@ export function S3Browser() {
     []
   )
 
-  useEffect(() => {
+  const loadObjects = useCallback(async () => {
     if (!selectedBucket) {
       setObjectsData(null)
       return
     }
     setLoadingObjects(true)
-    fetchS3Objects(selectedBucket, prefix)
-      .then(setObjectsData)
-      .catch(() => setObjectsData(null))
-      .finally(() => setLoadingObjects(false))
+    try {
+      const data = await fetchS3Objects(selectedBucket, prefix)
+      setObjectsData(data)
+    } catch {
+      setObjectsData(null)
+    } finally {
+      setLoadingObjects(false)
+    }
+  }, [selectedBucket, prefix])
+
+  useEffect(() => {
+    void loadObjects()
+  }, [loadObjects])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchS3UploadConfig()
+      .then((c) => {
+        if (!cancelled) setMaxUploadBytes(c.max_upload_bytes)
+      })
+      .catch(() => {
+        if (!cancelled) setMaxUploadBytes(100 * 1024 * 1024)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    setSelectedKeys(new Set())
   }, [selectedBucket, prefix])
 
   const openObject = async (bucket: string, key: string) => {
@@ -274,6 +345,165 @@ export function S3Browser() {
     () => allItems.slice(filePage * pageSize, (filePage + 1) * pageSize),
     [allItems, filePage, pageSize],
   )
+
+  const pageFileKeys = useMemo(
+    () =>
+      paginatedItems
+        .filter((i): i is { type: 'file'; file: S3File } => i.type === 'file')
+        .map((i) => i.file.key),
+    [paginatedItems],
+  )
+
+  const allPageFilesSelected =
+    pageFileKeys.length > 0 && pageFileKeys.every((k) => selectedKeys.has(k))
+  const somePageFilesSelected =
+    pageFileKeys.some((k) => selectedKeys.has(k)) && !allPageFilesSelected
+
+  const toggleKey = (key: string, checked: boolean) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }
+
+  const toggleSelectAllPage = (checked: boolean) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev)
+      for (const k of pageFileKeys) {
+        if (checked) next.add(k)
+        else next.delete(k)
+      }
+      return next
+    })
+  }
+
+  const effectiveMaxUploadBytes = maxUploadBytes ?? 100 * 1024 * 1024
+
+  const startUpload = (file: File) => {
+    if (!selectedBucket) return
+    if (file.size > effectiveMaxUploadBytes) {
+      toast.error(`File exceeds maximum size (${formatBytes(effectiveMaxUploadBytes)})`)
+      return
+    }
+    const showBar = file.size > 1024 * 1024
+    if (showBar) {
+      setUploadProgress({ name: file.name, percent: 0 })
+    }
+    let lastPercent = 0
+    void uploadS3Object(selectedBucket, file, prefix, {
+      onProgress: showBar
+        ? (loaded, total) => {
+            const p = total > 0 ? Math.round((100 * loaded) / total) : 0
+            if (p !== lastPercent) {
+              lastPercent = p
+              setUploadProgress({ name: file.name, percent: p })
+            }
+          }
+        : undefined,
+      onRegisterAbort: (abort) => {
+        uploadAbortRef.current = abort
+      },
+    })
+      .then(() => {
+        toast.success(`Uploaded ${file.name}`)
+        void loadObjects()
+        void refreshBuckets()
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          toast.message('Upload cancelled')
+        } else {
+          toast.error(e instanceof Error ? e.message : 'Upload failed')
+        }
+      })
+      .finally(() => {
+        setUploadProgress(null)
+        uploadAbortRef.current = null
+        if (fileUploadRef.current) fileUploadRef.current.value = ''
+      })
+  }
+
+  const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (f) startUpload(f)
+  }
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setFileDragActive(false)
+    const f = e.dataTransfer.files?.[0]
+    if (f) startUpload(f)
+  }
+
+  const onObjectListDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!isFileDrag(e)) return
+    setFileDragActive(true)
+  }
+
+  const onObjectListDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const next = e.relatedTarget as Node | null
+    if (next && e.currentTarget.contains(next)) return
+    setFileDragActive(false)
+  }
+
+  const onObjectListDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const confirmDeleteAction = async () => {
+    if (!confirmDialog || !selectedBucket) return
+    try {
+      if (confirmDialog.type === 'delete-file') {
+        await deleteS3Object(selectedBucket, confirmDialog.key)
+        toast.success('Object deleted')
+        if (objectDetail?.key === confirmDialog.key) setObjectDetail(null)
+      } else if (confirmDialog.type === 'delete-bulk') {
+        const keys = [...selectedKeys]
+        await deleteS3ObjectsBatch(selectedBucket, { keys })
+        toast.success(`Deleted ${keys.length} object(s)`)
+        setSelectedKeys(new Set())
+        setObjectDetail(null)
+      } else {
+        await deleteS3ObjectsBatch(selectedBucket, { prefix: confirmDialog.folderPrefix })
+        toast.success('Folder deleted')
+        setObjectDetail(null)
+      }
+      await loadObjects()
+      await refreshBuckets()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setConfirmDialog(null)
+    }
+  }
+
+  const submitNewFolder = async () => {
+    if (!selectedBucket) return
+    const segment = newFolderSegment.trim().replace(/^\/+|\/+$/g, '')
+    if (!segment || segment.includes('..') || segment.includes('/')) {
+      toast.error('Enter a single folder name (no slashes)')
+      return
+    }
+    const folderPrefix = `${prefix}${segment}/`
+    try {
+      await createS3Folder(selectedBucket, folderPrefix)
+      toast.success(`Created folder ${segment}`)
+      setFolderDialogOpen(false)
+      setNewFolderSegment('')
+      await loadObjects()
+      await refreshBuckets()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not create folder')
+    }
+  }
 
   // Bucket list view
   if (!selectedBucket) {
@@ -418,11 +648,11 @@ export function S3Browser() {
     )
   }
 
-  // Object browser view
+  // Object browser view — fill ResourceBrowser pane (flex chain from Layout main)
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
       {/* Breadcrumb navigation */}
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         <Button variant="ghost" size="sm" onClick={() => setSelectedBucket(null)} className="h-8">
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back
@@ -430,22 +660,78 @@ export function S3Browser() {
         <Breadcrumb segments={breadcrumbSegments} />
       </div>
 
-      {/* Objects table */}
-      <Card>
-        <CardHeader className="p-4 pb-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <CardTitle className="text-sm font-medium">
+      <input
+        ref={fileUploadRef}
+        type="file"
+        className="hidden"
+        aria-hidden
+        onChange={onFileInputChange}
+      />
+
+      <div
+        data-testid="s3-object-drop-zone"
+        className="relative flex min-h-0 flex-1 flex-col rounded-lg border border-transparent"
+        aria-label="Object list — drop a file here to upload"
+        onDragEnter={onObjectListDragEnter}
+        onDragLeave={onObjectListDragLeave}
+        onDragOver={onObjectListDragOver}
+        onDrop={onDrop}
+      >
+        {fileDragActive && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-background/90 text-sm font-medium text-primary">
+            Drop file to upload
+          </div>
+        )}
+        <Card
+          className={`flex h-full min-h-0 flex-1 flex-col ${fileDragActive ? 'ring-2 ring-primary/30' : ''}`}
+        >
+        <CardHeader className="shrink-0 p-4 pb-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <CardTitle className="text-sm font-medium truncate">
                 {prefix ? `${prefix}` : 'Root'}
               </CardTitle>
               {objectsData && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
                   {filteredFolders.length} folders, {filteredFiles.length} files
                 </span>
               )}
             </div>
-            {objectsData && (objectsData.folders.length > 0 || objectsData.files.length > 0) && (
-              <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={() => fileUploadRef.current?.click()}
+              >
+                <Upload className="h-3.5 w-3.5 mr-1.5" />
+                Upload
+              </Button>
+              <Button variant="outline" size="sm" className="h-8" onClick={() => setFolderDialogOpen(true)}>
+                <FolderPlus className="h-3.5 w-3.5 mr-1.5" />
+                New folder
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-8"
+                disabled={selectedKeys.size === 0}
+                onClick={() => setConfirmDialog({ type: 'delete-bulk' })}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                Delete selected
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                title="Refresh"
+                onClick={() => { void loadObjects(); void refreshBuckets() }}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            {objectsData && (
+              <>
                 <div className="relative w-56">
                   <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
@@ -457,43 +743,63 @@ export function S3Browser() {
                     aria-label="Search files and folders"
                   />
                 </div>
-                {filteredFiles.length > 0 && <ExportDropdown service="s3" resourceType="objects" data={filteredFiles as unknown as Record<string, unknown>[]} />}
-              </div>
+                {filteredFiles.length > 0 && (
+                  <ExportDropdown service="s3" resourceType="objects" data={filteredFiles as unknown as Record<string, unknown>[]} />
+                )}
+              </>
             )}
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
           {loadingObjects ? (
-            <div className="p-4 space-y-2">
+            <div className="flex-1 space-y-2 p-4">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
           ) : objectsData && (objectsData.folders.length > 0 || objectsData.files.length > 0) ? (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {allItems.length === 0 && fileSearch ? (
-              <EmptyState
-                icon={Search}
-                title="No matching files"
-                description={`No files or folders match "${fileSearch}".`}
-              />
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center py-8">
+                <EmptyState
+                  icon={Search}
+                  title="No matching files"
+                  description={`No files or folders match "${fileSearch}".`}
+                />
+              </div>
             ) : (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[45%]">Name</TableHead>
+                  <TableHead className="w-[36px] pl-4">
+                    <Checkbox
+                      checked={
+                        allPageFilesSelected
+                          ? true
+                          : somePageFilesSelected
+                            ? 'indeterminate'
+                            : false
+                      }
+                      onCheckedChange={(v) => toggleSelectAllPage(v === true)}
+                      title="Select all on this page"
+                      aria-label="Select all files on this page"
+                    />
+                  </TableHead>
+                  <TableHead className="w-[40%]">Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Size</TableHead>
                   <TableHead>Last Modified</TableHead>
-                  <TableHead className="w-[50px]" />
+                  <TableHead className="w-[90px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {/* Back navigation */}
                 {prefix && !fileSearch && filePage === 0 && (
                   <TableRow className="cursor-pointer hover:bg-accent/50" onClick={navigateUp}>
-                    <TableCell className="text-xs" colSpan={5}>
+                    <TableCell className="text-xs" colSpan={6}>
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <ArrowLeft className="h-3.5 w-3.5" />
                         <span>..</span>
@@ -508,10 +814,15 @@ export function S3Browser() {
                     return (
                       <TableRow
                         key={item.folder}
-                        className="cursor-pointer hover:bg-accent/50"
-                        onClick={() => navigateToFolder(item.folder)}
+                        className="hover:bg-accent/50"
                       >
-                        <TableCell>
+                        <TableCell className="pl-4 w-[36px]" onClick={(e) => e.stopPropagation()}>
+                          <span className="inline-block w-4" aria-hidden />
+                        </TableCell>
+                        <TableCell
+                          className="cursor-pointer"
+                          onClick={() => navigateToFolder(item.folder)}
+                        >
                           <div className="flex items-center gap-2">
                             <Folder className="h-4 w-4 text-yellow-500" />
                             <span className="text-sm font-medium">{folderName}/</span>
@@ -520,7 +831,20 @@ export function S3Browser() {
                         <TableCell className="text-xs text-muted-foreground">Folder</TableCell>
                         <TableCell className="text-xs text-muted-foreground">—</TableCell>
                         <TableCell className="text-xs text-muted-foreground">—</TableCell>
-                        <TableCell />
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            aria-label={`Delete folder ${folderName}`}
+                            onClick={() =>
+                              setConfirmDialog({ type: 'delete-folder', folderPrefix: item.folder })
+                            }
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     )
                   }
@@ -532,6 +856,14 @@ export function S3Browser() {
                       className="cursor-pointer hover:bg-accent/50"
                       onClick={() => openObject(selectedBucket, file.key)}
                     >
+                      <TableCell className="pl-4 w-[36px]" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedKeys.has(file.key)}
+                          onCheckedChange={(v) => toggleKey(file.key, v === true)}
+                          aria-label={`Select ${file.name}`}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Icon className="h-4 w-4 text-muted-foreground" />
@@ -541,29 +873,41 @@ export function S3Browser() {
                       <TableCell className="text-xs text-muted-foreground">{file.content_type}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{formatBytes(file.size)}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{formatDate(file.last_modified)}</TableCell>
-                      <TableCell>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <a
-                              href={getS3DownloadUrl(selectedBucket, file.key)}
-                              download
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent transition-colors"
-                              aria-label={`Download ${file.name}`}
-                            >
-                              <Download className="h-3.5 w-3.5 text-muted-foreground" />
-                            </a>
-                          </TooltipTrigger>
-                          <TooltipContent>Download</TooltipContent>
-                        </Tooltip>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <a
+                                href={getS3DownloadUrl(selectedBucket, file.key)}
+                                download
+                                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent transition-colors"
+                                aria-label={`Download ${file.name}`}
+                              >
+                                <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                              </a>
+                            </TooltipTrigger>
+                            <TooltipContent>Download</TooltipContent>
+                          </Tooltip>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            aria-label={`Delete ${file.name}`}
+                            onClick={() => setConfirmDialog({ type: 'delete-file', key: file.key })}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
                 })}
               </TableBody>
             </Table>
+            </div>
             {allItems.length > pageSize && (
-              <div className="border-t">
+              <div className="shrink-0 border-t">
                 <PaginationBar
                   page={filePage}
                   totalPages={fileTotalPages}
@@ -574,18 +918,119 @@ export function S3Browser() {
                 />
               </div>
             )}
-            </>
+            </div>
             )}
-            </>
+            </div>
           ) : (
-            <EmptyState
-              icon={Folder}
-              title={prefix ? 'Empty folder' : 'Empty bucket'}
-              description="No objects in this location."
-            />
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center py-8">
+              <EmptyState
+                icon={Folder}
+                title={prefix ? 'Empty folder' : 'Empty bucket'}
+                description="No objects in this location. Upload a file or create a folder."
+              />
+            </div>
           )}
         </CardContent>
-      </Card>
+        </Card>
+      </div>
+
+      <Dialog
+        open={uploadProgress !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            uploadAbortRef.current?.()
+            setUploadProgress(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Uploading</DialogTitle>
+            <DialogDescription className="break-all">{uploadProgress?.name}</DialogDescription>
+          </DialogHeader>
+          {uploadProgress && (
+            <div className="space-y-2">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${uploadProgress.percent}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground text-right">{uploadProgress.percent}%</p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                uploadAbortRef.current?.()
+                setUploadProgress(null)
+              }}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDialog !== null} onOpenChange={(o) => !o && setConfirmDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm delete</DialogTitle>
+            <DialogDescription>
+              {confirmDialog?.type === 'delete-file' && (
+                <>Delete <span className="font-mono break-all">{confirmDialog.key}</span>?</>
+              )}
+              {confirmDialog?.type === 'delete-bulk' && (
+                <>Delete {selectedKeys.size} object(s)? This cannot be undone.</>
+              )}
+              {confirmDialog?.type === 'delete-folder' && (
+                <>Delete folder and all objects under <span className="font-mono break-all">{confirmDialog.folderPrefix}</span>?</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirmDialog(null)}>
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => void confirmDeleteAction()}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New folder</DialogTitle>
+            <DialogDescription>
+              Folder name under the current path (no slashes). A placeholder object will be created.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="s3-new-folder">Folder name</Label>
+            <Input
+              id="s3-new-folder"
+              value={newFolderSegment}
+              onChange={(e) => setNewFolderSegment(e.target.value)}
+              placeholder="my-folder"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void submitNewFolder()
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setFolderDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void submitNewFolder()}>
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Object detail Sheet */}
       <Sheet open={!!objectDetail} onOpenChange={(open) => !open && setObjectDetail(null)}>
@@ -597,12 +1042,24 @@ export function S3Browser() {
                 <SheetDescription className="break-all">{objectDetail.key}</SheetDescription>
               </SheetHeader>
 
-              <Button variant="outline" size="sm" className="w-full mt-2" asChild>
-                <a href={getS3DownloadUrl(objectDetail.bucket, objectDetail.key)} download>
-                  <Download className="h-4 w-4 mr-2" />
-                  Download ({formatBytes(objectDetail.size)})
-                </a>
-              </Button>
+              <div className="flex flex-col gap-2 mt-2">
+                <Button variant="outline" size="sm" className="w-full" asChild>
+                  <a href={getS3DownloadUrl(objectDetail.bucket, objectDetail.key)} download>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download ({formatBytes(objectDetail.size)})
+                  </a>
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setConfirmDialog({ type: 'delete-file', key: objectDetail.key })}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete object
+                </Button>
+              </div>
 
               <div className="space-y-4 mt-4">
                 {/* Properties */}

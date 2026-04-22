@@ -20,5 +20,9 @@ class TTLCache:
         with self._lock:
             self._store[key] = (value, time.time() + ttl)
 
+    def delete(self, key: str) -> None:
+        with self._lock:
+            self._store.pop(key, None)
+
 
 cache = TTLCache()

@@ -1,6 +1,6 @@
 [project]
 name = "stackport"
-version = "0.1.8"
+version = "0.1.9"
 description = "Universal AWS resource browser for local emulators"
 readme = "README.md"
 license = {text = "MIT"}
@@ -19,7 +19,14 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Testing",
 ]
-dependencies = ["fastapi>=0.115.0", "uvicorn>=0.30.0", "boto3>=1.35.0", "click>=8.0", "websockets>=12.0"]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "boto3>=1.35.0",
+    "click>=8.0",
+    "websockets>=12.0",
+    "python-multipart>=0.0.26",
+]
 
 [project.urls]
 Homepage = "https://github.com/DaviReisVieira/stackport"

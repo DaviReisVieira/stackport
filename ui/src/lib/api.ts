@@ -6,6 +6,11 @@ import type {
   S3Bucket,
   S3ObjectsResponse,
   S3ObjectDetail,
+  S3UploadResponse,
+  S3UploadConfig,
+  S3DeleteObjectResponse,
+  S3DeleteBatchResponse,
+  S3CreateFolderResponse,
   DynamoDBTable,
   DynamoDBTableDetail,
   DynamoDBScanResponse,
@@ -53,6 +58,11 @@ import type {
 
 const API_BASE = '/api'
 
+/** Encode each path segment of an S3 key for use in a URL path (preserves `/` as separator). */
+function encodeS3ObjectKeyInPath(key: string): string {
+  return key.split('/').map(encodeURIComponent).join('/')
+}
+
 async function fetchJSON<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
@@ -90,11 +100,108 @@ export async function fetchS3Objects(bucket: string, prefix = '', delimiter = '/
 }
 
 export async function fetchS3Object(bucket: string, key: string): Promise<S3ObjectDetail> {
-  return fetchJSON<S3ObjectDetail>(`${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/${key}`)
+  return fetchJSON<S3ObjectDetail>(
+    `${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/${encodeS3ObjectKeyInPath(key)}`,
+  )
 }
 
 export function getS3DownloadUrl(bucket: string, key: string): string {
-  return `${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/${key}?download=1`
+  return `${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/${encodeS3ObjectKeyInPath(key)}?download=1`
+}
+
+/** Effective max upload size from the server (`GET /api/s3/upload-config`). */
+export async function fetchS3UploadConfig(): Promise<S3UploadConfig> {
+  return fetchJSON<S3UploadConfig>(`${API_BASE}/s3/upload-config`)
+}
+
+export function uploadS3Object(
+  bucket: string,
+  file: File,
+  prefix: string,
+  options?: {
+    onProgress?: (loaded: number, total: number) => void
+    signal?: AbortSignal
+    onRegisterAbort?: (abort: () => void) => void
+  },
+): Promise<S3UploadResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    options?.onRegisterAbort?.(() => xhr.abort())
+
+    const params = new URLSearchParams()
+    if (prefix) params.set('prefix', prefix)
+    const qs = params.toString()
+    const url = `${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects${qs ? `?${qs}` : ''}`
+
+    xhr.open('POST', url)
+    xhr.responseType = 'json'
+
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable && options?.onProgress && ev.total > 0) {
+        options.onProgress(ev.loaded, ev.total)
+      }
+    }
+
+    xhr.onload = () => {
+      if (xhr.status === 413) {
+        reject(new Error('File exceeds maximum upload size'))
+        return
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.response as S3UploadResponse)
+        return
+      }
+      reject(new Error(`${xhr.status}: ${xhr.statusText}`))
+    }
+    xhr.onerror = () => reject(new Error('Network error'))
+    xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'))
+
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        reject(new DOMException('Aborted', 'AbortError'))
+        return
+      }
+      options.signal.addEventListener('abort', () => xhr.abort())
+    }
+
+    const form = new FormData()
+    form.append('file', file)
+    xhr.send(form)
+  })
+}
+
+export async function deleteS3Object(bucket: string, key: string): Promise<S3DeleteObjectResponse> {
+  const res = await fetch(
+    `${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/${encodeS3ObjectKeyInPath(key)}`,
+    {
+      method: 'DELETE',
+    },
+  )
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json() as Promise<S3DeleteObjectResponse>
+}
+
+export async function deleteS3ObjectsBatch(
+  bucket: string,
+  body: { keys: string[] } | { prefix: string },
+): Promise<S3DeleteBatchResponse> {
+  const res = await fetch(`${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/delete-batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json() as Promise<S3DeleteBatchResponse>
+}
+
+export async function createS3Folder(bucket: string, folderPrefix: string): Promise<S3CreateFolderResponse> {
+  const res = await fetch(`${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/folders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefix: folderPrefix }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json() as Promise<S3CreateFolderResponse>
 }
 
 export async function fetchDynamoDBTables(): Promise<{ tables: DynamoDBTable[] }> {

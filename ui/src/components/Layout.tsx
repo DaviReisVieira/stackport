@@ -118,7 +118,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       </nav>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex min-h-0 flex-1 flex-col overflow-auto">
         {children}
       </main>
     </div>

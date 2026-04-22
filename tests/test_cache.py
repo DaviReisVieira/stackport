@@ -26,6 +26,17 @@ class TestTTLCache:
         c.set("k", "v2", ttl=10)
         assert c.get("k") == "v2"
 
+    def test_delete(self):
+        c = TTLCache()
+        c.set("k", "v", ttl=10)
+        c.delete("k")
+        assert c.get("k") is None
+
+    def test_delete_missing(self):
+        c = TTLCache()
+        c.delete("nope")  # no-op
+        assert c.get("nope") is None
+
     def test_thread_safety(self):
         c = TTLCache()
         errors = []
