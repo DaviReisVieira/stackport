@@ -311,6 +311,83 @@ export interface SQSSendMessageResponse {
   sequenceNumber?: string
 }
 
+export interface RedrivePolicy {
+  deadLetterTargetArn: string
+  maxReceiveCount: number
+}
+
+export interface SQSCreateQueueRequest {
+  queueName: string
+  queueType: 'Standard' | 'FIFO'
+  contentBasedDeduplication?: boolean
+  visibilityTimeout?: number
+  messageRetentionPeriod?: number
+  delaySeconds?: number
+  maximumMessageSize?: number
+  receiveMessageWaitTime?: number
+  // Advanced settings
+  redrivePolicy?: RedrivePolicy
+  kmsMasterKeyId?: string
+  sqsManagedSseEnabled?: boolean
+  tags?: Record<string, string>
+}
+
+export interface SQSCreateQueueResponse {
+  queueName: string
+  queueUrl: string
+  queueArn: string
+}
+
+export interface SQSBatchSendMessageEntry {
+  id: string
+  messageBody: string
+  delaySeconds?: number
+  messageDeduplicationId?: string
+  messageGroupId?: string
+}
+
+export interface SQSBatchSendRequest {
+  entries: SQSBatchSendMessageEntry[]
+}
+
+export interface SQSBatchSendResponse {
+  successful: Array<{ id: string; messageId: string }>
+  failed: Array<{ id: string; code: string; message: string }>
+}
+
+export interface SQSBatchDeleteRequest {
+  receiptHandles: string[]
+}
+
+export interface SQSUpdateAttributesRequest {
+  visibilityTimeout?: number
+  messageRetentionPeriod?: number
+  delaySeconds?: number
+  maximumMessageSize?: number
+  receiveMessageWaitTime?: number
+}
+
+export interface SQSFavoriteMessage {
+  id: string                    // Unique favorite ID (UUID)
+  name: string                  // User-defined name for the favorite
+  messageBody: string           // Message content
+  delaySeconds?: number         // Optional delay
+  messageGroupId?: string       // For FIFO queues
+  messageDeduplicationId?: string  // For FIFO queues
+  messageAttributes?: Record<string, {
+    stringValue: string
+    dataType: string
+  }>
+  createdAt: string             // ISO timestamp
+  sourceQueue?: string          // Original queue (optional)
+  originalMessageId?: string    // Original message ID (optional)
+  isBatch?: boolean             // True if this is a batch message template
+}
+
+export interface SQSFavoriteMessages {
+  messages: SQSFavoriteMessage[]
+}
+
 export interface IAMUser {
   UserName: string
   UserId: string

@@ -288,3 +288,340 @@ class TestPurgeQueue:
 
         resp = client.post("/api/sqs/queues/nonexistent/purge")
         assert resp.status_code == 404
+
+
+class TestCreateQueue:
+    @patch("backend.routes.sqs.get_client")
+    def test_create_standard_queue(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.create_queue.return_value = {
+            "QueueUrl": QUEUE_URL,
+            "QueueArn": "arn:aws:sqs:us-east-1:000:test-queue",
+        }
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={"queueName": "test-queue", "queueType": "Standard"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["queueName"] == "test-queue"
+        assert data["queueUrl"] == QUEUE_URL
+
+    @patch("backend.routes.sqs.get_client")
+    def test_create_fifo_queue(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.create_queue.return_value = {
+            "QueueUrl": "http://localhost:4566/000000000000/orders.fifo",
+        }
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={"queueName": "orders.fifo", "queueType": "FIFO"},
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_sqs.create_queue.call_args[1]
+        assert call_kwargs["Attributes"]["FifoQueue"] == "true"
+
+    @patch("backend.routes.sqs.get_client")
+    def test_create_fifo_queue_missing_suffix(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={"queueName": "orders", "queueType": "FIFO"},
+        )
+        assert resp.status_code == 400
+
+    @patch("backend.routes.sqs.get_client")
+    def test_create_queue_with_attributes(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.create_queue.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={
+                "queueName": "test-queue",
+                "visibilityTimeout": 60,
+                "messageRetentionPeriod": 1209600,
+                "delaySeconds": 10,
+            },
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_sqs.create_queue.call_args[1]
+        attrs = call_kwargs["Attributes"]
+        assert attrs["VisibilityTimeout"] == "60"
+        assert attrs["MessageRetentionPeriod"] == "1209600"
+        assert attrs["DelaySeconds"] == "10"
+
+    @patch("backend.routes.sqs.get_client")
+    def test_create_queue_with_redrive_policy(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.create_queue.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={
+                "queueName": "test-queue",
+                "redrivePolicy": {
+                    "deadLetterTargetArn": "arn:aws:sqs:us-east-1:000:dlq",
+                    "maxReceiveCount": 5,
+                },
+            },
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_sqs.create_queue.call_args[1]
+        assert "RedrivePolicy" in call_kwargs["Attributes"]
+
+    @patch("backend.routes.sqs.get_client")
+    def test_create_queue_with_tags(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.create_queue.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={"queueName": "test-queue", "tags": {"env": "dev", "team": "backend"}},
+        )
+        assert resp.status_code == 200
+        mock_sqs.tag_queue.assert_called_once()
+
+
+class TestDeleteQueue:
+    @patch("backend.routes.sqs.get_client")
+    def test_delete_queue(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.delete("/api/sqs/queues/test-queue")
+        assert resp.status_code == 204
+
+    @patch("backend.routes.sqs.get_client")
+    def test_delete_queue_not_found(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.side_effect = mock_sqs.exceptions.QueueDoesNotExist()
+
+        resp = client.delete("/api/sqs/queues/nonexistent")
+        assert resp.status_code == 404
+
+
+class TestUpdateQueueAttributes:
+    @patch("backend.routes.sqs.get_client")
+    def test_update_queue_attributes(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.put(
+            "/api/sqs/queues/test-queue/attributes",
+            json={
+                "visibilityTimeout": 90,
+                "messageRetentionPeriod": 604800,
+                "delaySeconds": 15,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+
+    @patch("backend.routes.sqs.get_client")
+    def test_update_queue_attributes_empty(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.put("/api/sqs/queues/test-queue/attributes", json={})
+        assert resp.status_code == 400
+
+
+class TestSendMessageBatch:
+    @patch("backend.routes.sqs.get_client")
+    def test_send_message_batch(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+        mock_sqs.send_message_batch.return_value = {
+            "Successful": [
+                {"Id": "msg1", "MessageId": "msg-id-1"},
+                {"Id": "msg2", "MessageId": "msg-id-2"},
+            ],
+            "Failed": [],
+        }
+
+        resp = client.post(
+            "/api/sqs/queues/test-queue/messages/batch",
+            json={
+                "entries": [
+                    {"id": "msg1", "messageBody": "first message"},
+                    {"id": "msg2", "messageBody": "second message"},
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["successful"]) == 2
+        assert data["successful"][0]["messageId"] == "msg-id-1"
+
+    @patch("backend.routes.sqs.get_client")
+    def test_send_message_batch_with_fifo_params(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+        mock_sqs.send_message_batch.return_value = {"Successful": [], "Failed": []}
+
+        resp = client.post(
+            "/api/sqs/queues/test-queue/messages/batch",
+            json={
+                "entries": [
+                    {
+                        "id": "msg1",
+                        "messageBody": "fifo msg",
+                        "messageDeduplicationId": "dedup-1",
+                        "messageGroupId": "group-1",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+
+    @patch("backend.routes.sqs.get_client")
+    def test_send_message_batch_too_many(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        entries = [{"id": f"msg{i}", "messageBody": f"message {i}"} for i in range(11)]
+        resp = client.post(
+            "/api/sqs/queues/test-queue/messages/batch",
+            json={"entries": entries},
+        )
+        assert resp.status_code == 400
+
+    @patch("backend.routes.sqs.get_client")
+    def test_send_message_batch_partial_failure(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+        mock_sqs.send_message_batch.return_value = {
+            "Successful": [{"Id": "msg1", "MessageId": "msg-id-1"}],
+            "Failed": [{"Id": "msg2", "Code": "InvalidParameter", "Message": "Bad body"}],
+        }
+
+        resp = client.post(
+            "/api/sqs/queues/test-queue/messages/batch",
+            json={
+                "entries": [
+                    {"id": "msg1", "messageBody": "good"},
+                    {"id": "msg2", "messageBody": "bad"},
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["successful"]) == 1
+        assert len(data["failed"]) == 1
+
+
+class TestDeleteMessagesBatch:
+    @patch("backend.routes.sqs.get_client")
+    def test_delete_messages_batch(self, mock_get_client):
+        import json as json_mod
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.request(
+            "DELETE",
+            "/api/sqs/queues/test-queue/messages/batch",
+            content=json_mod.dumps({"receiptHandles": ["handle-1", "handle-2", "handle-3"]}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 204
+
+    @patch("backend.routes.sqs.get_client")
+    def test_delete_messages_batch_too_many(self, mock_get_client):
+        import json as json_mod
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        handles = [f"handle-{i}" for i in range(11)]
+        resp = client.request(
+            "DELETE",
+            "/api/sqs/queues/test-queue/messages/batch",
+            content=json_mod.dumps({"receiptHandles": handles}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+
+
+class TestUpdateRedrivePolicy:
+    @patch("backend.routes.sqs.get_client")
+    def test_update_redrive_policy(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.put(
+            "/api/sqs/queues/test-queue/redrive-policy",
+            json={
+                "deadLetterTargetArn": "arn:aws:sqs:us-east-1:000:dlq",
+                "maxReceiveCount": 10,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+
+    @patch("backend.routes.sqs.get_client")
+    def test_update_redrive_policy_missing_arn(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.put(
+            "/api/sqs/queues/test-queue/redrive-policy",
+            json={"maxReceiveCount": 5},
+        )
+        assert resp.status_code == 400
+
+    @patch("backend.routes.sqs.get_client")
+    def test_update_redrive_policy_invalid_count(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.put(
+            "/api/sqs/queues/test-queue/redrive-policy",
+            json={
+                "deadLetterTargetArn": "arn:aws:sqs:us-east-1:000:dlq",
+                "maxReceiveCount": 0,
+            },
+        )
+        assert resp.status_code == 400

@@ -23,6 +23,13 @@ import type {
   SQSMessage,
   SQSSendMessageRequest,
   SQSSendMessageResponse,
+  SQSBatchSendRequest,
+  SQSBatchSendResponse,
+  SQSBatchDeleteRequest,
+  SQSCreateQueueRequest,
+  SQSCreateQueueResponse,
+  SQSUpdateAttributesRequest,
+  RedrivePolicy,
   IAMUser,
   IAMRole,
   IAMGroup,
@@ -196,6 +203,71 @@ export async function deleteSQSMessage(queueName: string, receiptHandle: string)
 export async function purgeSQSQueue(queueName: string): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/purge`, {
     method: 'POST',
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function createSQSQueue(request: SQSCreateQueueRequest): Promise<SQSCreateQueueResponse> {
+  const res = await fetch(`${API_BASE}/sqs/queues`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function deleteSQSQueue(queueName: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+}
+
+export async function updateSQSQueueAttributes(
+  queueName: string,
+  request: SQSUpdateAttributesRequest
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/attributes`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function sendSQSMessagesBatch(
+  queueName: string,
+  request: SQSBatchSendRequest
+): Promise<SQSBatchSendResponse> {
+  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/messages/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function deleteSQSMessagesBatch(queueName: string, request: SQSBatchDeleteRequest): Promise<void> {
+  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/messages/batch`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+}
+
+export async function updateSQSRedrivePolicy(
+  queueName: string,
+  policy: RedrivePolicy | null
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/redrive-policy`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(policy || { deadLetterTargetArn: null, maxReceiveCount: null }),
   })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()
