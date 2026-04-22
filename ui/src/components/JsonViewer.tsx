@@ -27,7 +27,7 @@ export function JsonViewer({ data }: JsonViewerProps) {
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       </Button>
-      <pre className="p-4 text-xs font-mono leading-relaxed overflow-auto text-muted-foreground whitespace-pre-wrap break-all">
+      <pre className="text-xs font-mono leading-relaxed overflow-auto text-muted-foreground whitespace-pre-wrap break-all">
         {json}
       </pre>
     </div>

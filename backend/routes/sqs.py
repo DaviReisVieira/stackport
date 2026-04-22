@@ -105,6 +105,8 @@ def create_queue(body: dict[str, Any]) -> dict[str, Any]:
       "delaySeconds": 0,
       "maximumMessageSize": 262144,
       "receiveMessageWaitTime": 0,
+      "dlqEnabled": false,
+      "maxReceiveCount": 5,
       "redrivePolicy": { "deadLetterTargetArn": "...", "maxReceiveCount": 5 },
       "kmsMasterKeyId": "...",
       "sqsManagedSseEnabled": true,
@@ -155,9 +157,48 @@ def create_queue(body: dict[str, Any]) -> dict[str, Any]:
         if "receiveMessageWaitTime" in body:
             attributes["ReceiveMessageWaitTime"] = str(body["receiveMessageWaitTime"])
 
-        # Redrive policy (DLQ)
+        # DLQ handling - either auto-create or use provided redrivePolicy
+        dlq_enabled = body.get("dlqEnabled", False)
         redrive_policy = body.get("redrivePolicy")
-        if redrive_policy:
+        dlq_queue_name = None
+
+        if dlq_enabled and not redrive_policy:
+            # Auto-create DLQ
+            dlq_suffix = "-dlq.fifo" if is_fifo else "-dlq"
+            dlq_queue_name = queue_name.removesuffix(".fifo") + dlq_suffix
+
+            # Check if DLQ already exists
+            try:
+                client.get_queue_url(QueueName=dlq_queue_name)
+                # DLQ exists, get its ARN
+                dlq_url_response = client.get_queue_url(QueueName=dlq_queue_name)
+                dlq_url = dlq_url_response["QueueUrl"]
+                dlq_attrs_response = client.get_queue_attributes(
+                    QueueUrl=dlq_url, AttributeNames=["QueueArn"]
+                )
+                dlq_arn = dlq_attrs_response["Attributes"]["QueueArn"]
+            except client.exceptions.QueueDoesNotExist:
+                # Create the DLQ
+                dlq_attributes: dict[str, str] = {}
+                if is_fifo:
+                    dlq_attributes["FifoQueue"] = "true"
+                dlq_attributes["SqsManagedSseEnabled"] = "true"
+
+                dlq_response = client.create_queue(
+                    QueueName=dlq_queue_name, Attributes=dlq_attributes
+                )
+                dlq_url = dlq_response["QueueUrl"]
+                dlq_arn = dlq_response.get("QueueArn", "")
+
+            # Set redrive policy with auto-created DLQ ARN
+            max_receive_count = body.get("maxReceiveCount", 5)
+            redrive_policy = {
+                "deadLetterTargetArn": dlq_arn,
+                "maxReceiveCount": max_receive_count,
+            }
+            attributes["RedrivePolicy"] = json.dumps(redrive_policy)
+        elif redrive_policy:
+            # Use provided redrive policy (manual ARN)
             attributes["RedrivePolicy"] = json.dumps(redrive_policy)
 
         # SSE encryption
@@ -189,11 +230,17 @@ def create_queue(body: dict[str, Any]) -> dict[str, Any]:
                 # Tag failure shouldn't break queue creation
                 pass
 
-        return {
+        result = {
             "queueName": queue_name,
             "queueUrl": queue_url,
             "queueArn": queue_arn,
         }
+
+        # Include DLQ info if auto-created
+        if dlq_queue_name:
+            result["dlqQueueName"] = dlq_queue_name
+
+        return result
     except HTTPException:
         raise
     except Exception as e:

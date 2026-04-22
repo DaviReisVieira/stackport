@@ -204,7 +204,6 @@ function CreateQueueSheet({
 
   // Advanced settings
   const [dlqEnabled, setDlqEnabled] = useState(false)
-  const [dlqTargetArn, setDlqTargetArn] = useState('')
   const [maxReceiveCount, setMaxReceiveCount] = useState(5)
   const [sqsManagedSseEnabled, setSqsManagedSseEnabled] = useState(true)
   const [kmsMasterKeyId, setKmsMasterKeyId] = useState('')
@@ -241,14 +240,11 @@ function CreateQueueSheet({
         receiveMessageWaitTime,
         sqsManagedSseEnabled,
         kmsMasterKeyId: !sqsManagedSseEnabled ? kmsMasterKeyId || undefined : undefined,
+        dlqEnabled,
+        maxReceiveCount: dlqEnabled ? maxReceiveCount : undefined,
       }
 
-      if (dlqEnabled && dlqTargetArn) {
-        request.redrivePolicy = {
-          deadLetterTargetArn: dlqTargetArn,
-          maxReceiveCount,
-        }
-      }
+      // Don't send redrivePolicy - let backend handle DLQ creation
 
       if (Object.keys(tags).length > 0) {
         request.tags = tags
@@ -267,7 +263,6 @@ function CreateQueueSheet({
       setMaximumMessageSize(262144)
       setReceiveMessageWaitTime(0)
       setDlqEnabled(false)
-      setDlqTargetArn('')
       setMaxReceiveCount(5)
       setSqsManagedSseEnabled(true)
       setKmsMasterKeyId('')
@@ -436,7 +431,7 @@ function CreateQueueSheet({
                 <div className="space-y-0.5">
                   <Label htmlFor="dlq-enabled">Enable Dead-Letter Queue</Label>
                   <p className="text-xs text-muted-foreground">
-                    Redirect failed messages to another queue after max receive count
+                    Redirect failed messages to a DLQ after max receive count. A DLQ queue named "<code>{queueName || 'my-queue'}-dlq</code>" will be created automatically.
                   </p>
                 </div>
                 <Switch id="dlq-enabled" checked={dlqEnabled} onCheckedChange={setDlqEnabled} />
@@ -444,16 +439,6 @@ function CreateQueueSheet({
 
               {dlqEnabled && (
                 <div className="space-y-3 pl-4 border-l-2 border-muted">
-                  <div className="space-y-2">
-                    <Label htmlFor="dlq-arn">DLQ Target ARN</Label>
-                    <Input
-                      id="dlq-arn"
-                      value={dlqTargetArn}
-                      onChange={(e) => setDlqTargetArn(e.target.value)}
-                      placeholder="arn:aws:sqs:us-east-1:123456789:dlq-queue"
-                      className="font-mono text-xs"
-                    />
-                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="max-receive-count">Max Receive Count</Label>
                     <Input
@@ -464,7 +449,7 @@ function CreateQueueSheet({
                       value={maxReceiveCount}
                       onChange={(e) => setMaxReceiveCount(Number(e.target.value))}
                     />
-                    <p className="text-xs text-muted-foreground">1-1000. Default: 5</p>
+                    <p className="text-xs text-muted-foreground">Messages will be moved to DLQ after failing this many times. Default: 5</p>
                   </div>
                 </div>
               )}
@@ -1055,21 +1040,15 @@ function BatchSendSheet({
             <pre className="text-xs bg-muted p-2 rounded mt-1 overflow-x-auto">
 {`[
   {
-    "documentNumber": "123456789",
+    "key": "value",
     "filters": [
-      {
-        "name": "John Doe",
-        "age": "30" 
-      }
+      { "key": "value", "key2": "value2" }
     ]
   },
   {
-    "documentNumber": "987654321",
+    "key": "value",
     "filters": [
-      {
-        "name": "Jane Doe",
-        "age": "30" 
-      }
+      { "key": "value", "key2": "value2" }
     ]
   }
 ]`}
@@ -1104,6 +1083,7 @@ function CreateFavoriteSheet({
   onOpenChange,
   onCreated,
   addFavorite,
+  initialData,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -1119,6 +1099,13 @@ function CreateFavoriteSheet({
     originalMessageId?: string
     isBatch?: boolean
   }) => void
+  initialData?: {
+    name: string
+    messageBody: string
+    sourceQueue?: string
+    originalMessageId?: string
+    messageAttributes?: Record<string, { stringValue: string; dataType: string }>
+  }
 }) {
   const [mode, setMode] = useState<'single' | 'batch'>('single')
 
@@ -1138,16 +1125,39 @@ function CreateFavoriteSheet({
   // Reset form when opening
   useEffect(() => {
     if (open) {
-      setName('')
-      setMessageBody('')
-      setDelaySeconds(0)
-      setMessageGroupId('')
-      setMessageDeduplicationId('')
-      setBatchName('')
-      setBatchJson('')
-      setMode('single')
+      if (initialData) {
+        // Pre-populate with initial data (saving message as favorite)
+        setName(initialData.name)
+        // Pretty-print JSON if the body is JSON
+        let formattedBody = initialData.messageBody
+        try {
+          const parsed = JSON.parse(initialData.messageBody)
+          if (typeof parsed === 'object' && parsed !== null) {
+            formattedBody = JSON.stringify(parsed, null, 2)
+          }
+        } catch {
+          // Not JSON, keep as is
+        }
+        setMessageBody(formattedBody)
+        setDelaySeconds(0)
+        setMessageGroupId('')
+        setMessageDeduplicationId('')
+        setBatchName('')
+        setBatchJson('')
+        setMode('single')
+      } else {
+        // Reset to empty state (creating new favorite)
+        setName('')
+        setMessageBody('')
+        setDelaySeconds(0)
+        setMessageGroupId('')
+        setMessageDeduplicationId('')
+        setBatchName('')
+        setBatchJson('')
+        setMode('single')
+      }
     }
-  }, [open])
+  }, [open, initialData])
 
   // Set default batch template when switching to batch mode
   useEffect(() => {
@@ -1177,6 +1187,9 @@ function CreateFavoriteSheet({
         delaySeconds: delaySeconds || undefined,
         messageGroupId: messageGroupId || undefined,
         messageDeduplicationId: messageDeduplicationId || undefined,
+        sourceQueue: initialData?.sourceQueue,
+        originalMessageId: initialData?.originalMessageId,
+        messageAttributes: initialData?.messageAttributes,
         isBatch: false,
       })
       toast.success(`Created favorite "${name.trim()}"`)
@@ -1317,6 +1330,27 @@ function CreateFavoriteSheet({
               />
             </div>
 
+            {initialData && (
+              <>
+                <Separator />
+                <div className="space-y-2">
+                  <Label>Details</Label>
+                  <Table>
+                    <TableBody>
+                      <TableRow>
+                        <TableCell className="font-medium text-xs">Source Queue</TableCell>
+                        <TableCell className="text-xs font-mono">{initialData.sourceQueue || '—'}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-xs">Message ID</TableCell>
+                        <TableCell className="text-xs font-mono">{initialData.originalMessageId?.slice(0, 32)}...</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+
             <div className="flex gap-2">
               <Button onClick={handleCreateSingle} disabled={creating} className="flex-1">
                 <Star className="h-4 w-4 mr-2" />
@@ -1362,21 +1396,15 @@ function CreateFavoriteSheet({
               <pre className="text-xs bg-muted p-2 rounded mt-1 overflow-x-auto">
 {`[
   {
-    "documentNumber": "123456789",
+    "key": "value",
     "filters": [
-      {
-        "name": "John Doe",
-        "age": "30"
-      }
+      { "key": "value", "key2": "value2" }
     ]
   },
   {
-    "documentNumber": "987654321",
+    "key": "value",
     "filters": [
-      {
-        "name": "Jane Doe",
-        "age": "30"
-      }
+      { "key": "value", "key2": "value2" }
     ]
   }
 ]`}
@@ -2002,6 +2030,13 @@ export function SQSBrowser() {
   const { favoriteMessages, addFavorite, addFavorites, removeFavorite, updateFavorite } = useSQSFavoriteMessages()
   const [activeTab, setActiveTab] = useState('messages')
   const [createFavoriteSheetOpen, setCreateFavoriteSheetOpen] = useState(false)
+  const [saveFavoriteInitialData, setSaveFavoriteInitialData] = useState<{
+    name: string
+    messageBody: string
+    sourceQueue?: string
+    originalMessageId?: string
+    messageAttributes?: Record<string, { stringValue: string; dataType: string }>
+  } | undefined>(undefined)
 
   // Favorites state using localStorage
   const [favorites, setFavorites] = useState<Set<string>>(() => {
@@ -2144,15 +2179,11 @@ export function SQSBrowser() {
     }
   }
 
-  // Add single message to favorites
+  // Add single message to favorites - opens the CreateFavoriteSheet with initial data
   const handleAddFavorite = (message: SQSMessage) => {
-    const defaultName = `Message from ${selectedQueue || 'queue'}`
-    const name = prompt('Enter a name for this favorite:', defaultName)
-    if (!name) return
-
-    addFavorite({
+    setSaveFavoriteInitialData({
+      name: `Message from ${selectedQueue || 'queue'}`,
       messageBody: message.body,
-      name,
       sourceQueue: selectedQueue ?? undefined,
       originalMessageId: message.messageId,
       messageAttributes: Object.fromEntries(
@@ -2162,7 +2193,7 @@ export function SQSBrowser() {
         ])
       ),
     })
-    toast.success(`Saved "${name}" to favorites`)
+    setCreateFavoriteSheetOpen(true)
   }
 
   // Add selected messages to favorites
@@ -2790,11 +2821,15 @@ export function SQSBrowser() {
 
         <CreateFavoriteSheet
           open={createFavoriteSheetOpen}
-          onOpenChange={setCreateFavoriteSheetOpen}
+          onOpenChange={(open) => {
+            setCreateFavoriteSheetOpen(open)
+            if (!open) setSaveFavoriteInitialData(undefined)
+          }}
           onCreated={() => {
             // Favorites list updates automatically via hook
           }}
           addFavorite={addFavorite}
+          initialData={saveFavoriteInitialData}
         />
 
       </div>

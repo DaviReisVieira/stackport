@@ -326,6 +326,8 @@ export interface SQSCreateQueueRequest {
   maximumMessageSize?: number
   receiveMessageWaitTime?: number
   // Advanced settings
+  dlqEnabled?: boolean
+  maxReceiveCount?: number
   redrivePolicy?: RedrivePolicy
   kmsMasterKeyId?: string
   sqsManagedSseEnabled?: boolean
@@ -336,6 +338,7 @@ export interface SQSCreateQueueResponse {
   queueName: string
   queueUrl: string
   queueArn: string
+  dlqQueueName?: string  // Name of the auto-created DLQ, if any
 }
 
 export interface SQSBatchSendMessageEntry {
