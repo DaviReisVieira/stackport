@@ -124,11 +124,9 @@ def create_queue(body: dict[str, Any]) -> dict[str, Any]:
         queue_type = body.get("queueType", "Standard")
         is_fifo = queue_type == "FIFO"
 
+        # Auto-append .fifo suffix for FIFO queues if not already present
         if is_fifo and not queue_name.endswith(".fifo"):
-            raise HTTPException(
-                status_code=400,
-                detail="FIFO queue names must end with .fifo suffix",
-            )
+            queue_name = f"{queue_name}.fifo"
 
         # Build attributes dict
         attributes: dict[str, str] = {}

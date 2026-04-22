@@ -222,11 +222,6 @@ function CreateQueueSheet({
       return
     }
 
-    if (isFifo && !queueName.endsWith('.fifo')) {
-      toast.error('FIFO queue names must end with .fifo suffix')
-      return
-    }
-
     try {
       setCreating(true)
       const request: SQSCreateQueueRequest = {
@@ -324,7 +319,7 @@ function CreateQueueSheet({
                 className="font-mono"
               />
               <p className="text-xs text-muted-foreground">
-                Alphanumeric, hyphens, and underscores. FIFO queues must end with <code>.fifo</code>
+                Alphanumeric, hyphens, and underscores. For FIFO queues, <code>.fifo</code> will be auto-appended if not provided.
               </p>
             </div>
 

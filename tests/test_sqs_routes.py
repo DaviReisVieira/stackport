@@ -328,16 +328,21 @@ class TestCreateQueue:
         assert call_kwargs["Attributes"]["FifoQueue"] == "true"
 
     @patch("backend.routes.sqs.get_client")
-    def test_create_fifo_queue_missing_suffix(self, mock_get_client):
+    def test_create_fifo_queue_auto_appends_suffix(self, mock_get_client):
         mock_sqs = MagicMock()
         mock_get_client.return_value = mock_sqs
         mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.create_queue.return_value = {
+            "QueueUrl": "http://localhost:4566/000000000000/orders.fifo",
+        }
 
         resp = client.post(
             "/api/sqs/queues",
             json={"queueName": "orders", "queueType": "FIFO"},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        call_kwargs = mock_sqs.create_queue.call_args[1]
+        assert call_kwargs["QueueName"] == "orders.fifo"
 
     @patch("backend.routes.sqs.get_client")
     def test_create_queue_with_attributes(self, mock_get_client):
