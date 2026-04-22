@@ -9,9 +9,3 @@ frontend-run:
 
 frontend-build:
 	cd ui && npm run build
-
-start-emulator:
-	pip install ministack && ministack
-
-run-stackport:
-	AWS_ENDPOINT_URL=http://localhost:4566 python -m backend.main
