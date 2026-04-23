@@ -62,8 +62,8 @@ AWS_PROFILE=my-profile stackport
 # Using explicit credentials
 AWS_ACCESS_KEY_ID=AKIA... AWS_SECRET_ACCESS_KEY=... AWS_REGION=us-west-2 stackport
 
-# Enable write operations
-STACKPORT_ALLOW_WRITES=true AWS_PROFILE=my-profile stackport
+# Disable write operations (read-only mode)
+STACKPORT_ALLOW_WRITES=false AWS_PROFILE=my-profile stackport
 ```
 
 When connected to real AWS, StackPort shows a warning banner and operates in read-only mode unless writes are explicitly enabled.
@@ -198,7 +198,7 @@ Press `?` anywhere to see all shortcuts.
 | `AWS_SECRET_ACCESS_KEY` | *(unset)* | AWS secret key. Unset = use credential chain |
 | `AWS_PROFILE` | *(unset)* | AWS named profile from `~/.aws/credentials` |
 | `STACKPORT_PORT` | `8080` | StackPort server port |
-| `STACKPORT_ALLOW_WRITES` | `false` | Enable write operations (POST/PUT/DELETE) |
+| `STACKPORT_ALLOW_WRITES` | `true` | Enable write operations (POST/PUT/DELETE) |
 | `STACKPORT_S3_MAX_UPLOAD_MB` | `100` | Max S3 upload size per object (MiB) |
 | `STACKPORT_SERVICES` | *(35 services)* | Comma-separated list of services to probe |
 | `STACKPORT_PROBE_TIMEOUT` | `5` | Seconds before a service probe times out |
