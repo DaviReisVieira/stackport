@@ -4,7 +4,8 @@ import { toast } from 'sonner'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFavorites } from '../hooks/useFavorites'
-import { fetchStats, fetchResources, fetchResourceDetail, fetchResourceTags, updateResourceTags } from '../lib/api'
+import { fetchStats, fetchResources, fetchResourceDetail, fetchResourceTags, updateResourceTags, fetchTagsSupported } from '../lib/api'
+import type { TagsSupportedEntry } from '../lib/types'
 import type { StatsResponse, ServiceStats, ResourceListResponse, ResourceDetailResponse } from '../lib/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -111,6 +112,7 @@ export default function ResourceBrowser() {
   const [selectedRow, setSelectedRow] = useState(-1)
   const [detailTags, setDetailTags] = useState<Record<string, string>>({})
   const [, setTagsLoading] = useState(false)
+  const [supportedTags, setSupportedTags] = useState<TagsSupportedEntry[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -144,9 +146,25 @@ export default function ResourceBrowser() {
     return () => clearInterval(interval)
   }, [])
 
-  // Fetch tags when detail sheet opens
+  // Fetch supported tag types once on mount
+  useEffect(() => {
+    fetchTagsSupported()
+      .then(res => setSupportedTags(res.supported))
+      .catch(() => setSupportedTags([]))
+  }, [])
+
+  const detailTagSupport = useMemo(() => {
+    if (!detail || supportedTags.length === 0) return null
+    return supportedTags.find(s => s.service === detail.service && s.type === detail.type) ?? null
+  }, [detail, supportedTags])
+
+  // Fetch tags when detail sheet opens (only if supported)
   useEffect(() => {
     if (!detail) {
+      setDetailTags({})
+      return
+    }
+    if (!detailTagSupport) {
       setDetailTags({})
       return
     }
@@ -155,7 +173,7 @@ export default function ResourceBrowser() {
       .then(res => setDetailTags(res.tags))
       .catch(() => setDetailTags({}))
       .finally(() => setTagsLoading(false))
-  }, [detail])
+  }, [detail, detailTagSupport])
 
   const openDetail = async (svc: string, type: string, id: string) => {
     try {
@@ -662,22 +680,24 @@ export default function ResourceBrowser() {
                   <SheetDescription>{detail.service}</SheetDescription>
                 </SheetHeader>
                 <Tabs defaultValue="details" className="mt-4">
-                  <TabsList>
+                  <TabsList className="w-fit">
                     <TabsTrigger value="details">Details</TabsTrigger>
-                    <TabsTrigger value="tags">Tags</TabsTrigger>
+                    {detailTagSupport && <TabsTrigger value="tags">Tags</TabsTrigger>}
                   </TabsList>
                   <TabsContent value="details">
                     <JsonViewer data={detail.detail} />
                   </TabsContent>
-                  <TabsContent value="tags">
-                    <TagsSection
-                      tags={detailTags}
-                      onSave={async (newTags) => {
-                        await updateResourceTags(detail!.service, detail!.type, detail!.id, newTags)
-                        setDetailTags(newTags)
-                      }}
-                    />
-                  </TabsContent>
+                  {detailTagSupport && (
+                    <TabsContent value="tags">
+                      <TagsSection
+                        tags={detailTags}
+                        onSave={detailTagSupport.writable ? async (newTags) => {
+                          await updateResourceTags(detail!.service, detail!.type, detail!.id, newTags)
+                          setDetailTags(newTags)
+                        } : undefined}
+                      />
+                    </TabsContent>
+                  )}
                 </Tabs>
               </>
             )}

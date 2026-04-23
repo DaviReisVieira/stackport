@@ -610,6 +610,16 @@ export interface LogEventsResponse {
   next_token: string | null
 }
 
+export interface TagsSupportedEntry {
+  service: string
+  type: string
+  writable: boolean
+}
+
+export interface TagsSupportedResponse {
+  supported: TagsSupportedEntry[]
+}
+
 export interface ResourceTagsResponse {
   service: string
   type: string

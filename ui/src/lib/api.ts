@@ -3,6 +3,7 @@ import type {
   StatsResponse,
   ResourceListResponse,
   ResourceDetailResponse,
+  TagsSupportedResponse,
   ResourceTagsResponse,
   BulkTagRequest,
   BulkDeleteRequest,
@@ -456,13 +457,17 @@ export async function fetchLogEvents(
 
 // --- Tag and Bulk Operations ---
 
+export async function fetchTagsSupported(): Promise<TagsSupportedResponse> {
+  return fetchJSON<TagsSupportedResponse>(`${API_BASE}/tags/supported`)
+}
+
 export async function fetchResourceTags(
   service: string,
   resourceType: string,
   resourceId: string,
 ): Promise<ResourceTagsResponse> {
   return fetchJSON<ResourceTagsResponse>(
-    `${API_BASE}/resources/${service}/${resourceType}/${encodeURIComponent(resourceId)}/tags`,
+    `${API_BASE}/tags/${service}/${resourceType}/${encodeURIComponent(resourceId)}`,
   )
 }
 
@@ -473,7 +478,7 @@ export async function updateResourceTags(
   tags: Record<string, string>,
 ): Promise<{ success: boolean }> {
   const res = await fetch(
-    `${API_BASE}/resources/${service}/${resourceType}/${encodeURIComponent(resourceId)}/tags`,
+    `${API_BASE}/tags/${service}/${resourceType}/${encodeURIComponent(resourceId)}`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
