@@ -8,6 +8,7 @@ import type {
   BulkTagRequest,
   BulkDeleteRequest,
   BulkOperationResponse,
+  EndpointsResponse,
   S3Bucket,
   S3ObjectsResponse,
   S3ObjectDetail,
@@ -56,6 +57,13 @@ import type {
 
 const API_BASE = '/api'
 
+function buildUrl(path: string, endpoint?: string | null, params?: URLSearchParams): string {
+  const p = params ?? new URLSearchParams()
+  if (endpoint) p.set('endpoint', endpoint)
+  const qs = p.toString()
+  return `${API_BASE}${path}${qs ? `?${qs}` : ''}`
+}
+
 /** Encode each path segment of an S3 key for use in a URL path (preserves `/` as separator). */
 function encodeS3ObjectKeyInPath(key: string): string {
   return key.split('/').map(encodeURIComponent).join('/')
@@ -67,47 +75,60 @@ async function fetchJSON<T>(url: string): Promise<T> {
   return res.json()
 }
 
-export async function fetchHealth(): Promise<HealthResponse> {
-  return fetchJSON<HealthResponse>(`${API_BASE}/health`)
+// --- Endpoints ---
+
+export async function fetchEndpoints(): Promise<EndpointsResponse> {
+  return fetchJSON<EndpointsResponse>(`${API_BASE}/endpoints`)
 }
 
-export async function fetchStats(): Promise<StatsResponse> {
-  return fetchJSON<StatsResponse>(`${API_BASE}/stats`)
+// --- Health & Stats ---
+
+export async function fetchHealth(endpoint?: string | null): Promise<HealthResponse> {
+  return fetchJSON<HealthResponse>(buildUrl('/health', endpoint))
 }
 
-export async function fetchResources(service: string, type?: string): Promise<ResourceListResponse> {
-  const params = type ? `?type=${type}` : ''
-  return fetchJSON<ResourceListResponse>(`${API_BASE}/resources/${service}${params}`)
+export async function fetchStats(endpoint?: string | null): Promise<StatsResponse> {
+  return fetchJSON<StatsResponse>(buildUrl('/stats', endpoint))
 }
 
-export async function fetchResourceDetail(service: string, type: string, id: string): Promise<ResourceDetailResponse> {
-  return fetchJSON<ResourceDetailResponse>(`${API_BASE}/resources/${service}/${type}/${encodeURIComponent(id)}`)
+// --- Generic Resources ---
+
+export async function fetchResources(service: string, type?: string, endpoint?: string | null): Promise<ResourceListResponse> {
+  const params = new URLSearchParams()
+  if (type) params.set('type', type)
+  return fetchJSON<ResourceListResponse>(buildUrl(`/resources/${service}`, endpoint, params))
 }
 
-export async function fetchS3Buckets(): Promise<{ buckets: S3Bucket[] }> {
-  return fetchJSON<{ buckets: S3Bucket[] }>(`${API_BASE}/s3/buckets`)
+export async function fetchResourceDetail(service: string, type: string, id: string, endpoint?: string | null): Promise<ResourceDetailResponse> {
+  return fetchJSON<ResourceDetailResponse>(buildUrl(`/resources/${service}/${type}/${encodeURIComponent(id)}`, endpoint))
 }
 
-export async function fetchS3Bucket(bucket: string) {
-  return fetchJSON(`${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}`)
+// --- S3 ---
+
+export async function fetchS3Buckets(endpoint?: string | null): Promise<{ buckets: S3Bucket[] }> {
+  return fetchJSON<{ buckets: S3Bucket[] }>(buildUrl('/s3/buckets', endpoint))
 }
 
-export async function fetchS3Objects(bucket: string, prefix = '', delimiter = '/'): Promise<S3ObjectsResponse> {
+export async function fetchS3Bucket(bucket: string, endpoint?: string | null) {
+  return fetchJSON(buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}`, endpoint))
+}
+
+export async function fetchS3Objects(bucket: string, prefix = '', delimiter = '/', endpoint?: string | null): Promise<S3ObjectsResponse> {
   const params = new URLSearchParams({ prefix, delimiter })
-  return fetchJSON<S3ObjectsResponse>(`${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects?${params}`)
+  return fetchJSON<S3ObjectsResponse>(buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/objects`, endpoint, params))
 }
 
-export async function fetchS3Object(bucket: string, key: string): Promise<S3ObjectDetail> {
+export async function fetchS3Object(bucket: string, key: string, endpoint?: string | null): Promise<S3ObjectDetail> {
   return fetchJSON<S3ObjectDetail>(
-    `${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/${encodeS3ObjectKeyInPath(key)}`,
+    buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/objects/${encodeS3ObjectKeyInPath(key)}`, endpoint),
   )
 }
 
-export function getS3DownloadUrl(bucket: string, key: string): string {
-  return `${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/${encodeS3ObjectKeyInPath(key)}?download=1`
+export function getS3DownloadUrl(bucket: string, key: string, endpoint?: string | null): string {
+  const params = new URLSearchParams({ download: '1' })
+  return buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/objects/${encodeS3ObjectKeyInPath(key)}`, endpoint, params)
 }
 
-/** Effective max upload size from the server (`GET /api/s3/upload-config`). */
 export async function fetchS3UploadConfig(): Promise<S3UploadConfig> {
   return fetchJSON<S3UploadConfig>(`${API_BASE}/s3/upload-config`)
 }
@@ -120,6 +141,7 @@ export function uploadS3Object(
     onProgress?: (loaded: number, total: number) => void
     signal?: AbortSignal
     onRegisterAbort?: (abort: () => void) => void
+    endpoint?: string | null
   },
 ): Promise<S3UploadResponse> {
   return new Promise((resolve, reject) => {
@@ -128,6 +150,7 @@ export function uploadS3Object(
 
     const params = new URLSearchParams()
     if (prefix) params.set('prefix', prefix)
+    if (options?.endpoint) params.set('endpoint', options.endpoint)
     const qs = params.toString()
     const url = `${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects${qs ? `?${qs}` : ''}`
 
@@ -168,13 +191,9 @@ export function uploadS3Object(
   })
 }
 
-export async function deleteS3Object(bucket: string, key: string): Promise<S3DeleteObjectResponse> {
-  const res = await fetch(
-    `${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/${encodeS3ObjectKeyInPath(key)}`,
-    {
-      method: 'DELETE',
-    },
-  )
+export async function deleteS3Object(bucket: string, key: string, endpoint?: string | null): Promise<S3DeleteObjectResponse> {
+  const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/objects/${encodeS3ObjectKeyInPath(key)}`, endpoint)
+  const res = await fetch(url, { method: 'DELETE' })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json() as Promise<S3DeleteObjectResponse>
 }
@@ -182,8 +201,10 @@ export async function deleteS3Object(bucket: string, key: string): Promise<S3Del
 export async function deleteS3ObjectsBatch(
   bucket: string,
   body: { keys: string[] } | { prefix: string },
+  endpoint?: string | null,
 ): Promise<S3DeleteBatchResponse> {
-  const res = await fetch(`${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/delete-batch`, {
+  const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/objects/delete-batch`, endpoint)
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -192,8 +213,9 @@ export async function deleteS3ObjectsBatch(
   return res.json() as Promise<S3DeleteBatchResponse>
 }
 
-export async function createS3Folder(bucket: string, folderPrefix: string): Promise<S3CreateFolderResponse> {
-  const res = await fetch(`${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/folders`, {
+export async function createS3Folder(bucket: string, folderPrefix: string, endpoint?: string | null): Promise<S3CreateFolderResponse> {
+  const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/folders`, endpoint)
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prefix: folderPrefix }),
@@ -202,26 +224,30 @@ export async function createS3Folder(bucket: string, folderPrefix: string): Prom
   return res.json() as Promise<S3CreateFolderResponse>
 }
 
-export async function fetchDynamoDBTables(): Promise<{ tables: DynamoDBTable[] }> {
-  return fetchJSON<{ tables: DynamoDBTable[] }>(`${API_BASE}/dynamodb/tables`)
+// --- DynamoDB ---
+
+export async function fetchDynamoDBTables(endpoint?: string | null): Promise<{ tables: DynamoDBTable[] }> {
+  return fetchJSON<{ tables: DynamoDBTable[] }>(buildUrl('/dynamodb/tables', endpoint))
 }
 
-export async function fetchDynamoDBTable(name: string): Promise<DynamoDBTableDetail> {
-  return fetchJSON<DynamoDBTableDetail>(`${API_BASE}/dynamodb/tables/${encodeURIComponent(name)}`)
+export async function fetchDynamoDBTable(name: string, endpoint?: string | null): Promise<DynamoDBTableDetail> {
+  return fetchJSON<DynamoDBTableDetail>(buildUrl(`/dynamodb/tables/${encodeURIComponent(name)}`, endpoint))
 }
 
 export async function fetchDynamoDBItems(
   name: string,
   limit = 25,
-  nextToken?: string | null
+  nextToken?: string | null,
+  endpoint?: string | null,
 ): Promise<DynamoDBScanResponse> {
   const params = new URLSearchParams({ limit: String(limit) })
   if (nextToken) params.set('exclusive_start_key', nextToken)
-  return fetchJSON<DynamoDBScanResponse>(`${API_BASE}/dynamodb/tables/${encodeURIComponent(name)}/items?${params}`)
+  return fetchJSON<DynamoDBScanResponse>(buildUrl(`/dynamodb/tables/${encodeURIComponent(name)}/items`, endpoint, params))
 }
 
-export async function queryDynamoDBTable(name: string, request: DynamoDBQueryRequest): Promise<DynamoDBQueryResponse> {
-  const res = await fetch(`${API_BASE}/dynamodb/tables/${encodeURIComponent(name)}/query`, {
+export async function queryDynamoDBTable(name: string, request: DynamoDBQueryRequest, endpoint?: string | null): Promise<DynamoDBQueryResponse> {
+  const url = buildUrl(`/dynamodb/tables/${encodeURIComponent(name)}/query`, endpoint)
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -230,20 +256,23 @@ export async function queryDynamoDBTable(name: string, request: DynamoDBQueryReq
   return res.json()
 }
 
-export async function fetchLambdaFunctions(): Promise<{ functions: LambdaFunction[] }> {
-  return fetchJSON<{ functions: LambdaFunction[] }>(`${API_BASE}/lambda/functions`)
+// --- Lambda ---
+
+export async function fetchLambdaFunctions(endpoint?: string | null): Promise<{ functions: LambdaFunction[] }> {
+  return fetchJSON<{ functions: LambdaFunction[] }>(buildUrl('/lambda/functions', endpoint))
 }
 
-export async function fetchLambdaFunction(functionName: string): Promise<LambdaFunctionDetail> {
-  return fetchJSON<LambdaFunctionDetail>(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}`)
+export async function fetchLambdaFunction(functionName: string, endpoint?: string | null): Promise<LambdaFunctionDetail> {
+  return fetchJSON<LambdaFunctionDetail>(buildUrl(`/lambda/functions/${encodeURIComponent(functionName)}`, endpoint))
 }
 
-export function getLambdaCodeDownloadUrl(functionName: string): string {
-  return `${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/code`
+export function getLambdaCodeDownloadUrl(functionName: string, endpoint?: string | null): string {
+  return buildUrl(`/lambda/functions/${encodeURIComponent(functionName)}/code`, endpoint)
 }
 
-export async function invokeLambdaFunction(functionName: string, payload: LambdaInvokeRequest): Promise<LambdaInvokeResponse> {
-  const res = await fetch(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/invoke`, {
+export async function invokeLambdaFunction(functionName: string, payload: LambdaInvokeRequest, endpoint?: string | null): Promise<LambdaInvokeResponse> {
+  const url = buildUrl(`/lambda/functions/${encodeURIComponent(functionName)}/invoke`, endpoint)
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -252,28 +281,31 @@ export async function invokeLambdaFunction(functionName: string, payload: Lambda
   return res.json()
 }
 
-export async function fetchLambdaEventSources(functionName: string): Promise<{ eventSourceMappings: LambdaEventSourceMapping[] }> {
-  return fetchJSON<{ eventSourceMappings: LambdaEventSourceMapping[] }>(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/event-sources`)
+export async function fetchLambdaEventSources(functionName: string, endpoint?: string | null): Promise<{ eventSourceMappings: LambdaEventSourceMapping[] }> {
+  return fetchJSON<{ eventSourceMappings: LambdaEventSourceMapping[] }>(buildUrl(`/lambda/functions/${encodeURIComponent(functionName)}/event-sources`, endpoint))
 }
 
-export async function fetchLambdaAliases(functionName: string): Promise<{ aliases: LambdaAlias[] }> {
-  return fetchJSON<{ aliases: LambdaAlias[] }>(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/aliases`)
+export async function fetchLambdaAliases(functionName: string, endpoint?: string | null): Promise<{ aliases: LambdaAlias[] }> {
+  return fetchJSON<{ aliases: LambdaAlias[] }>(buildUrl(`/lambda/functions/${encodeURIComponent(functionName)}/aliases`, endpoint))
 }
 
-export async function fetchLambdaVersions(functionName: string): Promise<{ versions: LambdaVersion[] }> {
-  return fetchJSON<{ versions: LambdaVersion[] }>(`${API_BASE}/lambda/functions/${encodeURIComponent(functionName)}/versions`)
+export async function fetchLambdaVersions(functionName: string, endpoint?: string | null): Promise<{ versions: LambdaVersion[] }> {
+  return fetchJSON<{ versions: LambdaVersion[] }>(buildUrl(`/lambda/functions/${encodeURIComponent(functionName)}/versions`, endpoint))
 }
 
-export async function fetchSQSQueues(): Promise<{ queues: SQSQueue[] }> {
-  return fetchJSON<{ queues: SQSQueue[] }>(`${API_BASE}/sqs/queues`)
+// --- SQS ---
+
+export async function fetchSQSQueues(endpoint?: string | null): Promise<{ queues: SQSQueue[] }> {
+  return fetchJSON<{ queues: SQSQueue[] }>(buildUrl('/sqs/queues', endpoint))
 }
 
-export async function fetchSQSQueueDetail(queueName: string): Promise<SQSQueueDetail> {
-  return fetchJSON<SQSQueueDetail>(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}`)
+export async function fetchSQSQueueDetail(queueName: string, endpoint?: string | null): Promise<SQSQueueDetail> {
+  return fetchJSON<SQSQueueDetail>(buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}`, endpoint))
 }
 
-export async function sendSQSMessage(queueName: string, request: SQSSendMessageRequest): Promise<SQSSendMessageResponse> {
-  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/messages`, {
+export async function sendSQSMessage(queueName: string, request: SQSSendMessageRequest, endpoint?: string | null): Promise<SQSSendMessageResponse> {
+  const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}/messages`, endpoint)
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -285,133 +317,134 @@ export async function sendSQSMessage(queueName: string, request: SQSSendMessageR
 export async function receiveSQSMessages(
   queueName: string,
   maxMessages = 10,
-  visibilityTimeout = 0
+  visibilityTimeout = 0,
+  endpoint?: string | null,
 ): Promise<{ messages: SQSMessage[] }> {
   const params = new URLSearchParams({
     max_messages: String(maxMessages),
     visibility_timeout: String(visibilityTimeout),
   })
   return fetchJSON<{ messages: SQSMessage[] }>(
-    `${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/messages?${params}`
+    buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}/messages`, endpoint, params),
   )
 }
 
-export async function deleteSQSMessage(queueName: string, receiptHandle: string): Promise<void> {
+export async function deleteSQSMessage(queueName: string, receiptHandle: string, endpoint?: string | null): Promise<void> {
   const params = new URLSearchParams({ receipt_handle: receiptHandle })
-  const res = await fetch(
-    `${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/messages?${params}`,
-    { method: 'DELETE' }
-  )
+  const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}/messages`, endpoint, params)
+  const res = await fetch(url, { method: 'DELETE' })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
 }
 
-export async function purgeSQSQueue(queueName: string): Promise<{ success: boolean; message: string }> {
-  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/purge`, {
-    method: 'POST',
-  })
+export async function purgeSQSQueue(queueName: string, endpoint?: string | null): Promise<{ success: boolean; message: string }> {
+  const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}/purge`, endpoint)
+  const res = await fetch(url, { method: 'POST' })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()
 }
 
-export async function fetchIAMUsers(): Promise<{ users: IAMUser[] }> {
-  return fetchJSON<{ users: IAMUser[] }>(`${API_BASE}/iam/users`)
+// --- IAM ---
+
+export async function fetchIAMUsers(endpoint?: string | null): Promise<{ users: IAMUser[] }> {
+  return fetchJSON<{ users: IAMUser[] }>(buildUrl('/iam/users', endpoint))
 }
 
-export async function fetchIAMUserDetail(userName: string): Promise<IAMUserDetail> {
-  return fetchJSON<IAMUserDetail>(`${API_BASE}/iam/users/${encodeURIComponent(userName)}`)
+export async function fetchIAMUserDetail(userName: string, endpoint?: string | null): Promise<IAMUserDetail> {
+  return fetchJSON<IAMUserDetail>(buildUrl(`/iam/users/${encodeURIComponent(userName)}`, endpoint))
 }
 
-export async function fetchIAMRoles(): Promise<{ roles: IAMRole[] }> {
-  return fetchJSON<{ roles: IAMRole[] }>(`${API_BASE}/iam/roles`)
+export async function fetchIAMRoles(endpoint?: string | null): Promise<{ roles: IAMRole[] }> {
+  return fetchJSON<{ roles: IAMRole[] }>(buildUrl('/iam/roles', endpoint))
 }
 
-export async function fetchIAMRoleDetail(roleName: string): Promise<IAMRoleDetail> {
-  return fetchJSON<IAMRoleDetail>(`${API_BASE}/iam/roles/${encodeURIComponent(roleName)}`)
+export async function fetchIAMRoleDetail(roleName: string, endpoint?: string | null): Promise<IAMRoleDetail> {
+  return fetchJSON<IAMRoleDetail>(buildUrl(`/iam/roles/${encodeURIComponent(roleName)}`, endpoint))
 }
 
-export async function fetchIAMGroups(): Promise<{ groups: IAMGroup[] }> {
-  return fetchJSON<{ groups: IAMGroup[] }>(`${API_BASE}/iam/groups`)
+export async function fetchIAMGroups(endpoint?: string | null): Promise<{ groups: IAMGroup[] }> {
+  return fetchJSON<{ groups: IAMGroup[] }>(buildUrl('/iam/groups', endpoint))
 }
 
-export async function fetchIAMGroupDetail(groupName: string): Promise<IAMGroupDetail> {
-  return fetchJSON<IAMGroupDetail>(`${API_BASE}/iam/groups/${encodeURIComponent(groupName)}`)
+export async function fetchIAMGroupDetail(groupName: string, endpoint?: string | null): Promise<IAMGroupDetail> {
+  return fetchJSON<IAMGroupDetail>(buildUrl(`/iam/groups/${encodeURIComponent(groupName)}`, endpoint))
 }
 
-export async function fetchIAMPolicies(scope = 'Local'): Promise<{ policies: IAMPolicy[] }> {
+export async function fetchIAMPolicies(scope = 'Local', endpoint?: string | null): Promise<{ policies: IAMPolicy[] }> {
   const params = new URLSearchParams({ scope })
-  return fetchJSON<{ policies: IAMPolicy[] }>(`${API_BASE}/iam/policies?${params}`)
+  return fetchJSON<{ policies: IAMPolicy[] }>(buildUrl('/iam/policies', endpoint, params))
 }
 
-export async function fetchIAMPolicyDetail(policyArn: string): Promise<IAMPolicyDetail> {
-  return fetchJSON<IAMPolicyDetail>(`${API_BASE}/iam/policies/${encodeURIComponent(policyArn)}`)
+export async function fetchIAMPolicyDetail(policyArn: string, endpoint?: string | null): Promise<IAMPolicyDetail> {
+  return fetchJSON<IAMPolicyDetail>(buildUrl(`/iam/policies/${encodeURIComponent(policyArn)}`, endpoint))
 }
 
-export async function fetchEC2Instances(): Promise<{ instances: EC2Instance[] }> {
-  return fetchJSON<{ instances: EC2Instance[] }>(`${API_BASE}/ec2/instances`)
+// --- EC2 ---
+
+export async function fetchEC2Instances(endpoint?: string | null): Promise<{ instances: EC2Instance[] }> {
+  return fetchJSON<{ instances: EC2Instance[] }>(buildUrl('/ec2/instances', endpoint))
 }
 
-export async function fetchEC2InstanceDetail(instanceId: string): Promise<EC2InstanceDetail> {
-  return fetchJSON<EC2InstanceDetail>(`${API_BASE}/ec2/instances/${encodeURIComponent(instanceId)}`)
+export async function fetchEC2InstanceDetail(instanceId: string, endpoint?: string | null): Promise<EC2InstanceDetail> {
+  return fetchJSON<EC2InstanceDetail>(buildUrl(`/ec2/instances/${encodeURIComponent(instanceId)}`, endpoint))
 }
 
-export async function startEC2Instance(instanceId: string): Promise<EC2ActionResponse> {
-  const res = await fetch(`${API_BASE}/ec2/instances/${encodeURIComponent(instanceId)}/start`, {
-    method: 'POST',
-  })
+export async function startEC2Instance(instanceId: string, endpoint?: string | null): Promise<EC2ActionResponse> {
+  const url = buildUrl(`/ec2/instances/${encodeURIComponent(instanceId)}/start`, endpoint)
+  const res = await fetch(url, { method: 'POST' })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()
 }
 
-export async function stopEC2Instance(instanceId: string): Promise<EC2ActionResponse> {
-  const res = await fetch(`${API_BASE}/ec2/instances/${encodeURIComponent(instanceId)}/stop`, {
-    method: 'POST',
-  })
+export async function stopEC2Instance(instanceId: string, endpoint?: string | null): Promise<EC2ActionResponse> {
+  const url = buildUrl(`/ec2/instances/${encodeURIComponent(instanceId)}/stop`, endpoint)
+  const res = await fetch(url, { method: 'POST' })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()
 }
 
-export async function rebootEC2Instance(instanceId: string): Promise<EC2ActionResponse> {
-  const res = await fetch(`${API_BASE}/ec2/instances/${encodeURIComponent(instanceId)}/reboot`, {
-    method: 'POST',
-  })
+export async function rebootEC2Instance(instanceId: string, endpoint?: string | null): Promise<EC2ActionResponse> {
+  const url = buildUrl(`/ec2/instances/${encodeURIComponent(instanceId)}/reboot`, endpoint)
+  const res = await fetch(url, { method: 'POST' })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()
 }
 
-export async function terminateEC2Instance(instanceId: string): Promise<EC2ActionResponse> {
-  const res = await fetch(`${API_BASE}/ec2/instances/${encodeURIComponent(instanceId)}/terminate`, {
-    method: 'POST',
-  })
+export async function terminateEC2Instance(instanceId: string, endpoint?: string | null): Promise<EC2ActionResponse> {
+  const url = buildUrl(`/ec2/instances/${encodeURIComponent(instanceId)}/terminate`, endpoint)
+  const res = await fetch(url, { method: 'POST' })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()
 }
 
-export async function fetchEC2SecurityGroups(): Promise<{ securityGroups: EC2SecurityGroup[] }> {
-  return fetchJSON<{ securityGroups: EC2SecurityGroup[] }>(`${API_BASE}/ec2/security-groups`)
+export async function fetchEC2SecurityGroups(endpoint?: string | null): Promise<{ securityGroups: EC2SecurityGroup[] }> {
+  return fetchJSON<{ securityGroups: EC2SecurityGroup[] }>(buildUrl('/ec2/security-groups', endpoint))
 }
 
-export async function fetchEC2VPCs(): Promise<{ vpcs: EC2VPC[] }> {
-  return fetchJSON<{ vpcs: EC2VPC[] }>(`${API_BASE}/ec2/vpcs`)
+export async function fetchEC2VPCs(endpoint?: string | null): Promise<{ vpcs: EC2VPC[] }> {
+  return fetchJSON<{ vpcs: EC2VPC[] }>(buildUrl('/ec2/vpcs', endpoint))
 }
 
-export async function fetchEC2KeyPairs(): Promise<{ keyPairs: EC2KeyPair[] }> {
-  return fetchJSON<{ keyPairs: EC2KeyPair[] }>(`${API_BASE}/ec2/key-pairs`)
+export async function fetchEC2KeyPairs(endpoint?: string | null): Promise<{ keyPairs: EC2KeyPair[] }> {
+  return fetchJSON<{ keyPairs: EC2KeyPair[] }>(buildUrl('/ec2/key-pairs', endpoint))
 }
 
-export async function fetchSecrets(): Promise<{ secrets: Secret[] }> {
-  return fetchJSON<{ secrets: Secret[] }>(`${API_BASE}/secretsmanager/secrets`)
+// --- Secrets Manager ---
+
+export async function fetchSecrets(endpoint?: string | null): Promise<{ secrets: Secret[] }> {
+  return fetchJSON<{ secrets: Secret[] }>(buildUrl('/secretsmanager/secrets', endpoint))
 }
 
-export async function fetchSecretDetail(secretId: string): Promise<SecretDetail> {
-  return fetchJSON<SecretDetail>(`${API_BASE}/secretsmanager/secrets/${encodeURIComponent(secretId)}`)
+export async function fetchSecretDetail(secretId: string, endpoint?: string | null): Promise<SecretDetail> {
+  return fetchJSON<SecretDetail>(buildUrl(`/secretsmanager/secrets/${encodeURIComponent(secretId)}`, endpoint))
 }
 
-export async function fetchLogGroups(prefix = '', nextToken = ''): Promise<LogGroupsResponse> {
+// --- CloudWatch Logs ---
+
+export async function fetchLogGroups(prefix = '', nextToken = '', endpoint?: string | null): Promise<LogGroupsResponse> {
   const params = new URLSearchParams()
   if (prefix) params.set('prefix', prefix)
   if (nextToken) params.set('next_token', nextToken)
-  const query = params.toString() ? `?${params}` : ''
-  return fetchJSON<LogGroupsResponse>(`${API_BASE}/logs/groups${query}`)
+  return fetchJSON<LogGroupsResponse>(buildUrl('/logs/groups', endpoint, params))
 }
 
 export async function fetchLogStreams(
@@ -420,7 +453,8 @@ export async function fetchLogStreams(
   orderBy = 'LastEventTime',
   descending = true,
   limit = 50,
-  nextToken = ''
+  nextToken = '',
+  endpoint?: string | null,
 ): Promise<LogStreamsResponse> {
   const params = new URLSearchParams({
     order_by: orderBy,
@@ -430,7 +464,7 @@ export async function fetchLogStreams(
   if (prefix) params.set('prefix', prefix)
   if (nextToken) params.set('next_token', nextToken)
   return fetchJSON<LogStreamsResponse>(
-    `${API_BASE}/logs/groups/${encodeURIComponent(logGroupName)}/streams?${params}`
+    buildUrl(`/logs/groups/${encodeURIComponent(logGroupName)}/streams`, endpoint, params),
   )
 }
 
@@ -441,7 +475,8 @@ export async function fetchLogEvents(
   endTime = 0,
   filterPattern = '',
   limit = 100,
-  nextToken = ''
+  nextToken = '',
+  endpoint?: string | null,
 ): Promise<LogEventsResponse> {
   const params = new URLSearchParams({
     start_time: String(startTime),
@@ -451,23 +486,24 @@ export async function fetchLogEvents(
   if (filterPattern) params.set('filter_pattern', filterPattern)
   if (nextToken) params.set('next_token', nextToken)
   return fetchJSON<LogEventsResponse>(
-    `${API_BASE}/logs/groups/${encodeURIComponent(logGroupName)}/streams/${encodeURIComponent(logStreamName)}/events?${params}`
+    buildUrl(`/logs/groups/${encodeURIComponent(logGroupName)}/streams/${encodeURIComponent(logStreamName)}/events`, endpoint, params),
   )
 }
 
 // --- Tag and Bulk Operations ---
 
-export async function fetchTagsSupported(): Promise<TagsSupportedResponse> {
-  return fetchJSON<TagsSupportedResponse>(`${API_BASE}/tags/supported`)
+export async function fetchTagsSupported(endpoint?: string | null): Promise<TagsSupportedResponse> {
+  return fetchJSON<TagsSupportedResponse>(buildUrl('/tags/supported', endpoint))
 }
 
 export async function fetchResourceTags(
   service: string,
   resourceType: string,
   resourceId: string,
+  endpoint?: string | null,
 ): Promise<ResourceTagsResponse> {
   return fetchJSON<ResourceTagsResponse>(
-    `${API_BASE}/tags/${service}/${resourceType}/${encodeURIComponent(resourceId)}`,
+    buildUrl(`/tags/${service}/${resourceType}/${encodeURIComponent(resourceId)}`, endpoint),
   )
 }
 
@@ -476,21 +512,21 @@ export async function updateResourceTags(
   resourceType: string,
   resourceId: string,
   tags: Record<string, string>,
+  endpoint?: string | null,
 ): Promise<{ success: boolean }> {
-  const res = await fetch(
-    `${API_BASE}/tags/${service}/${resourceType}/${encodeURIComponent(resourceId)}`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tags }),
-    },
-  )
+  const url = buildUrl(`/tags/${service}/${resourceType}/${encodeURIComponent(resourceId)}`, endpoint)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tags }),
+  })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()
 }
 
-export async function bulkTag(request: BulkTagRequest): Promise<BulkOperationResponse> {
-  const res = await fetch(`${API_BASE}/bulk/tag`, {
+export async function bulkTag(request: BulkTagRequest, endpoint?: string | null): Promise<BulkOperationResponse> {
+  const url = buildUrl('/bulk/tag', endpoint)
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -499,8 +535,9 @@ export async function bulkTag(request: BulkTagRequest): Promise<BulkOperationRes
   return res.json()
 }
 
-export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperationResponse> {
-  const res = await fetch(`${API_BASE}/bulk/delete`, {
+export async function bulkDelete(request: BulkDeleteRequest, endpoint?: string | null): Promise<BulkOperationResponse> {
+  const url = buildUrl('/bulk/delete', endpoint)
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),

@@ -9,6 +9,19 @@ export interface HealthResponse {
   writes_enabled: boolean
 }
 
+export interface Endpoint {
+  name: string
+  url: string | null
+  health: 'healthy' | 'unhealthy' | 'unknown'
+  active: boolean
+  connection_type: 'local' | 'aws'
+  region: string
+}
+
+export interface EndpointsResponse {
+  endpoints: Endpoint[]
+}
+
 export interface ServiceStats {
   status: 'available' | 'unavailable'
   resources: Record<string, number>
