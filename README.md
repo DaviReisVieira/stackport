@@ -102,6 +102,28 @@ AWS_ENDPOINT_URL=http://localhost:9000 stackport
 AWS_ENDPOINT_URL=http://my-emulator:4566 stackport
 ```
 
+### Multiple endpoints
+
+Switch between multiple AWS endpoints from the UI. Configure named endpoints with `STACKPORT_ENDPOINTS`:
+
+```bash
+# Connect to both a local emulator and a real AWS account
+STACKPORT_ENDPOINTS="local=http://localhost:4566,aws=https://s3.amazonaws.com" \
+  AWS_REGION=us-east-1 stackport
+```
+
+**Docker Compose with multiple endpoints:**
+
+```bash
+curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.multi-endpoint.yml
+docker compose -f docker-compose.multi-endpoint.yml up -d
+# Open http://localhost:8080
+```
+
+See [`examples/docker-compose.multi-endpoint.yml`](examples/docker-compose.multi-endpoint.yml) for a full example with two MiniStack instances.
+
+The endpoint selector appears in the sidebar when more than one endpoint is configured. Each endpoint is health-checked independently, and all API requests, caches, and WebSocket subscriptions are scoped to the active endpoint.
+
 ## Service Browsers
 
 ### Dedicated UIs (8 services)
@@ -206,7 +228,7 @@ cd ui && npm install && npm run dev
 cd ui && npm run build
 
 # Run tests
-python -m pytest tests/ -x --tb=short    # backend (235 tests)
+python -m pytest tests/ -x --tb=short    # backend (262 tests)
 cd ui && npx vitest run                   # frontend (163 tests)
 
 # Typecheck & lint
