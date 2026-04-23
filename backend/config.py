@@ -8,7 +8,7 @@ AWS_ENDPOINT_URL: str | None = os.environ.get("AWS_ENDPOINT_URL")  # None = real
 AWS_REGION: str = os.environ.get("AWS_REGION", "us-east-1")
 AWS_ACCESS_KEY_ID: str | None = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY: str | None = os.environ.get("AWS_SECRET_ACCESS_KEY")
-STACKPORT_ALLOW_WRITES: bool = os.environ.get("STACKPORT_ALLOW_WRITES", "").lower() in ("1", "true", "yes")
+STACKPORT_ALLOW_WRITES: bool = os.environ.get("STACKPORT_ALLOW_WRITES", "true").lower() in ("1", "true", "yes")
 STACKPORT_PORT: int = int(os.environ.get("STACKPORT_PORT", "8080"))
 STACKPORT_SERVICES: str = os.environ.get(
     "STACKPORT_SERVICES",
