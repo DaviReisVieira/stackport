@@ -21,7 +21,9 @@ export function EndpointProvider({ children }: { children: ReactNode }) {
     fetchEndpoints()
       .then((data: EndpointsResponse) => {
         setEndpoints(data.endpoints)
-        if (activeEndpoint === null && data.endpoints.length > 0) {
+        const names = data.endpoints.map((e: Endpoint) => e.name)
+        const needsReset = activeEndpoint === null || !names.includes(activeEndpoint)
+        if (needsReset && data.endpoints.length > 0) {
           const defaultEp = data.endpoints.find((e: Endpoint) => e.active) ?? data.endpoints[0]
           setActiveEndpointState(defaultEp.name)
         }
