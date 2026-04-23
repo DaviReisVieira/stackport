@@ -4,10 +4,11 @@ from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
 
-AWS_ENDPOINT_URL: str = os.environ.get("AWS_ENDPOINT_URL", "http://localhost:4566")
+AWS_ENDPOINT_URL: str | None = os.environ.get("AWS_ENDPOINT_URL")  # None = real AWS
 AWS_REGION: str = os.environ.get("AWS_REGION", "us-east-1")
-AWS_ACCESS_KEY_ID: str = os.environ.get("AWS_ACCESS_KEY_ID", "test")
-AWS_SECRET_ACCESS_KEY: str = os.environ.get("AWS_SECRET_ACCESS_KEY", "test")
+AWS_ACCESS_KEY_ID: str | None = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY: str | None = os.environ.get("AWS_SECRET_ACCESS_KEY")
+STACKPORT_ALLOW_WRITES: bool = os.environ.get("STACKPORT_ALLOW_WRITES", "").lower() in ("1", "true", "yes")
 STACKPORT_PORT: int = int(os.environ.get("STACKPORT_PORT", "8080"))
 STACKPORT_SERVICES: str = os.environ.get(
     "STACKPORT_SERVICES",
@@ -65,14 +66,14 @@ def _parse_s3_max_upload_bytes() -> int:
 S3_MAX_UPLOAD_BYTES: int = _parse_s3_max_upload_bytes()
 
 
-def _parse_endpoints() -> dict[str, str]:
+def _parse_endpoints() -> dict[str, str | None]:
     """Parse STACKPORT_ENDPOINTS env var into dict."""
     endpoints_str = os.environ.get("STACKPORT_ENDPOINTS", "")
     if not endpoints_str:
-        # Backward compatibility: single endpoint
+        # Backward compatibility: single endpoint (may be None for real AWS)
         return {"default": AWS_ENDPOINT_URL}
 
-    endpoints = {}
+    endpoints: dict[str, str | None] = {}
     for pair in endpoints_str.split(","):
         if "=" in pair:
             name, url = pair.split("=", 1)
@@ -80,5 +81,5 @@ def _parse_endpoints() -> dict[str, str]:
     return endpoints
 
 
-ENDPOINTS: dict[str, str] = _parse_endpoints()
-DEFAULT_ENDPOINT: str = next(iter(ENDPOINTS.values()))
+ENDPOINTS: dict[str, str | None] = _parse_endpoints()
+DEFAULT_ENDPOINT: str | None = next(iter(ENDPOINTS.values()))

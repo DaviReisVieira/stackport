@@ -4,11 +4,23 @@ import os
 class TestConfig:
     def test_defaults(self):
         """Config module provides sensible defaults."""
+        # conftest.py sets STACKPORT_ALLOW_WRITES=true for test convenience
+        # Test the actual default (false) by temporarily unsetting it
+        import os
+
+        original = os.environ.pop("STACKPORT_ALLOW_WRITES", None)
+        import importlib
+
+        import backend.config
+
+        importlib.reload(backend.config)
+
         from backend.config import (
             AWS_ACCESS_KEY_ID,
             AWS_ENDPOINT_URL,
             AWS_REGION,
             AWS_SECRET_ACCESS_KEY,
+            STACKPORT_ALLOW_WRITES,
             STACKPORT_CACHE_TTL,
             STACKPORT_PORT,
             STACKPORT_PROBE_TIMEOUT,
@@ -16,10 +28,19 @@ class TestConfig:
             STACKPORT_SERVICES,
         )
 
-        assert AWS_ENDPOINT_URL  # non-empty
+        # AWS_ENDPOINT_URL is now optional (None = real AWS)
+        assert AWS_ENDPOINT_URL is None or isinstance(AWS_ENDPOINT_URL, str)
         assert AWS_REGION  # non-empty
-        assert AWS_ACCESS_KEY_ID  # non-empty
-        assert AWS_SECRET_ACCESS_KEY  # non-empty
+        # Credentials are now optional (None = use default AWS credential chain)
+        assert AWS_ACCESS_KEY_ID is None or isinstance(AWS_ACCESS_KEY_ID, str)
+        assert AWS_SECRET_ACCESS_KEY is None or isinstance(AWS_SECRET_ACCESS_KEY, str)
+        # Writes disabled by default
+        assert STACKPORT_ALLOW_WRITES is False
+
+        # Restore original value
+        if original is not None:
+            os.environ["STACKPORT_ALLOW_WRITES"] = original
+        importlib.reload(backend.config)
         assert isinstance(STACKPORT_PORT, int)
         assert STACKPORT_PORT > 0
         # Services string should contain known services
@@ -69,3 +90,26 @@ class TestConfig:
         monkeypatch.delenv("STACKPORT_CACHE_TTL")
         monkeypatch.delenv("STACKPORT_PROBE_WORKERS")
         importlib.reload(backend.config)
+
+    def test_allow_writes_config(self, monkeypatch):
+        """STACKPORT_ALLOW_WRITES parsing."""
+        import importlib
+
+        import backend.config
+
+        # Test various truthy values
+        for val in ("1", "true", "True", "TRUE", "yes", "Yes", "YES"):
+            monkeypatch.setenv("STACKPORT_ALLOW_WRITES", val)
+            importlib.reload(backend.config)
+            assert backend.config.STACKPORT_ALLOW_WRITES is True, f"Failed for value: {val}"
+
+        # Test falsy values
+        for val in ("0", "false", "False", "no", "", "random"):
+            monkeypatch.setenv("STACKPORT_ALLOW_WRITES", val)
+            importlib.reload(backend.config)
+            assert backend.config.STACKPORT_ALLOW_WRITES is False, f"Failed for value: {val}"
+
+        # Test unset (default False)
+        monkeypatch.delenv("STACKPORT_ALLOW_WRITES", raising=False)
+        importlib.reload(backend.config)
+        assert backend.config.STACKPORT_ALLOW_WRITES is False
