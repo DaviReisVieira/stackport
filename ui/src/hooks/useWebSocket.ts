@@ -30,6 +30,9 @@ export function useWebSocket<T>({ fallbackFetcher, fallbackInterval = 5000, mess
 
   useEffect(() => {
     let disposed = false
+    setWsData(null)
+    setFailed(false)
+    retriesRef.current = 0
 
     function connect() {
       if (disposed) return
