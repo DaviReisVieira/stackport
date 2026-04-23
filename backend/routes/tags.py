@@ -2,10 +2,11 @@
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.aws_client import get_client
+from backend.routes.common import get_endpoint_url
 
 router = APIRouter()
 
@@ -442,7 +443,7 @@ def get_supported_tags() -> dict[str, Any]:
 
 
 @router.get("/tags/{service}/{resource_type}/{resource_id:path}")
-def get_resource_tags(service: str, resource_type: str, resource_id: str) -> dict[str, Any]:
+def get_resource_tags(service: str, resource_type: str, resource_id: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Get tags for a specific resource."""
     key = (service, resource_type)
     if key not in TAG_GETTER_REGISTRY:
@@ -450,7 +451,7 @@ def get_resource_tags(service: str, resource_type: str, resource_id: str) -> dic
 
     boto3_service, getter_fn = TAG_GETTER_REGISTRY[key]
     try:
-        client = get_client(boto3_service)
+        client = get_client(boto3_service, endpoint_url)
         tags = getter_fn(client, resource_id)
         return {"service": service, "type": resource_type, "id": resource_id, "tags": tags}
     except Exception as e:
@@ -458,7 +459,7 @@ def get_resource_tags(service: str, resource_type: str, resource_id: str) -> dic
 
 
 @router.put("/tags/{service}/{resource_type}/{resource_id:path}")
-def update_resource_tags(service: str, resource_type: str, resource_id: str, body: TagUpdateRequest) -> dict[str, Any]:
+def update_resource_tags(service: str, resource_type: str, resource_id: str, body: TagUpdateRequest, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Set tags for a specific resource (full replace)."""
     key = (service, resource_type)
     if key not in TAG_SETTER_REGISTRY:
@@ -466,7 +467,7 @@ def update_resource_tags(service: str, resource_type: str, resource_id: str, bod
 
     boto3_service, setter_fn = TAG_SETTER_REGISTRY[key]
     try:
-        client = get_client(boto3_service)
+        client = get_client(boto3_service, endpoint_url)
         setter_fn(client, resource_id, body.tags)
         return {"success": True, "service": service, "type": resource_type, "id": resource_id, "tags": body.tags}
     except Exception as e:
@@ -474,7 +475,7 @@ def update_resource_tags(service: str, resource_type: str, resource_id: str, bod
 
 
 @router.post("/bulk/tag")
-def bulk_tag(body: BulkTagRequest) -> dict[str, Any]:
+def bulk_tag(body: BulkTagRequest, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Bulk add or remove tags across multiple resources."""
     if body.action not in ("add", "remove"):
         raise HTTPException(status_code=400, detail="action must be 'add' or 'remove'")
@@ -500,7 +501,7 @@ def bulk_tag(body: BulkTagRequest) -> dict[str, Any]:
         boto3_svc_set, setter_fn = TAG_SETTER_REGISTRY[key]
 
         try:
-            client = get_client(boto3_svc_get)
+            client = get_client(boto3_svc_get, endpoint_url)
             existing = getter_fn(client, rid)
 
             if body.action == "add":
@@ -508,7 +509,7 @@ def bulk_tag(body: BulkTagRequest) -> dict[str, Any]:
             else:
                 merged = {k: v for k, v in existing.items() if k not in body.tags}
 
-            set_client = get_client(boto3_svc_set)
+            set_client = get_client(boto3_svc_set, endpoint_url)
             setter_fn(set_client, rid, merged)
             results.append({"service": svc, "type": rtype, "id": rid, "success": True})
         except Exception as e:
@@ -520,7 +521,7 @@ def bulk_tag(body: BulkTagRequest) -> dict[str, Any]:
 
 
 @router.post("/bulk/delete")
-def bulk_delete(body: BulkDeleteRequest) -> dict[str, Any]:
+def bulk_delete(body: BulkDeleteRequest, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Bulk delete multiple resources across services."""
     if not body.resources:
         raise HTTPException(status_code=400, detail="resources list is required")
@@ -538,7 +539,7 @@ def bulk_delete(body: BulkDeleteRequest) -> dict[str, Any]:
 
         boto3_svc, delete_fn = DELETE_REGISTRY[key]
         try:
-            client = get_client(boto3_svc)
+            client = get_client(boto3_svc, endpoint_url)
             delete_fn(client, rid)
             results.append({"service": svc, "type": rtype, "id": rid, "success": True})
         except Exception as e:

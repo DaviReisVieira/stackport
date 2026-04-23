@@ -1,25 +1,26 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from backend.aws_client import get_client
 from backend.cache import cache
+from backend.routes.common import get_endpoint_url
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-def _get_table_item_count(table_name: str) -> int:
+def _get_table_item_count(table_name: str, endpoint_url: str | None) -> int:
     """Return item count for a table. Cached 30s."""
-    cache_key = f"dynamodb:item_count:{table_name}"
+    cache_key = f"{endpoint_url}:dynamodb:item_count:{table_name}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    dynamodb = get_client("dynamodb")
+    dynamodb = get_client("dynamodb", endpoint_url)
     try:
         resp = dynamodb.describe_table(TableName=table_name)
         item_count = resp["Table"].get("ItemCount", 0)
@@ -31,8 +32,8 @@ def _get_table_item_count(table_name: str) -> int:
 
 
 @router.get("/tables")
-def list_tables():
-    dynamodb = get_client("dynamodb")
+def list_tables(endpoint_url: str | None = Depends(get_endpoint_url)):
+    dynamodb = get_client("dynamodb", endpoint_url)
     paginator = dynamodb.get_paginator("list_tables")
     table_names = []
 
@@ -71,8 +72,8 @@ def list_tables():
 
 
 @router.get("/tables/{name}")
-def get_table_detail(name: str):
-    dynamodb = get_client("dynamodb")
+def get_table_detail(name: str, endpoint_url: str | None = Depends(get_endpoint_url)):
+    dynamodb = get_client("dynamodb", endpoint_url)
 
     try:
         resp = dynamodb.describe_table(TableName=name)
@@ -110,8 +111,9 @@ def scan_table(
     name: str,
     limit: int = Query(default=25, ge=1, le=100, description="Max items per page"),
     exclusive_start_key: str = Query(default=None, description="Base64 encoded last evaluated key for pagination"),
+    endpoint_url: str | None = Depends(get_endpoint_url),
 ):
-    dynamodb = get_client("dynamodb")
+    dynamodb = get_client("dynamodb", endpoint_url)
 
     scan_params: dict[str, Any] = {
         "TableName": name,
@@ -160,8 +162,8 @@ class QueryRequest(BaseModel):
 
 
 @router.post("/tables/{name}/query")
-def query_table(name: str, request: QueryRequest):
-    dynamodb = get_client("dynamodb")
+def query_table(name: str, request: QueryRequest, endpoint_url: str | None = Depends(get_endpoint_url)):
+    dynamodb = get_client("dynamodb", endpoint_url)
 
     try:
         # Get table key schema

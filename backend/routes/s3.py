@@ -4,13 +4,14 @@ import os
 from typing import Annotated
 
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, model_validator
 
 from backend.aws_client import get_client
 from backend.cache import cache
 from backend.config import AWS_REGION, S3_MAX_UPLOAD_BYTES, is_local_endpoint
+from backend.routes.common import get_endpoint_url
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +24,8 @@ def _is_s3_not_found(err: ClientError) -> bool:
     return code in ("404", "NoSuchKey", "NotFound") or status == 404
 
 
-def _invalidate_bucket_stats(bucket_name: str) -> None:
-    cache.delete(f"s3:bucket_stats:{bucket_name}")
+def _invalidate_bucket_stats(bucket_name: str, endpoint_url: str | None) -> None:
+    cache.delete(f"{endpoint_url}:s3:bucket_stats:{bucket_name}")
 
 
 def _validate_key_component(name: str) -> str:
@@ -63,21 +64,21 @@ def s3_upload_config():
     return {"max_upload_bytes": S3_MAX_UPLOAD_BYTES}
 
 
-def _get_bucket_stats(bucket_name: str) -> tuple[int, int]:
+def _get_bucket_stats(bucket_name: str, endpoint_url: str | None) -> tuple[int, int]:
     """Return (object_count, total_size_bytes) for a bucket. Cached 30s.
 
     On real AWS this enumerates every object, which can be very slow for large
     buckets.  Only perform the full scan when targeting a local emulator.
     """
-    if not is_local_endpoint():
+    if not is_local_endpoint(endpoint_url):
         return (0, 0)
 
-    cache_key = f"s3:bucket_stats:{bucket_name}"
+    cache_key = f"{endpoint_url}:s3:bucket_stats:{bucket_name}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    s3 = get_client("s3")
+    s3 = get_client("s3", endpoint_url)
     paginator = s3.get_paginator("list_objects_v2")
     obj_count = 0
     total_size = 0
@@ -96,15 +97,15 @@ def _get_bucket_stats(bucket_name: str) -> tuple[int, int]:
 
 
 @router.get("/buckets")
-def list_buckets():
-    s3 = get_client("s3")
+def list_buckets(endpoint_url: str | None = Depends(get_endpoint_url)):
+    s3 = get_client("s3", endpoint_url)
     response = s3.list_buckets()
     buckets = []
-    local = is_local_endpoint()
+    local = is_local_endpoint(endpoint_url)
 
     for b in response.get("Buckets", []):
         name = b["Name"]
-        obj_count, total_size = _get_bucket_stats(name)
+        obj_count, total_size = _get_bucket_stats(name, endpoint_url)
 
         versioning = "Disabled"
         encryption = "Disabled"
@@ -150,8 +151,9 @@ def list_objects(
     name: str,
     prefix: str = Query(default="", description="Key prefix filter"),
     delimiter: str = Query(default="/", description="Hierarchy delimiter"),
+    endpoint_url: str | None = Depends(get_endpoint_url),
 ):
-    s3 = get_client("s3")
+    s3 = get_client("s3", endpoint_url)
     paginator = s3.get_paginator("list_objects_v2")
 
     folders: list[str] = []
@@ -222,9 +224,9 @@ def _validate_object_key(key: str) -> None:
 
 
 @router.post("/buckets/{name}/objects/delete-batch")
-def delete_objects_batch(name: str, body: DeleteBatchBody):
+def delete_objects_batch(name: str, body: DeleteBatchBody, endpoint_url: str | None = Depends(get_endpoint_url)):
     """Delete multiple objects by key list or all keys under a prefix."""
-    s3 = get_client("s3")
+    s3 = get_client("s3", endpoint_url)
 
     keys_to_delete: list[str]
     if body.prefix:
@@ -238,7 +240,7 @@ def delete_objects_batch(name: str, body: DeleteBatchBody):
             for obj in page.get("Contents", []):
                 keys_to_delete.append(obj["Key"])
         if not keys_to_delete:
-            _invalidate_bucket_stats(name)
+            _invalidate_bucket_stats(name, endpoint_url)
             return {"bucket": name, "deleted": 0, "keys": []}
     else:
         keys_to_delete = list(body.keys or [])
@@ -257,18 +259,18 @@ def delete_objects_batch(name: str, body: DeleteBatchBody):
             for err in resp["Errors"]:
                 logger.warning("S3 delete error: %s", err)
 
-    _invalidate_bucket_stats(name)
+    _invalidate_bucket_stats(name, endpoint_url)
     return {"bucket": name, "deleted": deleted, "keys": keys_to_delete}
 
 
 @router.post("/buckets/{name}/folders")
-def create_folder(name: str, body: CreateFolderBody):
+def create_folder(name: str, body: CreateFolderBody, endpoint_url: str | None = Depends(get_endpoint_url)):
     """Create a folder marker (zero-byte object with trailing /)."""
     prefix = body.prefix
     _validate_prefix_path(prefix.rstrip("/"))
-    s3 = get_client("s3")
+    s3 = get_client("s3", endpoint_url)
     s3.put_object(Bucket=name, Key=prefix, Body=b"", ContentType="application/x-directory")
-    _invalidate_bucket_stats(name)
+    _invalidate_bucket_stats(name, endpoint_url)
     return {"bucket": name, "prefix": prefix}
 
 
@@ -277,6 +279,7 @@ def upload_object(
     name: str,
     prefix: Annotated[str, Query(description="Key prefix for uploaded object")] = "",
     file: UploadFile = File(..., description="File to upload"),
+    endpoint_url: str | None = Depends(get_endpoint_url),
 ):
     filename = file.filename or "object"
     object_key = _compose_object_key(prefix, filename)
@@ -290,14 +293,14 @@ def upload_object(
 
     content_type = _resolve_upload_content_type(filename, file.content_type)
 
-    s3 = get_client("s3")
+    s3 = get_client("s3", endpoint_url)
     s3.put_object(
         Bucket=name,
         Key=object_key,
         Body=body,
         ContentType=content_type,
     )
-    _invalidate_bucket_stats(name)
+    _invalidate_bucket_stats(name, endpoint_url)
     return {
         "bucket": name,
         "key": object_key,
@@ -307,11 +310,11 @@ def upload_object(
 
 
 @router.delete("/buckets/{name}/objects/{key:path}")
-def delete_object(name: str, key: str):
+def delete_object(name: str, key: str, endpoint_url: str | None = Depends(get_endpoint_url)):
     _validate_object_key(key)
-    s3 = get_client("s3")
+    s3 = get_client("s3", endpoint_url)
     s3.delete_object(Bucket=name, Key=key)
-    _invalidate_bucket_stats(name)
+    _invalidate_bucket_stats(name, endpoint_url)
     return {"bucket": name, "deleted": True, "key": key}
 
 
@@ -320,8 +323,9 @@ def get_object_detail(
     name: str,
     key: str,
     download: int = Query(default=0, description="Set to 1 to download the object"),
+    endpoint_url: str | None = Depends(get_endpoint_url),
 ):
-    s3 = get_client("s3")
+    s3 = get_client("s3", endpoint_url)
 
     if download == 1:
         try:

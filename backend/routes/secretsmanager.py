@@ -3,9 +3,10 @@
 import base64
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from backend.aws_client import get_client
+from backend.routes.common import get_endpoint_url
 
 router = APIRouter()
 
@@ -21,10 +22,10 @@ def _format_date(dt) -> str | None:
 
 
 @router.get("/secrets")
-def list_secrets() -> dict[str, Any]:
+def list_secrets(endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """List all secrets with metadata."""
     try:
-        client = get_client("secretsmanager")
+        client = get_client("secretsmanager", endpoint_url)
         paginator = client.get_paginator("list_secrets")
 
         secrets = []
@@ -56,10 +57,10 @@ def list_secrets() -> dict[str, Any]:
 
 
 @router.get("/secrets/{secret_id:path}")
-def get_secret_detail(secret_id: str) -> dict[str, Any]:
+def get_secret_detail(secret_id: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Get secret metadata and value."""
     try:
-        client = get_client("secretsmanager")
+        client = get_client("secretsmanager", endpoint_url)
 
         # Get metadata
         try:
