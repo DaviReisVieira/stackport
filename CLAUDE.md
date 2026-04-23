@@ -66,6 +66,9 @@ Requires a running AWS-compatible emulator (MiniStack on :4566 by default).
 | `STACKPORT_PORT` | `8080` | HTTP port |
 | `STACKPORT_S3_MAX_UPLOAD_MB` | `100` | Max S3 upload size per object (whole mebibytes; × 1024²) |
 | `STACKPORT_SERVICES` | *(35 services)* | Comma-separated list to probe |
+| `STACKPORT_PROBE_TIMEOUT` | `5` | Seconds before a service probe times out |
+| `STACKPORT_CACHE_TTL` | `5` | Seconds to cache service stats |
+| `STACKPORT_PROBE_WORKERS` | `10` | ThreadPoolExecutor max workers for concurrent probing |
 | `LOG_LEVEL` | `INFO` | Python log level (DEBUG shows healthcheck logs) |
 
 ## Adding a New Service to the Backend

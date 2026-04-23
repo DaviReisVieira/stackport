@@ -9,7 +9,12 @@ from backend.aws_client import get_client
 
 logger = logging.getLogger(__name__)
 from backend.cache import cache
-from backend.config import AWS_ENDPOINT_URL, AWS_REGION, STACKPORT_SERVICES
+from backend.config import (
+    AWS_ENDPOINT_URL,
+    AWS_REGION,
+    STACKPORT_PROBE_WORKERS,
+    STACKPORT_SERVICES,
+)
 from backend.routes.common import get_endpoint_url
 
 router = APIRouter()
@@ -154,7 +159,7 @@ def get_stats(endpoint_url: str = Depends(get_endpoint_url)):
     services: dict = {}
     total_resources = 0
 
-    with ThreadPoolExecutor(max_workers=min(len(enabled_services), 10)) as executor:
+    with ThreadPoolExecutor(max_workers=min(len(enabled_services), STACKPORT_PROBE_WORKERS)) as executor:
         futures = {executor.submit(_probe_service, svc, endpoint_url): svc for svc in enabled_services}
         for future in as_completed(futures):
             svc_name, result = future.result()
@@ -169,5 +174,5 @@ def get_stats(endpoint_url: str = Depends(get_endpoint_url)):
         "total_resources": total_resources,
         "uptime_seconds": round(time.time() - _start_time, 1),
     }
-    cache.set(cache_key, response, ttl=5)
+    cache.set(cache_key, response)
     return response

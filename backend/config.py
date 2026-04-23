@@ -18,6 +18,11 @@ STACKPORT_SERVICES: str = os.environ.get(
 )
 LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
 
+# Probe and cache configuration
+STACKPORT_PROBE_TIMEOUT: int = int(os.environ.get("STACKPORT_PROBE_TIMEOUT", "5"))
+STACKPORT_CACHE_TTL: int = int(os.environ.get("STACKPORT_CACHE_TTL", "5"))
+STACKPORT_PROBE_WORKERS: int = int(os.environ.get("STACKPORT_PROBE_WORKERS", "10"))
+
 _MIB: int = 1024 * 1024
 
 # Default max upload: 100 MiB (whole mebibytes; STACKPORT_S3_MAX_UPLOAD_MB).
