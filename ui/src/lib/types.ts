@@ -609,3 +609,34 @@ export interface LogEventsResponse {
   events: LogEvent[]
   next_token: string | null
 }
+
+export interface ResourceTagsResponse {
+  service: string
+  type: string
+  id: string
+  tags: Record<string, string>
+}
+
+export interface BulkTagRequest {
+  action: 'add' | 'remove'
+  tags: Record<string, string>
+  resources: Array<{ service: string; type: string; id: string }>
+}
+
+export interface BulkDeleteRequest {
+  resources: Array<{ service: string; type: string; id: string }>
+}
+
+export interface BulkOperationResult {
+  service: string
+  type: string
+  id: string
+  success: boolean
+  error?: string
+}
+
+export interface BulkOperationResponse {
+  results: BulkOperationResult[]
+  succeeded: number
+  failed: number
+}

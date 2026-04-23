@@ -10,6 +10,7 @@ import {
   fetchIAMGroupDetail,
   fetchIAMPolicies,
   fetchIAMPolicyDetail,
+  updateResourceTags,
 } from '@/lib/api'
 import type {
   IAMUser,
@@ -33,6 +34,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection } from '@/components/TagsSection'
 import { Input } from '@/components/ui/input'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import {
@@ -42,7 +44,6 @@ import {
   Shield,
   Key,
   FileText,
-  Tag,
   ExternalLink,
   ChevronRight,
   RefreshCw,
@@ -242,24 +243,13 @@ function UserDetailSheet({
               )}
             </div>
 
-            {Object.keys(data.tags).length > 0 && (
-              <>
-                <Separator />
-                <div>
-                  <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                    <Tag className="h-4 w-4" />
-                    Tags ({Object.keys(data.tags).length})
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(data.tags).map(([key, value]) => (
-                      <Badge key={key} variant="outline">
-                        {key}: {value}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
+            <Separator />
+            <TagsSection
+              tags={data.tags}
+              onSave={async (newTags) => {
+                await updateResourceTags('iam', 'users', data.user.UserName, newTags)
+              }}
+            />
           </div>
         )}
       </SheetContent>
@@ -394,24 +384,13 @@ function RoleDetailSheet({
               )}
             </div>
 
-            {Object.keys(data.tags).length > 0 && (
-              <>
-                <Separator />
-                <div>
-                  <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                    <Tag className="h-4 w-4" />
-                    Tags ({Object.keys(data.tags).length})
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(data.tags).map(([key, value]) => (
-                      <Badge key={key} variant="outline">
-                        {key}: {value}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
+            <Separator />
+            <TagsSection
+              tags={data.tags}
+              onSave={async (newTags) => {
+                await updateResourceTags('iam', 'roles', data.role.RoleName, newTags)
+              }}
+            />
           </div>
         )}
       </SheetContent>
@@ -693,24 +672,13 @@ function PolicyDetailSheet({
               </div>
             </div>
 
-            {Object.keys(data.tags).length > 0 && (
-              <>
-                <Separator />
-                <div>
-                  <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                    <Tag className="h-4 w-4" />
-                    Tags ({Object.keys(data.tags).length})
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(data.tags).map(([key, value]) => (
-                      <Badge key={key} variant="outline">
-                        {key}: {value}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
+            <Separator />
+            <TagsSection
+              tags={data.tags}
+              onSave={async (newTags) => {
+                await updateResourceTags('iam', 'policies', data.policy.Arn, newTags)
+              }}
+            />
           </div>
         )}
       </SheetContent>

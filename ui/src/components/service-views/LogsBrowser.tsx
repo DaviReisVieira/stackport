@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
-import { fetchLogGroups, fetchLogStreams, fetchLogEvents } from '@/lib/api'
+import { fetchLogGroups, fetchLogStreams, fetchLogEvents, fetchResourceTags, updateResourceTags } from '@/lib/api'
 import type { LogEvent, LogGroupsResponse, LogStreamsResponse } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection } from '@/components/TagsSection'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { ScrollText, Search, FileText, Clock, Play, Pause, Copy, Filter, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -151,6 +152,7 @@ export function LogsBrowser() {
   // Time range filters (0 = no filter)
   const [startTime, setStartTime] = useState(0)
   const [endTime, setEndTime] = useState(0)
+  const [logGroupTags, setLogGroupTags] = useState<Record<string, string>>({})
 
   // Fetch log groups
   const groupsFetcher = useCallback(() => fetchLogGroups(groupSearch), [groupSearch])
@@ -168,6 +170,7 @@ export function LogsBrowser() {
       setStreamsData(null)
       setSelectedStream(null)
       setEvents([])
+      setLogGroupTags({})
       return
     }
     setStreamsLoading(true)
@@ -178,7 +181,13 @@ export function LogsBrowser() {
         setStreamsData(null)
       })
       .finally(() => setStreamsLoading(false))
-  }, [selectedGroup, streamSearch])
+    const group = groupsData?.log_groups?.find(g => g.name === selectedGroup)
+    if (group?.arn) {
+      fetchResourceTags('logs', 'log_groups', group.arn)
+        .then(res => setLogGroupTags(res.tags))
+        .catch(() => setLogGroupTags({}))
+    }
+  }, [selectedGroup, streamSearch, groupsData])
 
   // Fetch log events (manual)
   const loadEvents = useCallback(
@@ -584,6 +593,18 @@ export function LogsBrowser() {
         </CardContent>
       </Card>
       </div>
+      {selectedGroup && groupsData?.log_groups && (
+        <TagsSection
+          tags={logGroupTags}
+          onSave={async (newTags) => {
+            const group = groupsData.log_groups.find(g => g.name === selectedGroup)
+            if (group?.arn) {
+              await updateResourceTags('logs', 'log_groups', group.arn, newTags)
+              setLogGroupTags(newTags)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

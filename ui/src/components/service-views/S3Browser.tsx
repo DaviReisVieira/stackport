@@ -38,6 +38,7 @@ import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/compone
 import { getServiceIcon } from '@/lib/service-icons'
 import { toast } from 'sonner'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection, TagCountBadge } from '@/components/TagsSection'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { Input } from '@/components/ui/input'
 import {
@@ -54,7 +55,6 @@ import {
   Clock,
   Globe,
   Lock,
-  Tag,
   Shield,
   Download,
   Search,
@@ -616,14 +616,7 @@ export function S3Browser() {
                           <TooltipContent>Encryption enabled</TooltipContent>
                         </Tooltip>
                       )}
-                      {Object.keys(bkt.tags).length > 0 && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-                          </TooltipTrigger>
-                          <TooltipContent>{Object.keys(bkt.tags).length} tags</TooltipContent>
-                        </Tooltip>
-                      )}
+                      <TagCountBadge count={Object.keys(bkt.tags).length} />
                     </div>
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
@@ -1131,21 +1124,8 @@ export function S3Browser() {
                 )}
 
                 {/* Tags */}
-                {Object.keys(objectDetail.tags).length > 0 && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Tags</h4>
-                      <div className="flex flex-wrap gap-1.5">
-                        {Object.entries(objectDetail.tags).map(([k, v]) => (
-                          <Badge key={k} variant="secondary" className="text-xs">
-                            {k}: {v}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
+                <Separator />
+                <TagsSection tags={objectDetail.tags} />
 
                 {/* Raw JSON */}
                 <Separator />

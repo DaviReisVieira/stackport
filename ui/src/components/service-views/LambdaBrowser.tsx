@@ -9,6 +9,7 @@ import {
   fetchLambdaEventSources,
   fetchLambdaAliases,
   fetchLambdaVersions,
+  updateResourceTags,
 } from '@/lib/api'
 import type {
   LambdaFunction,
@@ -32,6 +33,7 @@ import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection } from '@/components/TagsSection'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -45,7 +47,6 @@ import {
   Clock,
   AlertCircle,
   CheckCircle,
-  Tag as TagIcon,
   Link as LinkIcon,
   GitBranch,
   RefreshCw,
@@ -428,7 +429,6 @@ export function LambdaBrowser() {
     const hasEnvVars = config.Environment?.Variables && Object.keys(config.Environment.Variables).length > 0
     const hasLayers = config.Layers && config.Layers.length > 0
     const tags = functionDetail.tags || {}
-    const hasTags = Object.keys(tags).length > 0
 
     return (
       <div className="space-y-4">
@@ -711,25 +711,12 @@ export function LambdaBrowser() {
           </TabsContent>
 
           <TabsContent value="tags" className="space-y-4">
-            {hasTags ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Tags</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(tags).map(([key, value]) => (
-                      <Badge key={key} variant="outline" className="text-xs">
-                        <TagIcon className="h-3 w-3 mr-1" />
-                        {key}: {value}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <EmptyState icon={TagIcon} title="No Tags" description="This function has no tags." />
-            )}
+            <TagsSection
+              tags={tags}
+              onSave={async (newTags) => {
+                await updateResourceTags('lambda', 'functions', config.FunctionName, newTags)
+              }}
+            />
           </TabsContent>
         </Tabs>
 

@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import LOG_LEVEL, STACKPORT_PORT
-from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, resources, s3, secretsmanager, sqs, stats
+from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, resources, s3, secretsmanager, sqs, stats, tags
 from backend.websocket import probe_loop, websocket_endpoint
 
 
@@ -61,6 +61,7 @@ app.include_router(iam.router, prefix="/api/iam", tags=["iam"])
 app.include_router(ec2.router, prefix="/api/ec2", tags=["ec2"])
 app.include_router(logs.router, prefix="/api/logs", tags=["logs"])
 app.include_router(secretsmanager.router, prefix="/api/secretsmanager", tags=["secretsmanager"])
+app.include_router(tags.router, prefix="/api", tags=["tags"])
 app.include_router(resources.router, prefix="/api")
 
 

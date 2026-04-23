@@ -3,6 +3,10 @@ import type {
   StatsResponse,
   ResourceListResponse,
   ResourceDetailResponse,
+  ResourceTagsResponse,
+  BulkTagRequest,
+  BulkDeleteRequest,
+  BulkOperationResponse,
   S3Bucket,
   S3ObjectsResponse,
   S3ObjectDetail,
@@ -448,4 +452,54 @@ export async function fetchLogEvents(
   return fetchJSON<LogEventsResponse>(
     `${API_BASE}/logs/groups/${encodeURIComponent(logGroupName)}/streams/${encodeURIComponent(logStreamName)}/events?${params}`
   )
+}
+
+// --- Tag and Bulk Operations ---
+
+export async function fetchResourceTags(
+  service: string,
+  resourceType: string,
+  resourceId: string,
+): Promise<ResourceTagsResponse> {
+  return fetchJSON<ResourceTagsResponse>(
+    `${API_BASE}/resources/${service}/${resourceType}/${encodeURIComponent(resourceId)}/tags`,
+  )
+}
+
+export async function updateResourceTags(
+  service: string,
+  resourceType: string,
+  resourceId: string,
+  tags: Record<string, string>,
+): Promise<{ success: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/resources/${service}/${resourceType}/${encodeURIComponent(resourceId)}/tags`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags }),
+    },
+  )
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function bulkTag(request: BulkTagRequest): Promise<BulkOperationResponse> {
+  const res = await fetch(`${API_BASE}/bulk/tag`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function bulkDelete(request: BulkDeleteRequest): Promise<BulkOperationResponse> {
+  const res = await fetch(`${API_BASE}/bulk/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
 }

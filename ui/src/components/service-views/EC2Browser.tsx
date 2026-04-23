@@ -9,6 +9,7 @@ import {
   startEC2Instance,
   stopEC2Instance,
   terminateEC2Instance,
+  updateResourceTags,
 } from '@/lib/api'
 import type {
   EC2Instance,
@@ -29,6 +30,7 @@ import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection } from '@/components/TagsSection'
 import { Input } from '@/components/ui/input'
 import {
   Server,
@@ -37,7 +39,6 @@ import {
   Trash2,
   Shield,
   Network,
-  Tag,
   ChevronRight,
   RefreshCw,
 } from 'lucide-react'
@@ -282,24 +283,13 @@ function InstanceDetailSheet({
                 </>
               )}
 
-              {data.instance.tags.length > 0 && (
-                <>
-                  <Separator />
-                  <div>
-                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                      <Tag className="h-4 w-4" />
-                      Tags ({data.instance.tags.length})
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {data.instance.tags.map((tag) => (
-                        <Badge key={tag.Key} variant="outline">
-                          {tag.Key}: {tag.Value}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
+              <Separator />
+              <TagsSection
+                tags={Object.fromEntries(data.instance.tags.map(t => [t.Key, t.Value]))}
+                onSave={async (newTags) => {
+                  await updateResourceTags('ec2', 'instances', data.instance.instanceId, newTags)
+                }}
+              />
 
               <Separator />
 

@@ -8,6 +8,7 @@ import {
   receiveSQSMessages,
   deleteSQSMessage,
   purgeSQSQueue,
+  updateResourceTags,
 } from '@/lib/api'
 import type { SQSQueue, SQSQueueDetail, SQSMessage, SQSSendMessageRequest } from '@/lib/types'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -23,6 +24,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection, TagCountBadge } from '@/components/TagsSection'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -35,7 +37,6 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  Tag as TagIcon,
   AlertTriangle,
   Eye,
   Copy,
@@ -720,25 +721,12 @@ export function SQSBrowser() {
           </TabsContent>
 
           <TabsContent value="tags" className="space-y-4">
-            {Object.keys(queueDetail.tags).length > 0 ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Tags</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(queueDetail.tags).map(([key, value]) => (
-                      <Badge key={key} variant="outline" className="text-xs">
-                        <TagIcon className="h-3 w-3 mr-1" />
-                        {key}: {value}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <EmptyState icon={TagIcon} title="No Tags" description="This queue has no tags." />
-            )}
+            <TagsSection
+              tags={queueDetail.tags}
+              onSave={async (newTags) => {
+                await updateResourceTags('sqs', 'queues', queueDetail.name, newTags)
+              }}
+            />
           </TabsContent>
         </Tabs>
 
@@ -818,6 +806,7 @@ export function SQSBrowser() {
                 <div className="flex items-center gap-2">
                   <QueueTypeBadge type={queue.type} />
                   <QueueDepthBadge count={totalMessages} />
+                  <TagCountBadge count={Object.keys(queue.tags || {}).length} />
                   {queue.redrivePolicy && (
                     <Badge variant="outline" className="text-xs">
                       <AlertTriangle className="h-3 w-3 mr-1" />

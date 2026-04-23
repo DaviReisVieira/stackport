@@ -5,6 +5,8 @@ import {
   fetchDynamoDBTable,
   fetchDynamoDBItems,
   queryDynamoDBTable,
+  fetchResourceTags,
+  updateResourceTags,
 } from '@/lib/api'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import type {
@@ -26,6 +28,7 @@ import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection } from '@/components/TagsSection'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -177,16 +180,21 @@ export function DynamoDBBrowser() {
   const [queryPartitionKey, setQueryPartitionKey] = useState('')
   const [querySortKey, setQuerySortKey] = useState('')
   const [querySortKeyOp, setQuerySortKeyOp] = useState('=')
+  const [tableTags, setTableTags] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!selectedTable) {
       setTableDetail(null)
       setItemsData(null)
+      setTableTags({})
       return
     }
     fetchDynamoDBTable(selectedTable)
       .then(setTableDetail)
       .catch(() => setTableDetail(null))
+    fetchResourceTags('dynamodb', 'tables', selectedTable)
+      .then(res => setTableTags(res.tags))
+      .catch(() => setTableTags({}))
   }, [selectedTable])
 
   useEffect(() => {
@@ -586,6 +594,14 @@ export function DynamoDBBrowser() {
           )}
         </CardContent>
       </Card>
+
+      <TagsSection
+        tags={tableTags}
+        onSave={async (newTags) => {
+          await updateResourceTags('dynamodb', 'tables', selectedTable, newTags)
+          setTableTags(newTags)
+        }}
+      />
 
       <Sheet open={!!itemDetail} onOpenChange={(open) => !open && setItemDetail(null)}>
         <SheetContent className="sm:max-w-lg overflow-auto">
