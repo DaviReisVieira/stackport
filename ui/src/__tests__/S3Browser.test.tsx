@@ -168,7 +168,7 @@ describe('S3Browser delete confirmation', () => {
     await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() => {
-      expect(deleteS3ObjectMock).toHaveBeenCalledWith('my-bucket', 'readme.txt')
+      expect(deleteS3ObjectMock).toHaveBeenCalledWith('my-bucket', 'readme.txt', null)
     })
   })
 })
