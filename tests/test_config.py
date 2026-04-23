@@ -134,11 +134,13 @@ class TestIsLocalEndpoint:
     def test_none_falls_back_to_default_endpoint(self):
         from backend.config import DEFAULT_ENDPOINT, is_local_endpoint
 
-        # None means "use DEFAULT_ENDPOINT", so result depends on that value
+        # None means real AWS (no custom endpoint)
+        assert is_local_endpoint(None) is False
+        # Omitting the argument uses DEFAULT_ENDPOINT
         if DEFAULT_ENDPOINT is None:
-            assert is_local_endpoint(None) is False
+            assert is_local_endpoint() is False
         else:
-            assert is_local_endpoint(None) is True  # test env uses localhost
+            assert is_local_endpoint() is True  # test env uses localhost
 
     def test_docker_hostname_is_local(self):
         from backend.config import is_local_endpoint

@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter
 
 from backend.aws_client import get_client
-from backend.config import AWS_REGION, DEFAULT_ENDPOINT, ENDPOINTS, is_local_endpoint
+from backend.config import AWS_REGION, DEFAULT_ENDPOINT, ENDPOINTS
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def list_endpoints():
             "url": url,
             "health": health,
             "active": url == DEFAULT_ENDPOINT,
-            "connection_type": "local" if is_local_endpoint(url) else "aws",
+            "connection_type": "aws" if url is None or ".amazonaws.com" in url else "local",
             "region": AWS_REGION,
         })
 

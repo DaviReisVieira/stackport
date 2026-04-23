@@ -86,14 +86,20 @@ ENDPOINTS: dict[str, str | None] = _parse_endpoints()
 DEFAULT_ENDPOINT: str | None = next(iter(ENDPOINTS.values()))
 
 
-def is_local_endpoint(endpoint_url: str | None = None) -> bool:
+_UNSET = object()
+
+
+def is_local_endpoint(endpoint_url: str | None = _UNSET) -> bool:
     """Return True when targeting a local emulator (LocalStack, MiniStack, Moto, MinIO, etc.).
 
     Logic: a custom endpoint that is NOT an amazonaws.com domain is assumed to be
     a local emulator.  This covers localhost, 127.0.0.1, 0.0.0.0, Docker service
     names (localstack, minio, moto, …), and .local TLDs.
+
+    None means real AWS (no custom endpoint) → returns False.
+    Omitted means use DEFAULT_ENDPOINT.
     """
-    url = endpoint_url if endpoint_url is not None else DEFAULT_ENDPOINT
+    url = DEFAULT_ENDPOINT if endpoint_url is _UNSET else endpoint_url
     if url is None:
         return False
     return ".amazonaws.com" not in url
