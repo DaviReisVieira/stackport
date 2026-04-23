@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
@@ -280,7 +281,13 @@ export function LogsBrowser() {
   return (
     <div className="space-y-4 h-full flex flex-col">
       <Breadcrumb segments={[createHomeSegment(), { label: 'CloudWatch Logs', icon: getServiceIcon('logs') }]} />
-      <div className="grid grid-cols-[300px,1fr,1fr] gap-4 flex-1 min-h-0">
+      <Tabs defaultValue="logs" className="flex-1 flex flex-col min-h-0">
+        <TabsList className="w-fit">
+          <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="tags">Tags</TabsTrigger>
+        </TabsList>
+        <TabsContent value="logs" className="flex-1 min-h-0">
+      <div className="grid grid-cols-[300px,1fr,1fr] gap-4 h-full">
       {/* Log Groups Panel */}
       <Card className="flex flex-col">
         <CardHeader className="pb-3">
@@ -593,18 +600,28 @@ export function LogsBrowser() {
         </CardContent>
       </Card>
       </div>
-      {selectedGroup && groupsData?.log_groups && (
-        <TagsSection
-          tags={logGroupTags}
-          onSave={async (newTags) => {
-            const group = groupsData.log_groups.find(g => g.name === selectedGroup)
-            if (group?.arn) {
-              await updateResourceTags('logs', 'log_groups', group.arn, newTags)
-              setLogGroupTags(newTags)
-            }
-          }}
-        />
-      )}
+        </TabsContent>
+        <TabsContent value="tags" className="space-y-4">
+          {selectedGroup && groupsData?.log_groups ? (
+            <TagsSection
+              tags={logGroupTags}
+              onSave={async (newTags) => {
+                const group = groupsData.log_groups.find(g => g.name === selectedGroup)
+                if (group?.arn) {
+                  await updateResourceTags('logs', 'log_groups', group.arn, newTags)
+                  setLogGroupTags(newTags)
+                }
+              }}
+            />
+          ) : (
+            <EmptyState
+              icon={ScrollText}
+              title="No log group selected"
+              description="Select a log group to view and manage tags"
+            />
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

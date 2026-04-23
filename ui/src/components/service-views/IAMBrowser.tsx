@@ -44,7 +44,6 @@ import {
   Shield,
   Key,
   FileText,
-  ExternalLink,
   ChevronRight,
   RefreshCw,
 } from 'lucide-react'
@@ -109,102 +108,98 @@ function UserDetailSheet({
         )}
 
         {!loading && data && (
-          <div className="space-y-6 mt-6">
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <User className="h-4 w-4" />
-                User Details
-              </h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">User ID</span>
-                  <span className="font-mono text-xs">{data.user.UserId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">ARN</span>
-                  <span className="font-mono text-xs break-all">{data.user.Arn}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Path</span>
-                  <span className="font-mono text-xs">{data.user.Path}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Created</span>
-                  <span className="text-xs">{formatDate(data.user.CreateDate)}</span>
-                </div>
-                {data.user.PasswordLastUsed && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Password Last Used</span>
-                    <span className="text-xs">{formatDate(data.user.PasswordLastUsed)}</span>
-                  </div>
-                )}
-              </div>
-            </div>
+          <Tabs defaultValue="details" className="mt-4">
+            <TabsList>
+              <TabsTrigger value="details">Details</TabsTrigger>
+              <TabsTrigger value="policies">Policies</TabsTrigger>
+              <TabsTrigger value="groups">Groups</TabsTrigger>
+              <TabsTrigger value="keys">Access Keys</TabsTrigger>
+              <TabsTrigger value="tags">Tags</TabsTrigger>
+            </TabsList>
 
-            <Separator />
-
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                Attached Managed Policies ({data.attached_policies.length})
-              </h3>
-              {data.attached_policies.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No managed policies attached</p>
-              ) : (
-                <div className="space-y-2">
-                  {data.attached_policies.map((policy) => (
-                    <div
-                      key={policy.PolicyArn}
-                      className="flex items-center justify-between p-2 rounded border bg-card"
-                    >
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm">{policy.PolicyName}</span>
-                      </div>
-                      <code className="text-xs text-muted-foreground truncate max-w-[200px]">
-                        {policy.PolicyArn}
-                      </code>
+            <TabsContent value="details" className="space-y-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">User ID</span>
+                      <span className="font-mono text-xs">{data.user.UserId}</span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <Separator />
-
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Inline Policies ({data.inline_policies.length})
-              </h3>
-              {data.inline_policies.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No inline policies</p>
-              ) : (
-                <div className="space-y-3">
-                  {data.inline_policies.map((policy) => (
-                    <details key={policy.name} className="group">
-                      <summary className="cursor-pointer p-2 rounded border bg-card hover:bg-accent flex items-center justify-between">
-                        <span className="text-sm font-medium">{policy.name}</span>
-                        <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
-                      </summary>
-                      <div className="mt-2">
-                        <JsonViewer data={policy.document} />
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">ARN</span>
+                      <span className="font-mono text-xs break-all">{data.user.Arn}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Path</span>
+                      <span className="font-mono text-xs">{data.user.Path}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Created</span>
+                      <span className="text-xs">{formatDate(data.user.CreateDate)}</span>
+                    </div>
+                    {data.user.PasswordLastUsed && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Password Last Used</span>
+                        <span className="text-xs">{formatDate(data.user.PasswordLastUsed)}</span>
                       </div>
-                    </details>
-                  ))}
-                </div>
-              )}
-            </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-            <Separator />
+            <TabsContent value="policies" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Attached Managed Policies ({data.attached_policies.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {data.attached_policies.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No managed policies attached</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {data.attached_policies.map((policy) => (
+                        <div key={policy.PolicyArn} className="flex items-center justify-between p-2 rounded border bg-card">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-sm">{policy.PolicyName}</span>
+                          </div>
+                          <code className="text-xs text-muted-foreground truncate max-w-[200px]">{policy.PolicyArn}</code>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Inline Policies ({data.inline_policies.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {data.inline_policies.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No inline policies</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {data.inline_policies.map((policy) => (
+                        <details key={policy.name} className="group">
+                          <summary className="cursor-pointer p-2 rounded border bg-card hover:bg-accent flex items-center justify-between">
+                            <span className="text-sm font-medium">{policy.name}</span>
+                            <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+                          </summary>
+                          <div className="mt-2">
+                            <JsonViewer data={policy.document} />
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                Groups ({data.groups.length})
-              </h3>
+            <TabsContent value="groups" className="space-y-4">
               {data.groups.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Not a member of any groups</p>
+                <EmptyState icon={Users} title="No Groups" description="Not a member of any groups." />
               ) : (
                 <div className="space-y-2">
                   {data.groups.map((group) => (
@@ -215,42 +210,32 @@ function UserDetailSheet({
                   ))}
                 </div>
               )}
-            </div>
+            </TabsContent>
 
-            <Separator />
-
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Key className="h-4 w-4" />
-                Access Keys ({data.access_keys.length})
-              </h3>
+            <TabsContent value="keys" className="space-y-4">
               {data.access_keys.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No access keys</p>
+                <EmptyState icon={Key} title="No Access Keys" description="No access keys configured." />
               ) : (
                 <div className="space-y-2">
                   {data.access_keys.map((key) => (
-                    <div
-                      key={key.AccessKeyId}
-                      className="flex items-center justify-between p-2 rounded border bg-card"
-                    >
+                    <div key={key.AccessKeyId} className="flex items-center justify-between p-2 rounded border bg-card">
                       <code className="text-xs font-mono">{key.AccessKeyId}</code>
-                      <Badge variant={key.Status === 'Active' ? 'default' : 'secondary'}>
-                        {key.Status}
-                      </Badge>
+                      <Badge variant={key.Status === 'Active' ? 'default' : 'secondary'}>{key.Status}</Badge>
                     </div>
                   ))}
                 </div>
               )}
-            </div>
+            </TabsContent>
 
-            <Separator />
-            <TagsSection
-              tags={data.tags}
-              onSave={async (newTags) => {
-                await updateResourceTags('iam', 'users', data.user.UserName, newTags)
-              }}
-            />
-          </div>
+            <TabsContent value="tags" className="space-y-4">
+              <TagsSection
+                tags={data.tags}
+                onSave={async (newTags) => {
+                  await updateResourceTags('iam', 'users', data.user.UserName, newTags)
+                }}
+              />
+            </TabsContent>
+          </Tabs>
         )}
       </SheetContent>
     </Sheet>
@@ -287,111 +272,107 @@ function RoleDetailSheet({
         )}
 
         {!loading && data && (
-          <div className="space-y-6 mt-6">
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <UserCircle className="h-4 w-4" />
-                Role Details
-              </h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Role ID</span>
-                  <span className="font-mono text-xs">{data.role.RoleId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">ARN</span>
-                  <span className="font-mono text-xs break-all">{data.role.Arn}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Path</span>
-                  <span className="font-mono text-xs">{data.role.Path}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Created</span>
-                  <span className="text-xs">{formatDate(data.role.CreateDate)}</span>
-                </div>
-                {data.role.MaxSessionDuration && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Max Session Duration</span>
-                    <span className="text-xs">{data.role.MaxSessionDuration}s</span>
-                  </div>
-                )}
-              </div>
-            </div>
+          <Tabs defaultValue="details" className="mt-4">
+            <TabsList>
+              <TabsTrigger value="details">Details</TabsTrigger>
+              <TabsTrigger value="trust">Trust Policy</TabsTrigger>
+              <TabsTrigger value="policies">Policies</TabsTrigger>
+              <TabsTrigger value="tags">Tags</TabsTrigger>
+            </TabsList>
 
-            <Separator />
-
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                Trust Policy (AssumeRolePolicyDocument)
-              </h3>
-              <JsonViewer data={data.trust_policy} />
-            </div>
-
-            <Separator />
-
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                Attached Managed Policies ({data.attached_policies.length})
-              </h3>
-              {data.attached_policies.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No managed policies attached</p>
-              ) : (
-                <div className="space-y-2">
-                  {data.attached_policies.map((policy) => (
-                    <div
-                      key={policy.PolicyArn}
-                      className="flex items-center justify-between p-2 rounded border bg-card"
-                    >
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm">{policy.PolicyName}</span>
-                      </div>
-                      <code className="text-xs text-muted-foreground truncate max-w-[200px]">
-                        {policy.PolicyArn}
-                      </code>
+            <TabsContent value="details" className="space-y-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Role ID</span>
+                      <span className="font-mono text-xs">{data.role.RoleId}</span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <Separator />
-
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Inline Policies ({data.inline_policies.length})
-              </h3>
-              {data.inline_policies.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No inline policies</p>
-              ) : (
-                <div className="space-y-3">
-                  {data.inline_policies.map((policy) => (
-                    <details key={policy.name} className="group">
-                      <summary className="cursor-pointer p-2 rounded border bg-card hover:bg-accent flex items-center justify-between">
-                        <span className="text-sm font-medium">{policy.name}</span>
-                        <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
-                      </summary>
-                      <div className="mt-2">
-                        <JsonViewer data={policy.document} />
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">ARN</span>
+                      <span className="font-mono text-xs break-all">{data.role.Arn}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Path</span>
+                      <span className="font-mono text-xs">{data.role.Path}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Created</span>
+                      <span className="text-xs">{formatDate(data.role.CreateDate)}</span>
+                    </div>
+                    {data.role.MaxSessionDuration && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Max Session Duration</span>
+                        <span className="text-xs">{data.role.MaxSessionDuration}s</span>
                       </div>
-                    </details>
-                  ))}
-                </div>
-              )}
-            </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-            <Separator />
-            <TagsSection
-              tags={data.tags}
-              onSave={async (newTags) => {
-                await updateResourceTags('iam', 'roles', data.role.RoleName, newTags)
-              }}
-            />
-          </div>
+            <TabsContent value="trust" className="space-y-4">
+              <JsonViewer data={data.trust_policy} />
+            </TabsContent>
+
+            <TabsContent value="policies" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Attached Managed Policies ({data.attached_policies.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {data.attached_policies.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No managed policies attached</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {data.attached_policies.map((policy) => (
+                        <div key={policy.PolicyArn} className="flex items-center justify-between p-2 rounded border bg-card">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-sm">{policy.PolicyName}</span>
+                          </div>
+                          <code className="text-xs text-muted-foreground truncate max-w-[200px]">{policy.PolicyArn}</code>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Inline Policies ({data.inline_policies.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {data.inline_policies.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No inline policies</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {data.inline_policies.map((policy) => (
+                        <details key={policy.name} className="group">
+                          <summary className="cursor-pointer p-2 rounded border bg-card hover:bg-accent flex items-center justify-between">
+                            <span className="text-sm font-medium">{policy.name}</span>
+                            <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+                          </summary>
+                          <div className="mt-2">
+                            <JsonViewer data={policy.document} />
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="tags" className="space-y-4">
+              <TagsSection
+                tags={data.tags}
+                onSave={async (newTags) => {
+                  await updateResourceTags('iam', 'roles', data.role.RoleName, newTags)
+                }}
+              />
+            </TabsContent>
+          </Tabs>
         )}
       </SheetContent>
     </Sheet>
@@ -566,61 +547,56 @@ function PolicyDetailSheet({
         )}
 
         {!loading && data && (
-          <div className="space-y-6 mt-6">
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Policy Details
-              </h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Policy ID</span>
-                  <span className="font-mono text-xs">{data.policy.PolicyId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">ARN</span>
-                  <span className="font-mono text-xs break-all">{data.policy.Arn}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Path</span>
-                  <span className="font-mono text-xs">{data.policy.Path}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Default Version</span>
-                  <span className="text-xs">{data.policy.DefaultVersionId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Attachments</span>
-                  <Badge>{data.policy.AttachmentCount}</Badge>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Created</span>
-                  <span className="text-xs">{formatDate(data.policy.CreateDate)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Updated</span>
-                  <span className="text-xs">{formatDate(data.policy.UpdateDate)}</span>
-                </div>
-              </div>
-            </div>
+          <Tabs defaultValue="details" className="mt-4">
+            <TabsList>
+              <TabsTrigger value="details">Details</TabsTrigger>
+              <TabsTrigger value="document">Document</TabsTrigger>
+              <TabsTrigger value="attached">Attached To</TabsTrigger>
+              <TabsTrigger value="tags">Tags</TabsTrigger>
+            </TabsList>
 
-            <Separator />
+            <TabsContent value="details" className="space-y-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Policy ID</span>
+                      <span className="font-mono text-xs">{data.policy.PolicyId}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">ARN</span>
+                      <span className="font-mono text-xs break-all">{data.policy.Arn}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Path</span>
+                      <span className="font-mono text-xs">{data.policy.Path}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Default Version</span>
+                      <span className="text-xs">{data.policy.DefaultVersionId}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Attachments</span>
+                      <Badge>{data.policy.AttachmentCount}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Created</span>
+                      <span className="text-xs">{formatDate(data.policy.CreateDate)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Updated</span>
+                      <span className="text-xs">{formatDate(data.policy.UpdateDate)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Policy Document
-              </h3>
+            <TabsContent value="document" className="space-y-4">
               <JsonViewer data={data.document} />
-            </div>
+            </TabsContent>
 
-            <Separator />
-
-            <div>
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <ExternalLink className="h-4 w-4" />
-                Attached To
-              </h3>
+            <TabsContent value="attached" className="space-y-4">
               <div className="space-y-4">
                 <div>
                   <p className="text-xs text-muted-foreground mb-2">Users ({data.attached_to.users.length})</p>
@@ -637,7 +613,6 @@ function PolicyDetailSheet({
                     </div>
                   )}
                 </div>
-
                 <div>
                   <p className="text-xs text-muted-foreground mb-2">Roles ({data.attached_to.roles.length})</p>
                   {data.attached_to.roles.length === 0 ? (
@@ -653,7 +628,6 @@ function PolicyDetailSheet({
                     </div>
                   )}
                 </div>
-
                 <div>
                   <p className="text-xs text-muted-foreground mb-2">Groups ({data.attached_to.groups.length})</p>
                   {data.attached_to.groups.length === 0 ? (
@@ -670,16 +644,17 @@ function PolicyDetailSheet({
                   )}
                 </div>
               </div>
-            </div>
+            </TabsContent>
 
-            <Separator />
-            <TagsSection
-              tags={data.tags}
-              onSave={async (newTags) => {
-                await updateResourceTags('iam', 'policies', data.policy.Arn, newTags)
-              }}
-            />
-          </div>
+            <TabsContent value="tags" className="space-y-4">
+              <TagsSection
+                tags={data.tags}
+                onSave={async (newTags) => {
+                  await updateResourceTags('iam', 'policies', data.policy.Arn, newTags)
+                }}
+              />
+            </TabsContent>
+          </Tabs>
         )}
       </SheetContent>
     </Sheet>

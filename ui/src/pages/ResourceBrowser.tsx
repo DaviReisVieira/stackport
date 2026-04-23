@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFavorites } from '../hooks/useFavorites'
-import { fetchStats, fetchResources, fetchResourceDetail } from '../lib/api'
+import { fetchStats, fetchResources, fetchResourceDetail, fetchResourceTags, updateResourceTags } from '../lib/api'
 import type { StatsResponse, ServiceStats, ResourceListResponse, ResourceDetailResponse } from '../lib/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,7 +21,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/EmptyState'
+import { TagsSection } from '@/components/TagsSection'
 import { JsonViewer } from '@/components/JsonViewer'
 import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/components/Breadcrumb'
 import { SERVICE_VIEWS } from '@/components/service-views'
@@ -107,6 +109,8 @@ export default function ResourceBrowser() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [, setTimestamp] = useState(0)
   const [selectedRow, setSelectedRow] = useState(-1)
+  const [detailTags, setDetailTags] = useState<Record<string, string>>({})
+  const [, setTagsLoading] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -139,6 +143,19 @@ export default function ResourceBrowser() {
     }, 5000)
     return () => clearInterval(interval)
   }, [])
+
+  // Fetch tags when detail sheet opens
+  useEffect(() => {
+    if (!detail) {
+      setDetailTags({})
+      return
+    }
+    setTagsLoading(true)
+    fetchResourceTags(detail.service, detail.type, detail.id)
+      .then(res => setDetailTags(res.tags))
+      .catch(() => setDetailTags({}))
+      .finally(() => setTagsLoading(false))
+  }, [detail])
 
   const openDetail = async (svc: string, type: string, id: string) => {
     try {
@@ -353,7 +370,7 @@ export default function ResourceBrowser() {
       </ScrollArea>
 
       {/* Resource content */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
         {!service && (
           <EmptyState
             icon={FolderOpen}
@@ -644,7 +661,24 @@ export default function ResourceBrowser() {
                   <SheetTitle>{detail.type} / {detail.id}</SheetTitle>
                   <SheetDescription>{detail.service}</SheetDescription>
                 </SheetHeader>
-                <JsonViewer data={detail.detail} />
+                <Tabs defaultValue="details" className="mt-4">
+                  <TabsList>
+                    <TabsTrigger value="details">Details</TabsTrigger>
+                    <TabsTrigger value="tags">Tags</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="details">
+                    <JsonViewer data={detail.detail} />
+                  </TabsContent>
+                  <TabsContent value="tags">
+                    <TagsSection
+                      tags={detailTags}
+                      onSave={async (newTags) => {
+                        await updateResourceTags(detail!.service, detail!.type, detail!.id, newTags)
+                        setDetailTags(newTags)
+                      }}
+                    />
+                  </TabsContent>
+                </Tabs>
               </>
             )}
           </SheetContent>

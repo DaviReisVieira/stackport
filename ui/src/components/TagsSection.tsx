@@ -28,10 +28,11 @@ export function TagsSection({
   const [saving, setSaving] = useState(false)
 
   const editable = !!onSave
-  const entries = Object.entries(editing ? editedTags : tags)
+  const safeTags = tags ?? {}
+  const entries = Object.entries(editing ? editedTags : safeTags)
 
   const startEditing = () => {
-    setEditedTags({ ...tags })
+    setEditedTags({ ...safeTags })
     setNewKey('')
     setNewValue('')
     setEditing(true)
@@ -86,11 +87,11 @@ export function TagsSection({
   }
 
   const copyAllTags = () => {
-    const text = Object.entries(tags)
+    const text = Object.entries(safeTags)
       .map(([k, v]) => `${k}=${v}`)
       .join('\n')
     navigator.clipboard.writeText(text)
-    toast.success(`Copied ${Object.keys(tags).length} tag(s) to clipboard`)
+    toast.success(`Copied ${Object.keys(safeTags).length} tag(s) to clipboard`)
   }
 
   return (

@@ -155,7 +155,7 @@ function InstanceDetailSheet({
           )}
 
           {!loading && data && (
-            <div className="space-y-6 mt-6">
+            <div className="mt-4 flex flex-col gap-4">
               <div className="flex gap-2">
                 <Button
                   size="sm"
@@ -185,118 +185,115 @@ function InstanceDetailSheet({
                 </Button>
               </div>
 
-              <Separator />
+              <Tabs defaultValue="details" className="w-full">
+                <TabsList>
+                  <TabsTrigger value="details">Details</TabsTrigger>
+                  <TabsTrigger value="networking">Networking</TabsTrigger>
+                  <TabsTrigger value="security">Security</TabsTrigger>
+                  <TabsTrigger value="tags">Tags</TabsTrigger>
+                  <TabsTrigger value="raw">Raw</TabsTrigger>
+                </TabsList>
 
-              <div>
-                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                  <Server className="h-4 w-4" />
-                  Instance Details
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Instance ID</span>
-                    <span className="font-mono text-xs">{data.instance.instanceId}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">State</span>
-                    <Badge variant={getStateVariant(data.instance.state)}>
-                      {data.instance.state}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Type</span>
-                    <span className="text-xs">{data.instance.instanceType}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">AMI</span>
-                    <span className="font-mono text-xs">{data.instance.imageId || '—'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Key Pair</span>
-                    <span className="text-xs">{data.instance.keyName || '—'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Launch Time</span>
-                    <span className="text-xs">{formatDate(data.instance.launchTime || '')}</span>
-                  </div>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div>
-                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                  <Network className="h-4 w-4" />
-                  Networking
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">VPC</span>
-                    <span className="font-mono text-xs">{data.instance.vpcId || '—'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Subnet</span>
-                    <span className="font-mono text-xs">{data.instance.subnetId || '—'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Public IP</span>
-                    <span className="font-mono text-xs">{data.instance.publicIpAddress || '—'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Private IP</span>
-                    <span className="font-mono text-xs">{data.instance.privateIpAddress || '—'}</span>
-                  </div>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div>
-                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                  <Shield className="h-4 w-4" />
-                  Security Groups ({data.instance.securityGroups.length})
-                </h3>
-                {data.instance.securityGroups.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No security groups</p>
-                ) : (
-                  <div className="space-y-2">
-                    {data.instance.securityGroups.map((sg) => (
-                      <div key={sg.GroupId} className="flex items-center gap-2 p-2 rounded border bg-card">
-                        <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm">{sg.GroupName}</span>
-                        <code className="text-xs text-muted-foreground ml-auto">{sg.GroupId}</code>
+                <TabsContent value="details" className="space-y-4">
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Instance ID</span>
+                          <span className="font-mono text-xs">{data.instance.instanceId}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">State</span>
+                          <Badge variant={getStateVariant(data.instance.state)}>
+                            {data.instance.state}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Type</span>
+                          <span className="text-xs">{data.instance.instanceType}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">AMI</span>
+                          <span className="font-mono text-xs">{data.instance.imageId || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Key Pair</span>
+                          <span className="text-xs">{data.instance.keyName || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Launch Time</span>
+                          <span className="text-xs">{formatDate(data.instance.launchTime || '')}</span>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      {data.instance.userData && (
+                        <>
+                          <Separator className="my-4" />
+                          <div>
+                            <h3 className="text-sm font-semibold mb-3">User Data</h3>
+                            <pre className="text-xs p-3 rounded border bg-muted overflow-x-auto">
+                              {data.instance.userData}
+                            </pre>
+                          </div>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
 
-              {data.instance.userData && (
-                <>
-                  <Separator />
-                  <div>
-                    <h3 className="text-sm font-semibold mb-3">User Data</h3>
-                    <pre className="text-xs p-3 rounded border bg-muted overflow-x-auto">
-                      {data.instance.userData}
-                    </pre>
-                  </div>
-                </>
-              )}
+                <TabsContent value="networking" className="space-y-4">
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">VPC</span>
+                          <span className="font-mono text-xs">{data.instance.vpcId || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Subnet</span>
+                          <span className="font-mono text-xs">{data.instance.subnetId || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Public IP</span>
+                          <span className="font-mono text-xs">{data.instance.publicIpAddress || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Private IP</span>
+                          <span className="font-mono text-xs">{data.instance.privateIpAddress || '—'}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
 
-              <Separator />
-              <TagsSection
-                tags={Object.fromEntries(data.instance.tags.map(t => [t.Key, t.Value]))}
-                onSave={async (newTags) => {
-                  await updateResourceTags('ec2', 'instances', data.instance.instanceId, newTags)
-                }}
-              />
+                <TabsContent value="security" className="space-y-4">
+                  {data.instance.securityGroups.length === 0 ? (
+                    <EmptyState icon={Shield} title="No Security Groups" description="No security groups attached." />
+                  ) : (
+                    <div className="space-y-2">
+                      {data.instance.securityGroups.map((sg) => (
+                        <div key={sg.GroupId} className="flex items-center gap-2 p-2 rounded border bg-card">
+                          <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-sm">{sg.GroupName}</span>
+                          <code className="text-xs text-muted-foreground ml-auto">{sg.GroupId}</code>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
 
-              <Separator />
+                <TabsContent value="tags" className="space-y-4">
+                  <TagsSection
+                    tags={Object.fromEntries(data.instance.tags.map(t => [t.Key, t.Value]))}
+                    onSave={async (newTags) => {
+                      await updateResourceTags('ec2', 'instances', data.instance.instanceId, newTags)
+                    }}
+                  />
+                </TabsContent>
 
-              <div>
-                <h3 className="text-sm font-semibold mb-3">Raw Data</h3>
-                <JsonViewer data={data.instance} />
-              </div>
+                <TabsContent value="raw" className="space-y-4">
+                  <JsonViewer data={data.instance} />
+                </TabsContent>
+              </Tabs>
             </div>
           )}
         </SheetContent>

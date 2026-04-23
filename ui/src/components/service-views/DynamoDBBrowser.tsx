@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
 import { ExportDropdown } from '@/components/ExportDropdown'
@@ -442,6 +443,13 @@ export function DynamoDBBrowser() {
         )}
       </div>
 
+      <Tabs defaultValue="items" className="w-full">
+        <TabsList>
+          <TabsTrigger value="items">Items</TabsTrigger>
+          <TabsTrigger value="tags">Tags</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="items" className="space-y-4">
       <Card>
         <CardHeader className="p-4 pb-2">
           <div className="flex items-center justify-between gap-3">
@@ -594,14 +602,18 @@ export function DynamoDBBrowser() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
 
-      <TagsSection
-        tags={tableTags}
-        onSave={async (newTags) => {
-          await updateResourceTags('dynamodb', 'tables', selectedTable, newTags)
-          setTableTags(newTags)
-        }}
-      />
+        <TabsContent value="tags" className="space-y-4">
+          <TagsSection
+            tags={tableTags}
+            onSave={async (newTags) => {
+              await updateResourceTags('dynamodb', 'tables', selectedTable, newTags)
+              setTableTags(newTags)
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
       <Sheet open={!!itemDetail} onOpenChange={(open) => !open && setItemDetail(null)}>
         <SheetContent className="sm:max-w-lg overflow-auto">
