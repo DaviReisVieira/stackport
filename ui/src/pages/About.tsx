@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useFetch } from '../hooks/useFetch'
+import { useEndpoint } from '../hooks/useEndpoint'
 import { fetchHealth } from '../lib/api'
 import type { HealthResponse } from '../lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -23,7 +24,8 @@ const LINKS = [
 ]
 
 export default function About() {
-  const healthFetcher = useCallback(() => fetchHealth(), [])
+  const { activeEndpoint } = useEndpoint()
+  const healthFetcher = useCallback(() => fetchHealth(activeEndpoint), [activeEndpoint])
   const { data: health, error, refresh } = useFetch<HealthResponse>(healthFetcher, 10000)
 
   if (error) {

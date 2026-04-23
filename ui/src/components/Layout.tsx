@@ -10,6 +10,7 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import { ConnectionBadge } from '@/components/ConnectionBadge'
 import { ReadOnlyBadge } from '@/components/ReadOnlyBadge'
 import { AwsWarningBanner } from '@/components/AwsWarningBanner'
+import { EndpointSelector } from '@/components/EndpointSelector'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTheme } from '@/hooks/useTheme'
 import { useHealth } from '@/hooks/useHealth'
@@ -95,6 +96,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <>
             <Separator />
             <div className={`px-3 py-2.5 ${sidebarCollapsed ? 'flex flex-col items-center gap-2' : 'space-y-2'}`}>
+              <EndpointSelector compact={sidebarCollapsed} />
               <ConnectionBadge
                 connectionType={health.connection_type}
                 region={health.region}

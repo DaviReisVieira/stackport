@@ -2,6 +2,7 @@ import { useCallback, useState, useEffect } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFavorites } from '../hooks/useFavorites'
+import { useEndpoint } from '../hooks/useEndpoint'
 import { fetchStats } from '../lib/api'
 import type { StatsResponse, ServiceStats } from '../lib/types'
 import { Link } from 'react-router-dom'
@@ -42,11 +43,13 @@ function StatusDot({ status }: { status: string }) {
 }
 
 export default function Dashboard() {
-  const statsFetcher = useCallback(() => fetchStats(), [])
+  const { activeEndpoint } = useEndpoint()
+  const statsFetcher = useCallback(() => fetchStats(activeEndpoint), [activeEndpoint])
   const { data: stats, error, refresh } = useWebSocket<StatsResponse>({
     fallbackFetcher: statsFetcher,
     fallbackInterval: 5000,
     messageType: 'stats',
+    endpoint: activeEndpoint,
   })
   const { favorites, toggleFavorite, isFavorite } = useFavorites()
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)

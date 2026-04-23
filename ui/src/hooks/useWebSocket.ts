@@ -8,6 +8,8 @@ interface UseWebSocketOptions<T> {
   fallbackInterval?: number
   /** Message type to filter on (e.g., 'stats') */
   messageType: string
+  /** Endpoint name to subscribe to */
+  endpoint?: string | null
 }
 
 /**
@@ -16,7 +18,7 @@ interface UseWebSocketOptions<T> {
  * Connects to ws://host/ws, listens for messages of the given type,
  * and falls back to HTTP polling after 3 failed reconnection attempts.
  */
-export function useWebSocket<T>({ fallbackFetcher, fallbackInterval = 5000, messageType }: UseWebSocketOptions<T>) {
+export function useWebSocket<T>({ fallbackFetcher, fallbackInterval = 5000, messageType, endpoint }: UseWebSocketOptions<T>) {
   const [wsData, setWsData] = useState<T | null>(null)
   const [connected, setConnected] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -41,7 +43,7 @@ export function useWebSocket<T>({ fallbackFetcher, fallbackInterval = 5000, mess
         if (disposed) { ws.close(); return }
         setConnected(true)
         retriesRef.current = 0
-        ws.send(JSON.stringify({ type: 'subscribe', services: ['all'] }))
+        ws.send(JSON.stringify({ type: 'subscribe', services: ['all'], endpoint: endpoint ?? undefined }))
       }
 
       ws.onmessage = (event) => {
@@ -85,7 +87,7 @@ export function useWebSocket<T>({ fallbackFetcher, fallbackInterval = 5000, mess
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       wsRef.current?.close()
     }
-  }, [messageType])
+  }, [messageType, endpoint])
 
   // HTTP polling fallback — always fetches once for initial data,
   // then continues polling only when WebSocket has failed

@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFavorites } from '../hooks/useFavorites'
+import { useEndpoint } from '../hooks/useEndpoint'
 import { fetchStats, fetchResources, fetchResourceDetail, fetchResourceTags, updateResourceTags, fetchTagsSupported } from '../lib/api'
 import type { TagsSupportedEntry } from '../lib/types'
 import type { StatsResponse, ServiceStats, ResourceListResponse, ResourceDetailResponse } from '../lib/types'
@@ -93,11 +94,13 @@ function PaginationBar({
 export default function ResourceBrowser() {
   const { service } = useParams<{ service?: string }>()
   const navigate = useNavigate()
-  const statsFetcher = useCallback(() => fetchStats(), [])
+  const { activeEndpoint } = useEndpoint()
+  const statsFetcher = useCallback(() => fetchStats(activeEndpoint), [activeEndpoint])
   const { data: stats } = useWebSocket<StatsResponse>({
     fallbackFetcher: statsFetcher,
     fallbackInterval: 10000,
     messageType: 'stats',
+    endpoint: activeEndpoint,
   })
   const { favorites, toggleFavorite } = useFavorites()
   const [resources, setResources] = useState<Record<string, unknown[]> | null>(null)
@@ -126,7 +129,7 @@ export default function ResourceBrowser() {
     setResourceError(null)
     setPages({})
     setSearchQuery('')
-    fetchResources(service)
+    fetchResources(service, undefined, activeEndpoint)
       .then((data: ResourceListResponse) => {
         setResources(data.resources ?? {})
         setLastUpdated(new Date())
@@ -136,7 +139,7 @@ export default function ResourceBrowser() {
         setResourceError(e instanceof Error ? e.message : 'Failed to load resources')
       })
       .finally(() => setLoadingResources(false))
-  }, [service])
+  }, [service, activeEndpoint])
 
   // Update timestamp display every 5 seconds
   useEffect(() => {
@@ -148,10 +151,10 @@ export default function ResourceBrowser() {
 
   // Fetch supported tag types once on mount
   useEffect(() => {
-    fetchTagsSupported()
+    fetchTagsSupported(activeEndpoint)
       .then(res => setSupportedTags(res.supported))
       .catch(() => setSupportedTags([]))
-  }, [])
+  }, [activeEndpoint])
 
   const detailTagSupport = useMemo(() => {
     if (!detail || supportedTags.length === 0) return null
@@ -169,15 +172,15 @@ export default function ResourceBrowser() {
       return
     }
     setTagsLoading(true)
-    fetchResourceTags(detail.service, detail.type, detail.id)
+    fetchResourceTags(detail.service, detail.type, detail.id, activeEndpoint)
       .then(res => setDetailTags(res.tags))
       .catch(() => setDetailTags({}))
       .finally(() => setTagsLoading(false))
-  }, [detail, detailTagSupport])
+  }, [detail, detailTagSupport, activeEndpoint])
 
   const openDetail = async (svc: string, type: string, id: string) => {
     try {
-      const data = await fetchResourceDetail(svc, type, id) as ResourceDetailResponse
+      const data = await fetchResourceDetail(svc, type, id, activeEndpoint) as ResourceDetailResponse
       setDetail(data)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load detail'
@@ -189,7 +192,7 @@ export default function ResourceBrowser() {
     if (!service) return
     setLoadingResources(true)
     setResourceError(null)
-    fetchResources(service)
+    fetchResources(service, undefined, activeEndpoint)
       .then((data: ResourceListResponse) => {
         setResources(data.resources ?? {})
         setLastUpdated(new Date())
@@ -692,7 +695,7 @@ export default function ResourceBrowser() {
                       <TagsSection
                         tags={detailTags}
                         onSave={detailTagSupport.writable ? async (newTags) => {
-                          await updateResourceTags(detail!.service, detail!.type, detail!.id, newTags)
+                          await updateResourceTags(detail!.service, detail!.type, detail!.id, newTags, activeEndpoint)
                           setDetailTags(newTags)
                         } : undefined}
                       />
