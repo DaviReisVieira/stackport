@@ -113,3 +113,49 @@ class TestConfig:
         monkeypatch.delenv("STACKPORT_ALLOW_WRITES", raising=False)
         importlib.reload(backend.config)
         assert backend.config.STACKPORT_ALLOW_WRITES is False
+
+
+class TestIsLocalEndpoint:
+    def test_localhost_is_local(self):
+        from backend.config import is_local_endpoint
+
+        assert is_local_endpoint("http://localhost:4566") is True
+
+    def test_127_is_local(self):
+        from backend.config import is_local_endpoint
+
+        assert is_local_endpoint("http://127.0.0.1:4566") is True
+
+    def test_amazonaws_is_not_local(self):
+        from backend.config import is_local_endpoint
+
+        assert is_local_endpoint("https://s3.amazonaws.com") is False
+
+    def test_none_falls_back_to_default_endpoint(self):
+        from backend.config import DEFAULT_ENDPOINT, is_local_endpoint
+
+        # None means "use DEFAULT_ENDPOINT", so result depends on that value
+        if DEFAULT_ENDPOINT is None:
+            assert is_local_endpoint(None) is False
+        else:
+            assert is_local_endpoint(None) is True  # test env uses localhost
+
+    def test_docker_hostname_is_local(self):
+        from backend.config import is_local_endpoint
+
+        assert is_local_endpoint("http://localstack:4566") is True
+
+    def test_minio_is_local(self):
+        from backend.config import is_local_endpoint
+
+        assert is_local_endpoint("http://minio:9000") is True
+
+    def test_zero_addr_is_local(self):
+        from backend.config import is_local_endpoint
+
+        assert is_local_endpoint("http://0.0.0.0:4566") is True
+
+    def test_real_aws_vpc_endpoint_is_not_local(self):
+        from backend.config import is_local_endpoint
+
+        assert is_local_endpoint("https://s3.us-west-2.amazonaws.com") is False

@@ -68,19 +68,22 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function RuntimeBadge({ runtime }: { runtime: string }) {
+function RuntimeBadge({ runtime, packageType }: { runtime?: string; packageType?: string }) {
+  const isContainer = !runtime && packageType === 'Image'
+  const rt = runtime ?? (isContainer ? 'Container Image' : 'unknown')
   let color = 'bg-gray-500'
-  if (runtime.startsWith('python')) color = 'bg-blue-500'
-  else if (runtime.startsWith('nodejs')) color = 'bg-green-500'
-  else if (runtime.startsWith('java')) color = 'bg-red-500'
-  else if (runtime.startsWith('go')) color = 'bg-cyan-500'
-  else if (runtime.startsWith('dotnet')) color = 'bg-purple-500'
-  else if (runtime.startsWith('ruby')) color = 'bg-pink-500'
-  else if (runtime.startsWith('provided')) color = 'bg-gray-500'
+  if (rt.startsWith('python')) color = 'bg-blue-500'
+  else if (rt.startsWith('nodejs')) color = 'bg-green-500'
+  else if (rt.startsWith('java')) color = 'bg-red-500'
+  else if (rt.startsWith('go')) color = 'bg-cyan-500'
+  else if (rt.startsWith('dotnet')) color = 'bg-purple-500'
+  else if (rt.startsWith('ruby')) color = 'bg-pink-500'
+  else if (rt.startsWith('provided')) color = 'bg-orange-500'
+  else if (isContainer) color = 'bg-indigo-500'
 
   return (
     <Badge variant="secondary" className={`${color} text-white`}>
-      {runtime}
+      {rt}
     </Badge>
   )
 }
@@ -453,9 +456,9 @@ export function LambdaBrowser() {
         </div>
 
         <div className="flex items-center gap-2">
-          <RuntimeBadge runtime={config.Runtime} />
+          <RuntimeBadge runtime={config.Runtime} packageType={config.PackageType} />
           <StateBadge state={config.State} />
-          {config.PackageType && (
+          {config.PackageType && config.Runtime && (
             <Badge variant="outline">{config.PackageType === 'Image' ? 'Container Image' : 'ZIP'}</Badge>
           )}
         </div>
@@ -479,7 +482,7 @@ export function LambdaBrowser() {
                   <div className="text-muted-foreground">Runtime</div>
                   <div className="font-mono">{config.Runtime}</div>
                   <div className="text-muted-foreground">Handler</div>
-                  <div className="font-mono">{config.Handler}</div>
+                  <div className="font-mono">{config.Handler ?? '—'}</div>
                   <div className="text-muted-foreground">Memory</div>
                   <div>{config.MemorySize} MB</div>
                   <div className="text-muted-foreground">Timeout</div>
@@ -769,13 +772,13 @@ export function LambdaBrowser() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
-                <RuntimeBadge runtime={func.Runtime} />
+                <RuntimeBadge runtime={func.Runtime} packageType={func.PackageType} />
                 <StateBadge state={func.State} />
               </div>
               <div className="space-y-1 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Handler</span>
-                  <span className="font-mono">{func.Handler}</span>
+                  <span className="font-mono">{func.Handler ?? '—'}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Memory</span>

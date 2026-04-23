@@ -108,8 +108,15 @@ export default function About() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Mode</span>
+              <Badge variant={health.connection_type === 'local' ? 'secondary' : 'outline'}
+                className={health.connection_type === 'aws' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}>
+                {health.connection_type === 'local' ? 'Local Emulator' : 'Real AWS'}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Endpoint</span>
-              <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{health.endpoint_url}</code>
+              <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{health.endpoint_url ?? 'AWS (default)'}</code>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Region</span>
@@ -118,6 +125,12 @@ export default function About() {
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Services</span>
               <span className="text-sm">{health.services_count}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Writes</span>
+              <Badge variant={health.writes_enabled ? 'default' : 'secondary'}>
+                {health.writes_enabled ? 'Enabled' : 'Disabled'}
+              </Badge>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Uptime</span>

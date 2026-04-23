@@ -1,13 +1,18 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import { LayoutDashboard, FolderOpen, Keyboard, PanelLeftClose, PanelLeft, Info } from 'lucide-react'
+import { LayoutDashboard, FolderOpen, Keyboard, PanelLeftClose, PanelLeft, Info, Globe } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { KeyboardShortcutsModal } from '@/components/KeyboardShortcutsModal'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { ConnectionBadge } from '@/components/ConnectionBadge'
+import { ReadOnlyBadge } from '@/components/ReadOnlyBadge'
+import { AwsWarningBanner } from '@/components/AwsWarningBanner'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTheme } from '@/hooks/useTheme'
+import { useHealth } from '@/hooks/useHealth'
 import type { LucideIcon } from 'lucide-react'
 
 const NAV_ITEMS: { to: string; label: string; icon: LucideIcon }[] = [
@@ -21,6 +26,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const { setTheme, theme } = useTheme()
+  const { data: health } = useHealth()
 
   const toggleSidebar = () => setSidebarCollapsed(!sidebarCollapsed)
   const toggleTheme = () => {
@@ -85,6 +91,39 @@ export default function Layout({ children }: { children: ReactNode }) {
             </li>
           ))}
         </ul>
+        {health && (
+          <>
+            <Separator />
+            <div className={`px-3 py-2.5 ${sidebarCollapsed ? 'flex flex-col items-center gap-2' : 'space-y-2'}`}>
+              <ConnectionBadge
+                connectionType={health.connection_type}
+                region={health.region}
+                endpointUrl={health.endpoint_url}
+                compact={sidebarCollapsed}
+              />
+              <ReadOnlyBadge
+                writesEnabled={health.writes_enabled}
+                compact={sidebarCollapsed}
+              />
+              {!sidebarCollapsed && (
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Globe className="h-3 w-3" />
+                  {health.region}
+                </div>
+              )}
+              {sidebarCollapsed && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center justify-center h-8 w-8 rounded-md border border-border text-muted-foreground">
+                      <Globe className="h-3.5 w-3.5" />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{health.region}</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </>
+        )}
         <Separator />
         <div className={`px-4 py-2.5 flex items-center ${sidebarCollapsed ? 'flex-col gap-2' : 'justify-between'}`}>
           {!sidebarCollapsed && <span className="text-xs text-muted-foreground">StackPort</span>}
@@ -119,6 +158,13 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       {/* Main content */}
       <main className="flex min-h-0 flex-1 flex-col overflow-auto">
+        {health && (
+          <AwsWarningBanner
+            connectionType={health.connection_type}
+            region={health.region}
+            writesEnabled={health.writes_enabled}
+          />
+        )}
         {children}
       </main>
     </div>

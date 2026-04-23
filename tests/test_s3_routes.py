@@ -351,3 +351,52 @@ class TestValidation:
             json={"prefix": "bad"},
         )
         assert resp.status_code == 422
+
+
+class TestBucketStatsRealAws:
+    """Verify that S3 bucket listing skips expensive calls on real AWS."""
+
+    @patch("backend.routes.s3.is_local_endpoint", return_value=False)
+    @patch("backend.routes.s3.get_client")
+    def test_list_buckets_skips_stats_on_real_aws(self, mock_get_client, _mock_is_local):
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+        mock_s3.list_buckets.return_value = {
+            "Buckets": [{"Name": "my-bucket", "CreationDate": datetime(2025, 1, 1, tzinfo=timezone.utc)}]
+        }
+
+        resp = client.get("/api/s3/buckets")
+        assert resp.status_code == 200
+        bucket = resp.json()["buckets"][0]
+        assert bucket["name"] == "my-bucket"
+        assert bucket["object_count"] == 0
+        assert bucket["total_size"] == 0
+        assert bucket["versioning"] == "Disabled"
+        assert bucket["encryption"] == "Disabled"
+        assert bucket["tags"] == {}
+        mock_s3.get_bucket_versioning.assert_not_called()
+        mock_s3.get_bucket_encryption.assert_not_called()
+        mock_s3.get_bucket_tagging.assert_not_called()
+        mock_s3.get_paginator.assert_not_called()
+
+    @patch("backend.routes.s3.is_local_endpoint", return_value=True)
+    @patch("backend.routes.s3.get_client")
+    def test_list_buckets_fetches_stats_on_local(self, mock_get_client, _mock_is_local):
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+        mock_s3.list_buckets.return_value = {
+            "Buckets": [{"Name": "my-bucket", "CreationDate": datetime(2025, 1, 1, tzinfo=timezone.utc)}]
+        }
+        paginator = MagicMock()
+        mock_s3.get_paginator.return_value = paginator
+        paginator.paginate.return_value = [{"Contents": []}]
+        mock_s3.get_bucket_versioning.return_value = {"Status": "Enabled"}
+        mock_s3.get_bucket_encryption.return_value = {}
+        mock_s3.get_bucket_tagging.return_value = {"TagSet": []}
+
+        resp = client.get("/api/s3/buckets")
+        assert resp.status_code == 200
+        bucket = resp.json()["buckets"][0]
+        assert bucket["versioning"] == "Enabled"
+        mock_s3.get_bucket_versioning.assert_called_once()
+        mock_s3.get_paginator.assert_called_once()

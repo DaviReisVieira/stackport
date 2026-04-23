@@ -300,13 +300,13 @@ export default function ResourceBrowser() {
   return (
     <div className="flex h-full min-h-0 min-w-0 w-full flex-1">
       {/* Service sidebar */}
-      <ScrollArea className="w-52 border-r bg-card/50">
-        <div className="px-3 py-3 border-b">
+      <ScrollArea className="w-56 border-r bg-card/50">
+        <div className="px-4 py-3 border-b">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Services</h3>
         </div>
         {favoriteSidebarServices.length > 0 && (
           <>
-            <div className="px-3 pt-2 pb-1">
+            <div className="px-4 pt-2 pb-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Favorites</span>
             </div>
             <ul className="py-0.5">
@@ -315,7 +315,7 @@ export default function ResourceBrowser() {
                 const Icon = getServiceIcon(name)
                 return (
                   <li key={name} className="group">
-                    <div className={`flex items-center px-3 py-2 text-sm transition-colors ${
+                    <div className={`flex items-center px-4 py-2 text-sm transition-colors ${
                       service === name
                         ? 'bg-accent text-accent-foreground'
                         : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -343,11 +343,11 @@ export default function ResourceBrowser() {
                 )
               })}
             </ul>
-            <div className="mx-3 border-b" />
+            <div className="mx-4 border-b" />
           </>
         )}
         {favoriteSidebarServices.length > 0 && (
-          <div className="px-3 pt-2 pb-1">
+          <div className="px-4 pt-2 pb-1">
             <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">All Services</span>
           </div>
         )}
@@ -357,7 +357,7 @@ export default function ResourceBrowser() {
             const Icon = getServiceIcon(name)
             return (
               <li key={name} className="group">
-                <div className={`flex items-center px-3 py-2 text-sm transition-colors ${
+                <div className={`flex items-center px-4 py-2 text-sm transition-colors ${
                   service === name
                     ? 'bg-accent text-accent-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -632,10 +632,10 @@ export default function ResourceBrowser() {
                                       }
                                       data-row-index={rowIdx}
                                     >
-                                      <TableCell className="text-primary font-mono font-medium text-xs">
+                                      <TableCell className="text-primary font-mono font-medium text-xs pl-4">
                                         {String(item.id ?? i)}
                                       </TableCell>
-                                      <TableCell className="text-muted-foreground text-xs truncate max-w-md">
+                                      <TableCell className="text-muted-foreground text-xs truncate max-w-md pr-4">
                                         {Object.entries(item)
                                           .filter(([k]) => k !== "id")
                                           .slice(0, 4)

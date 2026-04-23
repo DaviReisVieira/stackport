@@ -2,9 +2,11 @@ export interface HealthResponse {
   status: string
   version: string
   uptime_seconds: number
-  endpoint_url: string
+  endpoint_url: string | null
   region: string
   services_count: number
+  connection_type: 'local' | 'aws'
+  writes_enabled: boolean
 }
 
 export interface ServiceStats {
@@ -162,9 +164,9 @@ export interface DynamoDBQueryResponse {
 export interface LambdaFunction {
   FunctionName: string
   FunctionArn: string
-  Runtime: string
+  Runtime?: string
   Role: string
-  Handler: string
+  Handler?: string
   CodeSize: number
   Description?: string
   Timeout: number
@@ -191,9 +193,9 @@ export interface LambdaFunctionDetail {
   configuration: {
     FunctionName: string
     FunctionArn: string
-    Runtime: string
+    Runtime?: string
     Role: string
-    Handler: string
+    Handler?: string
     CodeSize: number
     Description?: string
     Timeout: number

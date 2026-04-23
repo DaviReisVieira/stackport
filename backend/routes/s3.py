@@ -10,7 +10,7 @@ from pydantic import BaseModel, model_validator
 
 from backend.aws_client import get_client
 from backend.cache import cache
-from backend.config import AWS_REGION, S3_MAX_UPLOAD_BYTES
+from backend.config import AWS_REGION, S3_MAX_UPLOAD_BYTES, is_local_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ def _compose_object_key(prefix: str, filename: str) -> str:
 
 
 def _resolve_upload_content_type(filename: str, browser_type: str | None) -> str:
-    guessed, _enc = mimetypes.guess_type(filename)
+    guessed, _ = mimetypes.guess_type(filename)
     bt = (browser_type or "").strip() or None
     if not bt or bt == "application/octet-stream":
         return guessed or "application/octet-stream"
@@ -64,7 +64,14 @@ def s3_upload_config():
 
 
 def _get_bucket_stats(bucket_name: str) -> tuple[int, int]:
-    """Return (object_count, total_size_bytes) for a bucket. Cached 30s."""
+    """Return (object_count, total_size_bytes) for a bucket. Cached 30s.
+
+    On real AWS this enumerates every object, which can be very slow for large
+    buckets.  Only perform the full scan when targeting a local emulator.
+    """
+    if not is_local_endpoint():
+        return (0, 0)
+
     cache_key = f"s3:bucket_stats:{bucket_name}"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -93,31 +100,34 @@ def list_buckets():
     s3 = get_client("s3")
     response = s3.list_buckets()
     buckets = []
+    local = is_local_endpoint()
 
     for b in response.get("Buckets", []):
         name = b["Name"]
         obj_count, total_size = _get_bucket_stats(name)
 
         versioning = "Disabled"
-        try:
-            ver = s3.get_bucket_versioning(Bucket=name)
-            versioning = ver.get("Status", "Disabled")
-        except Exception:
-            logger.debug("Failed to get versioning for %s", name, exc_info=True)
-
         encryption = "Disabled"
-        try:
-            s3.get_bucket_encryption(Bucket=name)
-            encryption = "Enabled"
-        except Exception:
-            logger.debug("Failed to get encryption for %s", name, exc_info=True)
-
         tags: dict[str, str] = {}
-        try:
-            tag_resp = s3.get_bucket_tagging(Bucket=name)
-            tags = {t["Key"]: t["Value"] for t in tag_resp.get("TagSet", [])}
-        except Exception:
-            logger.debug("Failed to get tags for %s", name, exc_info=True)
+
+        if local:
+            try:
+                ver = s3.get_bucket_versioning(Bucket=name)
+                versioning = ver.get("Status", "Disabled")
+            except Exception:
+                logger.debug("Failed to get versioning for %s", name, exc_info=True)
+
+            try:
+                s3.get_bucket_encryption(Bucket=name)
+                encryption = "Enabled"
+            except Exception:
+                logger.debug("Failed to get encryption for %s", name, exc_info=True)
+
+            try:
+                tag_resp = s3.get_bucket_tagging(Bucket=name)
+                tags = {t["Key"]: t["Value"] for t in tag_resp.get("TagSet", [])}
+            except Exception:
+                logger.debug("Failed to get tags for %s", name, exc_info=True)
 
         buckets.append(
             {
