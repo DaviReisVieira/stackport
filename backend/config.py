@@ -77,7 +77,8 @@ def _parse_endpoints() -> dict[str, str | None]:
     for pair in endpoints_str.split(","):
         if "=" in pair:
             name, url = pair.split("=", 1)
-            endpoints[name.strip()] = url.strip()
+            url = url.strip()
+            endpoints[name.strip()] = url if url else None
     return endpoints
 
 

@@ -95,4 +95,22 @@ class TestEndpointParsing:
         assert backend.config.ENDPOINTS["default"] == "http://test:1234"
 
         # Restore
+        monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+        importlib.reload(backend.config)
+
+    def test_empty_url_means_real_aws(self, monkeypatch):
+        """Test that name= (empty URL) maps to None for real AWS."""
+        monkeypatch.setenv("STACKPORT_ENDPOINTS", "local=http://localhost:4566,nprod=")
+
+        import importlib
+
+        import backend.config
+
+        importlib.reload(backend.config)
+
+        assert len(backend.config.ENDPOINTS) == 2
+        assert backend.config.ENDPOINTS["local"] == "http://localhost:4566"
+        assert backend.config.ENDPOINTS["nprod"] is None
+
+        monkeypatch.delenv("STACKPORT_ENDPOINTS")
         importlib.reload(backend.config)
