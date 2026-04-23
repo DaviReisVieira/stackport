@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import { fetchLogGroups, fetchLogStreams, fetchLogEvents, fetchResourceTags, updateResourceTags } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import type { LogEvent, LogGroupsResponse, LogStreamsResponse } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -112,6 +113,7 @@ function LogEventView({ event }: { event: LogEvent }) {
 }
 
 export function LogsBrowser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Read selected group and stream from URL params
@@ -156,7 +158,7 @@ export function LogsBrowser() {
   const [logGroupTags, setLogGroupTags] = useState<Record<string, string>>({})
 
   // Fetch log groups
-  const groupsFetcher = useCallback(() => fetchLogGroups(groupSearch), [groupSearch])
+  const groupsFetcher = useCallback(() => fetchLogGroups(groupSearch, '', activeEndpoint), [groupSearch, activeEndpoint])
   const { data: groupsData, loading: groupsLoading, refresh: refreshGroups } = useFetch<LogGroupsResponse>(
     groupsFetcher,
     10000
@@ -175,7 +177,7 @@ export function LogsBrowser() {
       return
     }
     setStreamsLoading(true)
-    fetchLogStreams(selectedGroup, streamSearch, 'LastEventTime', true, 50)
+    fetchLogStreams(selectedGroup, streamSearch, 'LastEventTime', true, 50, '', activeEndpoint)
       .then(setStreamsData)
       .catch((err) => {
         toast.error(`Failed to load log streams: ${err.message}`)
@@ -184,18 +186,18 @@ export function LogsBrowser() {
       .finally(() => setStreamsLoading(false))
     const group = groupsData?.log_groups?.find(g => g.name === selectedGroup)
     if (group?.arn) {
-      fetchResourceTags('logs', 'log_groups', group.arn)
+      fetchResourceTags('logs', 'log_groups', group.arn, activeEndpoint)
         .then(res => setLogGroupTags(res.tags))
         .catch(() => setLogGroupTags({}))
     }
-  }, [selectedGroup, streamSearch, groupsData])
+  }, [selectedGroup, streamSearch, groupsData, activeEndpoint])
 
   // Fetch log events (manual)
   const loadEvents = useCallback(
     (append = false, nextToken = '') => {
       if (!selectedGroup || !selectedStream) return
       setEventsLoading(true)
-      fetchLogEvents(selectedGroup, selectedStream, startTime, endTime, appliedFilterPattern, 100, nextToken)
+      fetchLogEvents(selectedGroup, selectedStream, startTime, endTime, appliedFilterPattern, 100, nextToken, activeEndpoint)
         .then((res) => {
           setEvents((prev) => (append ? [...prev, ...res.events] : res.events))
           setEventsNextToken(res.next_token || null)
@@ -206,7 +208,7 @@ export function LogsBrowser() {
         })
         .finally(() => setEventsLoading(false))
     },
-    [selectedGroup, selectedStream, startTime, endTime, appliedFilterPattern]
+    [selectedGroup, selectedStream, startTime, endTime, appliedFilterPattern, activeEndpoint]
   )
 
   useEffect(() => {
@@ -227,7 +229,7 @@ export function LogsBrowser() {
       if (events.length > 0) {
         const lastEventTime = events[events.length - 1].timestamp_millis
         if (!selectedGroup || !selectedStream) return
-        fetchLogEvents(selectedGroup, selectedStream, lastEventTime + 1, 0, appliedFilterPattern, 100, '')
+        fetchLogEvents(selectedGroup, selectedStream, lastEventTime + 1, 0, appliedFilterPattern, 100, '', activeEndpoint)
           .then((res) => {
             if (res.events.length > 0) {
               setEvents((prev) => [...prev, ...res.events])
@@ -608,7 +610,7 @@ export function LogsBrowser() {
               onSave={async (newTags) => {
                 const group = groupsData.log_groups.find(g => g.name === selectedGroup)
                 if (group?.arn) {
-                  await updateResourceTags('logs', 'log_groups', group.arn, newTags)
+                  await updateResourceTags('logs', 'log_groups', group.arn, newTags, activeEndpoint)
                   setLogGroupTags(newTags)
                 }
               }}

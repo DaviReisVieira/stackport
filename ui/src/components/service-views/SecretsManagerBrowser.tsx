@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import { fetchSecrets, fetchSecretDetail, updateResourceTags } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import type { Secret, SecretDetail } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -210,8 +211,9 @@ function SecretValueDisplay({ detail }: { detail: SecretDetail }) {
 }
 
 export function SecretsManagerBrowser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
-  const secretsFetcher = useCallback(() => fetchSecrets(), [])
+  const secretsFetcher = useCallback(() => fetchSecrets(activeEndpoint), [activeEndpoint])
   const { data: secretsData, loading: secretsLoading, refresh: refreshSecrets } = useFetch<{ secrets: Secret[] }>(
     secretsFetcher,
     10000
@@ -240,14 +242,14 @@ export function SecretsManagerBrowser() {
       return
     }
     setDetailLoading(true)
-    fetchSecretDetail(secretName)
+    fetchSecretDetail(secretName, activeEndpoint)
       .then(setSecretDetail)
       .catch(() => {
         setSecretDetail(null)
         toast.error('Failed to load secret detail')
       })
       .finally(() => setDetailLoading(false))
-  }, [])
+  }, [activeEndpoint])
 
   useEffect(() => {
     loadSecretDetail(selectedSecret)
@@ -423,7 +425,7 @@ export function SecretsManagerBrowser() {
             <TagsSection
               tags={tags}
               onSave={async (newTags) => {
-                await updateResourceTags('secretsmanager', 'secrets', secretDetail.name, newTags)
+                await updateResourceTags('secretsmanager', 'secrets', secretDetail.name, newTags, activeEndpoint)
               }}
             />
           </TabsContent>

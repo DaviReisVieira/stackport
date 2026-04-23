@@ -12,6 +12,7 @@ import {
   fetchIAMPolicyDetail,
   updateResourceTags,
 } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import type {
   IAMUser,
   IAMRole,
@@ -87,7 +88,8 @@ function UserDetailSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const fetcher = useCallback(() => fetchIAMUserDetail(userName), [userName])
+  const { activeEndpoint } = useEndpoint()
+  const fetcher = useCallback(() => fetchIAMUserDetail(userName, activeEndpoint), [userName, activeEndpoint])
   const { data, loading } = useFetch<IAMUserDetail>(fetcher, 10000)
 
   return (
@@ -231,7 +233,7 @@ function UserDetailSheet({
               <TagsSection
                 tags={data.tags}
                 onSave={async (newTags) => {
-                  await updateResourceTags('iam', 'users', data.user.UserName, newTags)
+                  await updateResourceTags('iam', 'users', data.user.UserName, newTags, activeEndpoint)
                 }}
               />
             </TabsContent>
@@ -251,7 +253,8 @@ function RoleDetailSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const fetcher = useCallback(() => fetchIAMRoleDetail(roleName), [roleName])
+  const { activeEndpoint } = useEndpoint()
+  const fetcher = useCallback(() => fetchIAMRoleDetail(roleName, activeEndpoint), [roleName, activeEndpoint])
   const { data, loading } = useFetch<IAMRoleDetail>(fetcher, 10000)
 
   return (
@@ -368,7 +371,7 @@ function RoleDetailSheet({
               <TagsSection
                 tags={data.tags}
                 onSave={async (newTags) => {
-                  await updateResourceTags('iam', 'roles', data.role.RoleName, newTags)
+                  await updateResourceTags('iam', 'roles', data.role.RoleName, newTags, activeEndpoint)
                 }}
               />
             </TabsContent>
@@ -388,7 +391,8 @@ function GroupDetailSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const fetcher = useCallback(() => fetchIAMGroupDetail(groupName), [groupName])
+  const { activeEndpoint } = useEndpoint()
+  const fetcher = useCallback(() => fetchIAMGroupDetail(groupName, activeEndpoint), [groupName, activeEndpoint])
   const { data, loading } = useFetch<IAMGroupDetail>(fetcher, 10000)
 
   return (
@@ -526,7 +530,8 @@ function PolicyDetailSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const fetcher = useCallback(() => fetchIAMPolicyDetail(policyArn), [policyArn])
+  const { activeEndpoint } = useEndpoint()
+  const fetcher = useCallback(() => fetchIAMPolicyDetail(policyArn, activeEndpoint), [policyArn, activeEndpoint])
   const { data, loading } = useFetch<IAMPolicyDetail>(fetcher, 10000)
 
   return (
@@ -650,7 +655,7 @@ function PolicyDetailSheet({
               <TagsSection
                 tags={data.tags}
                 onSave={async (newTags) => {
-                  await updateResourceTags('iam', 'policies', data.policy.Arn, newTags)
+                  await updateResourceTags('iam', 'policies', data.policy.Arn, newTags, activeEndpoint)
                 }}
               />
             </TabsContent>
@@ -662,10 +667,11 @@ function PolicyDetailSheet({
 }
 
 export function IAMBrowser() {
-  const usersFetcher = useCallback(() => fetchIAMUsers(), [])
-  const rolesFetcher = useCallback(() => fetchIAMRoles(), [])
-  const groupsFetcher = useCallback(() => fetchIAMGroups(), [])
-  const policiesFetcher = useCallback(() => fetchIAMPolicies('Local'), [])
+  const { activeEndpoint } = useEndpoint()
+  const usersFetcher = useCallback(() => fetchIAMUsers(activeEndpoint), [activeEndpoint])
+  const rolesFetcher = useCallback(() => fetchIAMRoles(activeEndpoint), [activeEndpoint])
+  const groupsFetcher = useCallback(() => fetchIAMGroups(activeEndpoint), [activeEndpoint])
+  const policiesFetcher = useCallback(() => fetchIAMPolicies('Local', activeEndpoint), [activeEndpoint])
 
   const { data: usersData, loading: usersLoading, refresh: refreshUsers } = useFetch<{ users: IAMUser[] }>(usersFetcher, 10000)
   const { data: rolesData, loading: rolesLoading, refresh: refreshRoles } = useFetch<{ roles: IAMRole[] }>(rolesFetcher, 10000)

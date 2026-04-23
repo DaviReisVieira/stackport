@@ -8,6 +8,7 @@ import {
   fetchResourceTags,
   updateResourceTags,
 } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import type {
   DynamoDBTable,
@@ -151,8 +152,9 @@ function PaginationBar({
 }
 
 export function DynamoDBBrowser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
-  const tablesFetcher = useCallback(() => fetchDynamoDBTables(), [])
+  const tablesFetcher = useCallback(() => fetchDynamoDBTables(activeEndpoint), [activeEndpoint])
   const { data: tablesData, loading: tablesLoading, refresh: refreshTables } = useFetch<{ tables: DynamoDBTable[] }>(tablesFetcher, 10000)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -190,13 +192,13 @@ export function DynamoDBBrowser() {
       setTableTags({})
       return
     }
-    fetchDynamoDBTable(selectedTable)
+    fetchDynamoDBTable(selectedTable, activeEndpoint)
       .then(setTableDetail)
       .catch(() => setTableDetail(null))
-    fetchResourceTags('dynamodb', 'tables', selectedTable)
+    fetchResourceTags('dynamodb', 'tables', selectedTable, activeEndpoint)
       .then(res => setTableTags(res.tags))
       .catch(() => setTableTags({}))
-  }, [selectedTable])
+  }, [selectedTable, activeEndpoint])
 
   useEffect(() => {
     if (!selectedTable) return
@@ -208,7 +210,7 @@ export function DynamoDBBrowser() {
     if (!selectedTable) return
     setLoadingItems(true)
     try {
-      const data = await fetchDynamoDBItems(selectedTable, pageSize)
+      const data = await fetchDynamoDBItems(selectedTable, pageSize, undefined, activeEndpoint)
       setItemsData(data)
       setItemPage(0)
     } catch {
@@ -223,7 +225,7 @@ export function DynamoDBBrowser() {
     if (!selectedTable || !itemsData?.next_token) return
     setLoadingItems(true)
     try {
-      const data = await fetchDynamoDBItems(selectedTable, pageSize, itemsData.next_token)
+      const data = await fetchDynamoDBItems(selectedTable, pageSize, itemsData.next_token, activeEndpoint)
       setItemsData(data)
       setItemPage((p) => p + 1)
     } catch {
@@ -250,7 +252,7 @@ export function DynamoDBBrowser() {
         sort_key_value: querySortKey || null,
         sort_key_operator: querySortKeyOp,
         limit: pageSize,
-      })
+      }, activeEndpoint)
       setItemsData({ ...data, next_token: null })
       setItemPage(0)
     } catch {
@@ -608,7 +610,7 @@ export function DynamoDBBrowser() {
           <TagsSection
             tags={tableTags}
             onSave={async (newTags) => {
-              await updateResourceTags('dynamodb', 'tables', selectedTable, newTags)
+              await updateResourceTags('dynamodb', 'tables', selectedTable, newTags, activeEndpoint)
               setTableTags(newTags)
             }}
           />

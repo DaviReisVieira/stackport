@@ -11,6 +11,7 @@ import {
   fetchLambdaVersions,
   updateResourceTags,
 } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import type {
   LambdaFunction,
   LambdaFunctionDetail,
@@ -234,6 +235,7 @@ function InvokeSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { activeEndpoint } = useEndpoint()
   const [payload, setPayload] = useState(JSON.stringify(EVENT_TEMPLATES['Custom'], null, 2))
   const [template, setTemplate] = useState<keyof typeof EVENT_TEMPLATES>('Custom')
   const [invoking, setInvoking] = useState(false)
@@ -250,7 +252,7 @@ function InvokeSheet({
       setInvoking(true)
       setResult(null)
       const parsedPayload = JSON.parse(payload)
-      const response = await invokeLambdaFunction(functionName, { payload: parsedPayload })
+      const response = await invokeLambdaFunction(functionName, { payload: parsedPayload }, activeEndpoint)
       setResult(response)
       if (response.functionError) {
         toast.error(`Function error: ${response.functionError}`)
@@ -339,8 +341,9 @@ function InvokeSheet({
 }
 
 export function LambdaBrowser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
-  const functionsFetcher = useCallback(() => fetchLambdaFunctions(), [])
+  const functionsFetcher = useCallback(() => fetchLambdaFunctions(activeEndpoint), [activeEndpoint])
   const { data: functionsData, loading: functionsLoading, refresh: refreshFunctions } = useFetch<{ functions: LambdaFunction[] }>(
     functionsFetcher,
     10000
@@ -377,10 +380,10 @@ export function LambdaBrowser() {
       return
     }
     Promise.all([
-      fetchLambdaFunction(selectedFunction),
-      fetchLambdaEventSources(selectedFunction).catch(() => ({ eventSourceMappings: [] })),
-      fetchLambdaAliases(selectedFunction).catch(() => ({ aliases: [] })),
-      fetchLambdaVersions(selectedFunction).catch(() => ({ versions: [] })),
+      fetchLambdaFunction(selectedFunction, activeEndpoint),
+      fetchLambdaEventSources(selectedFunction, activeEndpoint).catch(() => ({ eventSourceMappings: [] })),
+      fetchLambdaAliases(selectedFunction, activeEndpoint).catch(() => ({ aliases: [] })),
+      fetchLambdaVersions(selectedFunction, activeEndpoint).catch(() => ({ versions: [] })),
     ])
       .then(([detail, sources, aliasData, versionData]) => {
         setFunctionDetail(detail)
@@ -394,7 +397,7 @@ export function LambdaBrowser() {
         setAliases([])
         setVersions([])
       })
-  }, [selectedFunction])
+  }, [selectedFunction, activeEndpoint])
 
   const functions = functionsData?.functions ?? []
   const filteredFunctions = functions.filter((f) =>
@@ -585,7 +588,7 @@ export function LambdaBrowser() {
                 {config.PackageType !== 'Image' && functionDetail.code.Location && (
                   <div className="pt-2">
                     <Button variant="outline" size="sm" asChild>
-                      <a href={getLambdaCodeDownloadUrl(config.FunctionName)} download>
+                      <a href={getLambdaCodeDownloadUrl(config.FunctionName, activeEndpoint)} download>
                         <Download className="h-4 w-4 mr-2" />
                         Download Deployment Package
                       </a>
@@ -717,7 +720,7 @@ export function LambdaBrowser() {
             <TagsSection
               tags={tags}
               onSave={async (newTags) => {
-                await updateResourceTags('lambda', 'functions', config.FunctionName, newTags)
+                await updateResourceTags('lambda', 'functions', config.FunctionName, newTags, activeEndpoint)
               }}
             />
           </TabsContent>

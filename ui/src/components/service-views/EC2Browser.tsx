@@ -11,6 +11,7 @@ import {
   terminateEC2Instance,
   updateResourceTags,
 } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import type {
   EC2Instance,
   EC2InstanceDetail,
@@ -97,7 +98,8 @@ function InstanceDetailSheet({
   onOpenChange: (open: boolean) => void
   onRefresh: () => void
 }) {
-  const fetcher = useCallback(() => fetchEC2InstanceDetail(instanceId), [instanceId])
+  const { activeEndpoint } = useEndpoint()
+  const fetcher = useCallback(() => fetchEC2InstanceDetail(instanceId, activeEndpoint), [instanceId, activeEndpoint])
   const { data, loading, refresh } = useFetch<EC2InstanceDetail>(fetcher, 10000)
 
   const [actionLoading, setActionLoading] = useState(false)
@@ -113,13 +115,13 @@ function InstanceDetailSheet({
     setActionLoading(true)
     try {
       if (action === 'start') {
-        await startEC2Instance(instanceId)
+        await startEC2Instance(instanceId, activeEndpoint)
         toast.success('Instance start initiated')
       } else if (action === 'stop') {
-        await stopEC2Instance(instanceId)
+        await stopEC2Instance(instanceId, activeEndpoint)
         toast.success('Instance stop initiated')
       } else if (action === 'terminate') {
-        await terminateEC2Instance(instanceId)
+        await terminateEC2Instance(instanceId, activeEndpoint)
         toast.success('Instance termination initiated')
       }
       setTimeout(() => {
@@ -285,7 +287,7 @@ function InstanceDetailSheet({
                   <TagsSection
                     tags={Object.fromEntries(data.instance.tags.map(t => [t.Key, t.Value]))}
                     onSave={async (newTags) => {
-                      await updateResourceTags('ec2', 'instances', data.instance.instanceId, newTags)
+                      await updateResourceTags('ec2', 'instances', data.instance.instanceId, newTags, activeEndpoint)
                     }}
                   />
                 </TabsContent>
@@ -303,9 +305,10 @@ function InstanceDetailSheet({
 }
 
 export function EC2Browser() {
-  const instancesFetcher = useCallback(() => fetchEC2Instances(), [])
-  const sgFetcher = useCallback(() => fetchEC2SecurityGroups(), [])
-  const vpcsFetcher = useCallback(() => fetchEC2VPCs(), [])
+  const { activeEndpoint } = useEndpoint()
+  const instancesFetcher = useCallback(() => fetchEC2Instances(activeEndpoint), [activeEndpoint])
+  const sgFetcher = useCallback(() => fetchEC2SecurityGroups(activeEndpoint), [activeEndpoint])
+  const vpcsFetcher = useCallback(() => fetchEC2VPCs(activeEndpoint), [activeEndpoint])
 
   const [searchParams, setSearchParams] = useSearchParams()
 

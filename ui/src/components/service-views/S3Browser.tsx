@@ -13,6 +13,7 @@ import {
   fetchResourceTags,
   updateResourceTags,
 } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import type { S3Bucket, S3File, S3ObjectsResponse, S3ObjectDetail } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -168,8 +169,9 @@ type ConfirmDialog =
   | { type: 'delete-folder'; folderPrefix: string }
 
 export function S3Browser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
-  const bucketsFetcher = useCallback(() => fetchS3Buckets(), [])
+  const bucketsFetcher = useCallback(() => fetchS3Buckets(activeEndpoint), [activeEndpoint])
   const { data: bucketsData, loading: bucketsLoading, refresh: refreshBuckets } = useFetch<{ buckets: S3Bucket[] }>(bucketsFetcher, 10000)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -205,10 +207,10 @@ export function S3Browser() {
       setBucketTags({})
       return
     }
-    fetchResourceTags('s3', 'buckets', selectedBucket)
+    fetchResourceTags('s3', 'buckets', selectedBucket, activeEndpoint)
       .then(res => setBucketTags(res.tags))
       .catch(() => setBucketTags({}))
-  }, [selectedBucket])
+  }, [selectedBucket, activeEndpoint])
 
   // Helper to update URL params
   const setSelectedBucket = (bucket: string | null) => {
@@ -251,14 +253,14 @@ export function S3Browser() {
     }
     setLoadingObjects(true)
     try {
-      const data = await fetchS3Objects(selectedBucket, prefix)
+      const data = await fetchS3Objects(selectedBucket, prefix, '/', activeEndpoint)
       setObjectsData(data)
     } catch {
       setObjectsData(null)
     } finally {
       setLoadingObjects(false)
     }
-  }, [selectedBucket, prefix])
+  }, [selectedBucket, prefix, activeEndpoint])
 
   useEffect(() => {
     void loadObjects()
@@ -284,7 +286,7 @@ export function S3Browser() {
 
   const openObject = async (bucket: string, key: string) => {
     try {
-      const data = await fetchS3Object(bucket, key)
+      const data = await fetchS3Object(bucket, key, activeEndpoint)
       setObjectDetail(data)
     } catch {
       setObjectDetail(null)
@@ -420,6 +422,7 @@ export function S3Browser() {
       onRegisterAbort: (abort) => {
         uploadAbortRef.current = abort
       },
+      endpoint: activeEndpoint,
     })
       .then(() => {
         toast.success(`Uploaded ${file.name}`)
@@ -477,17 +480,17 @@ export function S3Browser() {
     if (!confirmDialog || !selectedBucket) return
     try {
       if (confirmDialog.type === 'delete-file') {
-        await deleteS3Object(selectedBucket, confirmDialog.key)
+        await deleteS3Object(selectedBucket, confirmDialog.key, activeEndpoint)
         toast.success('Object deleted')
         if (objectDetail?.key === confirmDialog.key) setObjectDetail(null)
       } else if (confirmDialog.type === 'delete-bulk') {
         const keys = [...selectedKeys]
-        await deleteS3ObjectsBatch(selectedBucket, { keys })
+        await deleteS3ObjectsBatch(selectedBucket, { keys }, activeEndpoint)
         toast.success(`Deleted ${keys.length} object(s)`)
         setSelectedKeys(new Set())
         setObjectDetail(null)
       } else {
-        await deleteS3ObjectsBatch(selectedBucket, { prefix: confirmDialog.folderPrefix })
+        await deleteS3ObjectsBatch(selectedBucket, { prefix: confirmDialog.folderPrefix }, activeEndpoint)
         toast.success('Folder deleted')
         setObjectDetail(null)
       }
@@ -509,7 +512,7 @@ export function S3Browser() {
     }
     const folderPrefix = `${prefix}${segment}/`
     try {
-      await createS3Folder(selectedBucket, folderPrefix)
+      await createS3Folder(selectedBucket, folderPrefix, activeEndpoint)
       toast.success(`Created folder ${segment}`)
       setFolderDialogOpen(false)
       setNewFolderSegment('')
@@ -892,7 +895,7 @@ export function S3Browser() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <a
-                                href={getS3DownloadUrl(selectedBucket, file.key)}
+                                href={getS3DownloadUrl(selectedBucket, file.key, activeEndpoint)}
                                 download
                                 className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent transition-colors"
                                 aria-label={`Download ${file.name}`}
@@ -952,7 +955,7 @@ export function S3Browser() {
           <TagsSection
             tags={bucketTags}
             onSave={async (newTags) => {
-              await updateResourceTags('s3', 'buckets', selectedBucket!, newTags)
+              await updateResourceTags('s3', 'buckets', selectedBucket!, newTags, activeEndpoint)
               setBucketTags(newTags)
             }}
           />
@@ -1069,7 +1072,7 @@ export function S3Browser() {
 
               <div className="flex flex-col gap-2 mt-2">
                 <Button variant="outline" size="sm" className="w-full" asChild>
-                  <a href={getS3DownloadUrl(objectDetail.bucket, objectDetail.key)} download>
+                  <a href={getS3DownloadUrl(objectDetail.bucket, objectDetail.key, activeEndpoint)} download>
                     <Download className="h-4 w-4 mr-2" />
                     Download ({formatBytes(objectDetail.size)})
                   </a>
