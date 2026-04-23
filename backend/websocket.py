@@ -102,24 +102,17 @@ async def websocket_endpoint(websocket: WebSocket):
     """Handle a single WebSocket connection."""
     await manager.connect(websocket)
     try:
-        current_ep = DEFAULT_ENDPOINT
-        cached = _last_stats_by_endpoint.get(current_ep)
-        if cached:
-            await websocket.send_text(json.dumps({"type": "stats", "data": cached}))
-
         while True:
             data = await websocket.receive_text()
             try:
                 msg = json.loads(data)
                 msg_type = msg.get("type")
                 if msg_type == "subscribe":
-                    endpoint = msg.get("endpoint")
-                    if endpoint is not None:
-                        current_ep = _resolve_endpoint(endpoint)
-                        manager.set_endpoint(websocket, current_ep)
-                        cached = _last_stats_by_endpoint.get(current_ep)
-                        if cached:
-                            await websocket.send_text(json.dumps({"type": "stats", "data": cached}))
+                    current_ep = _resolve_endpoint(msg.get("endpoint"))
+                    manager.set_endpoint(websocket, current_ep)
+                    cached = _last_stats_by_endpoint.get(current_ep)
+                    if cached:
+                        await websocket.send_text(json.dumps({"type": "stats", "data": cached}))
                     logger.debug("Client subscribed to endpoint: %s", current_ep)
                 elif msg_type == "unsubscribe":
                     logger.debug("Client unsubscribed from: %s", msg.get("services"))

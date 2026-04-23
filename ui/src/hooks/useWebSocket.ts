@@ -30,8 +30,6 @@ export function useWebSocket<T>({ fallbackFetcher, fallbackInterval = 5000, mess
 
   useEffect(() => {
     let disposed = false
-    setWsData(null)
-    setFailed(false)
     retriesRef.current = 0
 
     function connect() {
@@ -89,6 +87,8 @@ export function useWebSocket<T>({ fallbackFetcher, fallbackInterval = 5000, mess
       disposed = true
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       wsRef.current?.close()
+      setWsData(null)
+      setFailed(false)
     }
   }, [messageType, endpoint])
 
