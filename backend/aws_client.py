@@ -10,7 +10,7 @@ from backend.config import (
 )
 
 
-@functools.lru_cache(maxsize=128)
+@functools.lru_cache(maxsize=256)
 def get_client(service_name: str, endpoint_url: str | None = None):
     """Return a boto3 client for the given service and endpoint.
 

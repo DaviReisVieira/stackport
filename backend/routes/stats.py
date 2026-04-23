@@ -91,20 +91,20 @@ _start_time = time.time()
 
 
 @router.get("/health")
-def health():
+def health(endpoint_url: str | None = Depends(get_endpoint_url)):
     try:
         version = importlib.metadata.version("stackport")
     except importlib.metadata.PackageNotFoundError:
         version = "dev"
     enabled = [s.strip() for s in STACKPORT_SERVICES.split(",") if s.strip()]
 
-    connection_type = "local" if is_local_endpoint() else "aws"
+    connection_type = "local" if is_local_endpoint(endpoint_url) else "aws"
 
     return {
         "status": "ok",
         "version": version,
         "uptime_seconds": round(time.time() - _start_time, 1),
-        "endpoint_url": AWS_ENDPOINT_URL,
+        "endpoint_url": endpoint_url,
         "region": AWS_REGION,
         "services_count": len(enabled),
         "connection_type": connection_type,
