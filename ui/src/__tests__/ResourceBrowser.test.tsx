@@ -13,6 +13,9 @@ vi.mock('@/lib/api', () => ({
   fetchStats: vi.fn(),
   fetchResources: vi.fn(),
   fetchResourceDetail: vi.fn(),
+  fetchTagsSupported: vi.fn(() => Promise.resolve({ supported: [] })),
+  fetchResourceTags: vi.fn(() => Promise.resolve({ tags: {} })),
+  updateResourceTags: vi.fn(() => Promise.resolve({ success: true })),
 }))
 
 // Mock service views — empty registry so generic table is used

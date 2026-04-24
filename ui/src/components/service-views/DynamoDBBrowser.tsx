@@ -5,7 +5,10 @@ import {
   fetchDynamoDBTable,
   fetchDynamoDBItems,
   queryDynamoDBTable,
+  fetchResourceTags,
+  updateResourceTags,
 } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import type {
   DynamoDBTable,
@@ -20,12 +23,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection } from '@/components/TagsSection'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -147,8 +152,9 @@ function PaginationBar({
 }
 
 export function DynamoDBBrowser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
-  const tablesFetcher = useCallback(() => fetchDynamoDBTables(), [])
+  const tablesFetcher = useCallback(() => fetchDynamoDBTables(activeEndpoint), [activeEndpoint])
   const { data: tablesData, loading: tablesLoading, refresh: refreshTables } = useFetch<{ tables: DynamoDBTable[] }>(tablesFetcher, 10000)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -177,17 +183,22 @@ export function DynamoDBBrowser() {
   const [queryPartitionKey, setQueryPartitionKey] = useState('')
   const [querySortKey, setQuerySortKey] = useState('')
   const [querySortKeyOp, setQuerySortKeyOp] = useState('=')
+  const [tableTags, setTableTags] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!selectedTable) {
       setTableDetail(null)
       setItemsData(null)
+      setTableTags({})
       return
     }
-    fetchDynamoDBTable(selectedTable)
+    fetchDynamoDBTable(selectedTable, activeEndpoint)
       .then(setTableDetail)
       .catch(() => setTableDetail(null))
-  }, [selectedTable])
+    fetchResourceTags('dynamodb', 'tables', selectedTable, activeEndpoint)
+      .then(res => setTableTags(res.tags))
+      .catch(() => setTableTags({}))
+  }, [selectedTable, activeEndpoint])
 
   useEffect(() => {
     if (!selectedTable) return
@@ -199,7 +210,7 @@ export function DynamoDBBrowser() {
     if (!selectedTable) return
     setLoadingItems(true)
     try {
-      const data = await fetchDynamoDBItems(selectedTable, pageSize)
+      const data = await fetchDynamoDBItems(selectedTable, pageSize, undefined, activeEndpoint)
       setItemsData(data)
       setItemPage(0)
     } catch {
@@ -214,7 +225,7 @@ export function DynamoDBBrowser() {
     if (!selectedTable || !itemsData?.next_token) return
     setLoadingItems(true)
     try {
-      const data = await fetchDynamoDBItems(selectedTable, pageSize, itemsData.next_token)
+      const data = await fetchDynamoDBItems(selectedTable, pageSize, itemsData.next_token, activeEndpoint)
       setItemsData(data)
       setItemPage((p) => p + 1)
     } catch {
@@ -241,7 +252,7 @@ export function DynamoDBBrowser() {
         sort_key_value: querySortKey || null,
         sort_key_operator: querySortKeyOp,
         limit: pageSize,
-      })
+      }, activeEndpoint)
       setItemsData({ ...data, next_token: null })
       setItemPage(0)
     } catch {
@@ -434,6 +445,13 @@ export function DynamoDBBrowser() {
         )}
       </div>
 
+      <Tabs defaultValue="items" className="w-full">
+        <TabsList>
+          <TabsTrigger value="items">Items</TabsTrigger>
+          <TabsTrigger value="tags">Tags</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="items" className="space-y-4">
       <Card>
         <CardHeader className="p-4 pb-2">
           <div className="flex items-center justify-between gap-3">
@@ -586,6 +604,18 @@ export function DynamoDBBrowser() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="tags" className="space-y-4">
+          <TagsSection
+            tags={tableTags}
+            onSave={async (newTags) => {
+              await updateResourceTags('dynamodb', 'tables', selectedTable, newTags, activeEndpoint)
+              setTableTags(newTags)
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
       <Sheet open={!!itemDetail} onOpenChange={(open) => !open && setItemDetail(null)}>
         <SheetContent className="sm:max-w-lg overflow-auto">

@@ -21,6 +21,9 @@ export function useFetch<T>(fetcher: () => Promise<T>, intervalMs?: number) {
   }, [fetcher])
 
   useEffect(() => {
+    setData(null)
+    setLoading(true)
+    setError(null)
     refresh()
     if (intervalMs && intervalMs > 0) {
       const id = setInterval(refresh, intervalMs)

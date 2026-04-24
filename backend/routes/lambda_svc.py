@@ -4,19 +4,20 @@ import base64
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 
 from backend.aws_client import get_client
+from backend.routes.common import get_endpoint_url
 
 router = APIRouter()
 
 
 @router.get("/functions")
-def list_functions() -> dict[str, Any]:
+def list_functions(endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """List all Lambda functions with metadata."""
     try:
-        client = get_client("lambda")
+        client = get_client("lambda", endpoint_url)
         paginator = client.get_paginator("list_functions")
 
         functions = []
@@ -29,10 +30,10 @@ def list_functions() -> dict[str, Any]:
 
 
 @router.get("/functions/{function_name}")
-def get_function(function_name: str) -> dict[str, Any]:
+def get_function(function_name: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Get full function configuration, code location, and tags."""
     try:
-        client = get_client("lambda")
+        client = get_client("lambda", endpoint_url)
         response = client.get_function(FunctionName=function_name)
 
         return {
@@ -48,14 +49,14 @@ def get_function(function_name: str) -> dict[str, Any]:
 
 
 @router.get("/functions/{function_name}/code")
-def download_code(function_name: str):
+def download_code(function_name: str, endpoint_url: str | None = Depends(get_endpoint_url)):
     """Download function deployment package.
 
     Returns a redirect to the presigned S3 URL or streams the content.
     Only works for ZIP-based functions, not container images.
     """
     try:
-        client = get_client("lambda")
+        client = get_client("lambda", endpoint_url)
         response = client.get_function(FunctionName=function_name)
 
         config = response.get("Configuration", {})
@@ -85,14 +86,14 @@ def download_code(function_name: str):
 
 
 @router.post("/functions/{function_name}/invoke")
-def invoke_function(function_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+def invoke_function(function_name: str, payload: dict[str, Any], endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Invoke a Lambda function with a JSON payload.
 
     Request body: { "payload": {...} }
     Returns: status, response payload, logs, error if any.
     """
     try:
-        client = get_client("lambda")
+        client = get_client("lambda", endpoint_url)
 
         # Extract the actual payload from the request body
         function_payload = payload.get("payload", {})
@@ -138,10 +139,10 @@ def invoke_function(function_name: str, payload: dict[str, Any]) -> dict[str, An
 
 
 @router.get("/functions/{function_name}/event-sources")
-def list_event_sources(function_name: str) -> dict[str, Any]:
+def list_event_sources(function_name: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """List event source mappings for a function."""
     try:
-        client = get_client("lambda")
+        client = get_client("lambda", endpoint_url)
         paginator = client.get_paginator("list_event_source_mappings")
 
         mappings = []
@@ -154,10 +155,10 @@ def list_event_sources(function_name: str) -> dict[str, Any]:
 
 
 @router.get("/functions/{function_name}/aliases")
-def list_aliases(function_name: str) -> dict[str, Any]:
+def list_aliases(function_name: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """List aliases for a function."""
     try:
-        client = get_client("lambda")
+        client = get_client("lambda", endpoint_url)
         paginator = client.get_paginator("list_aliases")
 
         aliases = []
@@ -170,10 +171,10 @@ def list_aliases(function_name: str) -> dict[str, Any]:
 
 
 @router.get("/functions/{function_name}/versions")
-def list_versions(function_name: str) -> dict[str, Any]:
+def list_versions(function_name: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """List versions for a function."""
     try:
-        client = get_client("lambda")
+        client = get_client("lambda", endpoint_url)
         paginator = client.get_paginator("list_versions_by_function")
 
         versions = []

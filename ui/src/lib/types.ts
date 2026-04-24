@@ -2,9 +2,24 @@ export interface HealthResponse {
   status: string
   version: string
   uptime_seconds: number
-  endpoint_url: string
+  endpoint_url: string | null
   region: string
   services_count: number
+  connection_type: 'local' | 'aws'
+  writes_enabled: boolean
+}
+
+export interface Endpoint {
+  name: string
+  url: string | null
+  health: 'healthy' | 'unhealthy' | 'unknown'
+  active: boolean
+  connection_type: 'local' | 'aws'
+  region: string
+}
+
+export interface EndpointsResponse {
+  endpoints: Endpoint[]
 }
 
 export interface ServiceStats {
@@ -162,9 +177,9 @@ export interface DynamoDBQueryResponse {
 export interface LambdaFunction {
   FunctionName: string
   FunctionArn: string
-  Runtime: string
+  Runtime?: string
   Role: string
-  Handler: string
+  Handler?: string
   CodeSize: number
   Description?: string
   Timeout: number
@@ -191,9 +206,9 @@ export interface LambdaFunctionDetail {
   configuration: {
     FunctionName: string
     FunctionArn: string
-    Runtime: string
+    Runtime?: string
     Role: string
-    Handler: string
+    Handler?: string
     CodeSize: number
     Description?: string
     Timeout: number
@@ -688,4 +703,45 @@ export interface LogEventsResponse {
   log_stream: string
   events: LogEvent[]
   next_token: string | null
+}
+
+export interface TagsSupportedEntry {
+  service: string
+  type: string
+  writable: boolean
+}
+
+export interface TagsSupportedResponse {
+  supported: TagsSupportedEntry[]
+}
+
+export interface ResourceTagsResponse {
+  service: string
+  type: string
+  id: string
+  tags: Record<string, string>
+}
+
+export interface BulkTagRequest {
+  action: 'add' | 'remove'
+  tags: Record<string, string>
+  resources: Array<{ service: string; type: string; id: string }>
+}
+
+export interface BulkDeleteRequest {
+  resources: Array<{ service: string; type: string; id: string }>
+}
+
+export interface BulkOperationResult {
+  service: string
+  type: string
+  id: string
+  success: boolean
+  error?: string
+}
+
+export interface BulkOperationResponse {
+  results: BulkOperationResult[]
+  succeeded: number
+  failed: number
 }

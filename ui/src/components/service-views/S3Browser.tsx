@@ -10,7 +10,10 @@ import {
   deleteS3ObjectsBatch,
   createS3Folder,
   fetchS3UploadConfig,
+  fetchResourceTags,
+  updateResourceTags,
 } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import type { S3Bucket, S3File, S3ObjectsResponse, S3ObjectDetail } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +33,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
 import { ExportDropdown } from '@/components/ExportDropdown'
@@ -38,6 +42,7 @@ import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/compone
 import { getServiceIcon } from '@/lib/service-icons'
 import { toast } from 'sonner'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection, TagCountBadge } from '@/components/TagsSection'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { Input } from '@/components/ui/input'
 import {
@@ -54,7 +59,6 @@ import {
   Clock,
   Globe,
   Lock,
-  Tag,
   Shield,
   Download,
   Search,
@@ -165,8 +169,9 @@ type ConfirmDialog =
   | { type: 'delete-folder'; folderPrefix: string }
 
 export function S3Browser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
-  const bucketsFetcher = useCallback(() => fetchS3Buckets(), [])
+  const bucketsFetcher = useCallback(() => fetchS3Buckets(activeEndpoint), [activeEndpoint])
   const { data: bucketsData, loading: bucketsLoading, refresh: refreshBuckets } = useFetch<{ buckets: S3Bucket[] }>(bucketsFetcher, 10000)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -194,6 +199,18 @@ export function S3Browser() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null)
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
   const [newFolderSegment, setNewFolderSegment] = useState('')
+  const [bucketTags, setBucketTags] = useState<Record<string, string>>({})
+
+  // Fetch bucket tags when selectedBucket changes
+  useEffect(() => {
+    if (!selectedBucket) {
+      setBucketTags({})
+      return
+    }
+    fetchResourceTags('s3', 'buckets', selectedBucket, activeEndpoint)
+      .then(res => setBucketTags(res.tags))
+      .catch(() => setBucketTags({}))
+  }, [selectedBucket, activeEndpoint])
 
   // Helper to update URL params
   const setSelectedBucket = (bucket: string | null) => {
@@ -236,14 +253,14 @@ export function S3Browser() {
     }
     setLoadingObjects(true)
     try {
-      const data = await fetchS3Objects(selectedBucket, prefix)
+      const data = await fetchS3Objects(selectedBucket, prefix, '/', activeEndpoint)
       setObjectsData(data)
     } catch {
       setObjectsData(null)
     } finally {
       setLoadingObjects(false)
     }
-  }, [selectedBucket, prefix])
+  }, [selectedBucket, prefix, activeEndpoint])
 
   useEffect(() => {
     void loadObjects()
@@ -269,7 +286,7 @@ export function S3Browser() {
 
   const openObject = async (bucket: string, key: string) => {
     try {
-      const data = await fetchS3Object(bucket, key)
+      const data = await fetchS3Object(bucket, key, activeEndpoint)
       setObjectDetail(data)
     } catch {
       setObjectDetail(null)
@@ -405,6 +422,7 @@ export function S3Browser() {
       onRegisterAbort: (abort) => {
         uploadAbortRef.current = abort
       },
+      endpoint: activeEndpoint,
     })
       .then(() => {
         toast.success(`Uploaded ${file.name}`)
@@ -462,17 +480,17 @@ export function S3Browser() {
     if (!confirmDialog || !selectedBucket) return
     try {
       if (confirmDialog.type === 'delete-file') {
-        await deleteS3Object(selectedBucket, confirmDialog.key)
+        await deleteS3Object(selectedBucket, confirmDialog.key, activeEndpoint)
         toast.success('Object deleted')
         if (objectDetail?.key === confirmDialog.key) setObjectDetail(null)
       } else if (confirmDialog.type === 'delete-bulk') {
         const keys = [...selectedKeys]
-        await deleteS3ObjectsBatch(selectedBucket, { keys })
+        await deleteS3ObjectsBatch(selectedBucket, { keys }, activeEndpoint)
         toast.success(`Deleted ${keys.length} object(s)`)
         setSelectedKeys(new Set())
         setObjectDetail(null)
       } else {
-        await deleteS3ObjectsBatch(selectedBucket, { prefix: confirmDialog.folderPrefix })
+        await deleteS3ObjectsBatch(selectedBucket, { prefix: confirmDialog.folderPrefix }, activeEndpoint)
         toast.success('Folder deleted')
         setObjectDetail(null)
       }
@@ -494,7 +512,7 @@ export function S3Browser() {
     }
     const folderPrefix = `${prefix}${segment}/`
     try {
-      await createS3Folder(selectedBucket, folderPrefix)
+      await createS3Folder(selectedBucket, folderPrefix, activeEndpoint)
       toast.success(`Created folder ${segment}`)
       setFolderDialogOpen(false)
       setNewFolderSegment('')
@@ -616,14 +634,7 @@ export function S3Browser() {
                           <TooltipContent>Encryption enabled</TooltipContent>
                         </Tooltip>
                       )}
-                      {Object.keys(bkt.tags).length > 0 && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-                          </TooltipTrigger>
-                          <TooltipContent>{Object.keys(bkt.tags).length} tags</TooltipContent>
-                        </Tooltip>
-                      )}
+                      <TagCountBadge count={Object.keys(bkt.tags).length} />
                     </div>
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
@@ -668,6 +679,12 @@ export function S3Browser() {
         onChange={onFileInputChange}
       />
 
+      <Tabs defaultValue="objects" className="flex-1 flex flex-col min-h-0">
+        <TabsList className="w-fit">
+          <TabsTrigger value="objects">Objects</TabsTrigger>
+          <TabsTrigger value="tags">Tags</TabsTrigger>
+        </TabsList>
+        <TabsContent value="objects" className="flex-1 min-h-0">
       <div
         data-testid="s3-object-drop-zone"
         className="relative flex min-h-0 flex-1 flex-col rounded-lg border border-transparent"
@@ -878,7 +895,7 @@ export function S3Browser() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <a
-                                href={getS3DownloadUrl(selectedBucket, file.key)}
+                                href={getS3DownloadUrl(selectedBucket, file.key, activeEndpoint)}
                                 download
                                 className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent transition-colors"
                                 aria-label={`Download ${file.name}`}
@@ -933,6 +950,17 @@ export function S3Browser() {
         </CardContent>
         </Card>
       </div>
+        </TabsContent>
+        <TabsContent value="tags" className="space-y-4">
+          <TagsSection
+            tags={bucketTags}
+            onSave={async (newTags) => {
+              await updateResourceTags('s3', 'buckets', selectedBucket!, newTags, activeEndpoint)
+              setBucketTags(newTags)
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
       <Dialog
         open={uploadProgress !== null}
@@ -1044,7 +1072,7 @@ export function S3Browser() {
 
               <div className="flex flex-col gap-2 mt-2">
                 <Button variant="outline" size="sm" className="w-full" asChild>
-                  <a href={getS3DownloadUrl(objectDetail.bucket, objectDetail.key)} download>
+                  <a href={getS3DownloadUrl(objectDetail.bucket, objectDetail.key, activeEndpoint)} download>
                     <Download className="h-4 w-4 mr-2" />
                     Download ({formatBytes(objectDetail.size)})
                   </a>
@@ -1061,99 +1089,85 @@ export function S3Browser() {
                 </Button>
               </div>
 
-              <div className="space-y-4 mt-4">
-                {/* Properties */}
-                <div>
-                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Properties</h4>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div className="text-muted-foreground">Size</div>
-                    <div className="font-mono">{formatBytes(objectDetail.size)}</div>
+              <Tabs defaultValue="details" className="mt-4">
+                <TabsList>
+                  <TabsTrigger value="details">Details</TabsTrigger>
+                  <TabsTrigger value="tags">Tags</TabsTrigger>
+                  <TabsTrigger value="raw">Raw</TabsTrigger>
+                </TabsList>
 
-                    <div className="text-muted-foreground">Content-Type</div>
-                    <div className="font-mono text-xs">{objectDetail.content_type}</div>
+                <TabsContent value="details" className="space-y-4">
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                        <div className="text-muted-foreground">Size</div>
+                        <div className="font-mono">{formatBytes(objectDetail.size)}</div>
 
-                    {objectDetail.content_encoding && (
-                      <>
-                        <div className="text-muted-foreground">Encoding</div>
-                        <div className="font-mono text-xs">{objectDetail.content_encoding}</div>
-                      </>
-                    )}
+                        <div className="text-muted-foreground">Content-Type</div>
+                        <div className="font-mono text-xs">{objectDetail.content_type}</div>
 
-                    <div className="text-muted-foreground">ETag</div>
-                    <div className="font-mono text-xs truncate">{objectDetail.etag}</div>
+                        {objectDetail.content_encoding && (
+                          <>
+                            <div className="text-muted-foreground">Encoding</div>
+                            <div className="font-mono text-xs">{objectDetail.content_encoding}</div>
+                          </>
+                        )}
 
-                    <div className="text-muted-foreground">Last Modified</div>
-                    <div>{formatDate(objectDetail.last_modified)}</div>
+                        <div className="text-muted-foreground">ETag</div>
+                        <div className="font-mono text-xs truncate">{objectDetail.etag}</div>
 
-                    {objectDetail.version_id && (
-                      <>
-                        <div className="text-muted-foreground">Version ID</div>
-                        <div className="font-mono text-xs truncate">{objectDetail.version_id}</div>
-                      </>
-                    )}
-                  </div>
-                </div>
+                        <div className="text-muted-foreground">Last Modified</div>
+                        <div>{formatDate(objectDetail.last_modified)}</div>
 
-                {/* User metadata */}
-                {Object.keys(objectDetail.metadata).length > 0 && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">User Metadata</h4>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                        {Object.entries(objectDetail.metadata).map(([k, v]) => (
-                          <div key={k} className="contents">
-                            <div className="text-muted-foreground font-mono text-xs">{k}</div>
-                            <div className="font-mono text-xs">{v}</div>
+                        {objectDetail.version_id && (
+                          <>
+                            <div className="text-muted-foreground">Version ID</div>
+                            <div className="font-mono text-xs truncate">{objectDetail.version_id}</div>
+                          </>
+                        )}
+                      </div>
+
+                      {Object.keys(objectDetail.metadata).length > 0 && (
+                        <>
+                          <Separator className="my-4" />
+                          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">User Metadata</h4>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                            {Object.entries(objectDetail.metadata).map(([k, v]) => (
+                              <div key={k} className="contents">
+                                <div className="text-muted-foreground font-mono text-xs">{k}</div>
+                                <div className="font-mono text-xs">{v}</div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
+                        </>
+                      )}
 
-                {/* HTTP headers */}
-                {Object.keys(objectDetail.preserved_headers).length > 0 && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">HTTP Headers</h4>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                        {Object.entries(objectDetail.preserved_headers).map(([k, v]) => (
-                          <div key={k} className="contents">
-                            <div className="text-muted-foreground font-mono text-xs">{k}</div>
-                            <div className="font-mono text-xs">{v}</div>
+                      {Object.keys(objectDetail.preserved_headers).length > 0 && (
+                        <>
+                          <Separator className="my-4" />
+                          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">HTTP Headers</h4>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                            {Object.entries(objectDetail.preserved_headers).map(([k, v]) => (
+                              <div key={k} className="contents">
+                                <div className="text-muted-foreground font-mono text-xs">{k}</div>
+                                <div className="font-mono text-xs">{v}</div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
 
-                {/* Tags */}
-                {Object.keys(objectDetail.tags).length > 0 && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Tags</h4>
-                      <div className="flex flex-wrap gap-1.5">
-                        {Object.entries(objectDetail.tags).map(([k, v]) => (
-                          <Badge key={k} variant="secondary" className="text-xs">
-                            {k}: {v}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
+                <TabsContent value="tags" className="space-y-4">
+                  <TagsSection tags={objectDetail.tags} />
+                </TabsContent>
 
-                {/* Raw JSON */}
-                <Separator />
-                <div>
-                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Raw</h4>
+                <TabsContent value="raw" className="space-y-4">
                   <JsonViewer data={objectDetail} />
-                </div>
-              </div>
+                </TabsContent>
+              </Tabs>
             </>
           )}
         </SheetContent>

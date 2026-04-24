@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
-import { fetchSecrets, fetchSecretDetail } from '@/lib/api'
+import { fetchSecrets, fetchSecretDetail, updateResourceTags } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import type { Secret, SecretDetail } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +16,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection, TagCountBadge } from '@/components/TagsSection'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import {
@@ -26,7 +28,6 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
-  Tag as TagIcon,
 } from 'lucide-react'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
@@ -210,8 +211,9 @@ function SecretValueDisplay({ detail }: { detail: SecretDetail }) {
 }
 
 export function SecretsManagerBrowser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
-  const secretsFetcher = useCallback(() => fetchSecrets(), [])
+  const secretsFetcher = useCallback(() => fetchSecrets(activeEndpoint), [activeEndpoint])
   const { data: secretsData, loading: secretsLoading, refresh: refreshSecrets } = useFetch<{ secrets: Secret[] }>(
     secretsFetcher,
     10000
@@ -240,14 +242,14 @@ export function SecretsManagerBrowser() {
       return
     }
     setDetailLoading(true)
-    fetchSecretDetail(secretName)
+    fetchSecretDetail(secretName, activeEndpoint)
       .then(setSecretDetail)
       .catch(() => {
         setSecretDetail(null)
         toast.error('Failed to load secret detail')
       })
       .finally(() => setDetailLoading(false))
-  }, [])
+  }, [activeEndpoint])
 
   useEffect(() => {
     loadSecretDetail(selectedSecret)
@@ -298,7 +300,6 @@ export function SecretsManagerBrowser() {
     if (!secretDetail) return null
 
     const tags = secretDetail.tags || {}
-    const hasTags = Object.keys(tags).length > 0
 
     return (
       <div className="space-y-4">
@@ -421,25 +422,12 @@ export function SecretsManagerBrowser() {
           </TabsContent>
 
           <TabsContent value="tags" className="space-y-4">
-            {hasTags ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Tags</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(tags).map(([key, value]) => (
-                      <Badge key={key} variant="outline" className="text-xs">
-                        <TagIcon className="h-3 w-3 mr-1" />
-                        {key}: {value}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <EmptyState icon={TagIcon} title="No Tags" description="This secret has no tags." />
-            )}
+            <TagsSection
+              tags={tags}
+              onSave={async (newTags) => {
+                await updateResourceTags('secretsmanager', 'secrets', secretDetail.name, newTags, activeEndpoint)
+              }}
+            />
           </TabsContent>
         </Tabs>
       </div>
@@ -493,6 +481,7 @@ export function SecretsManagerBrowser() {
               <TableHead>Description</TableHead>
               <TableHead>Last Changed</TableHead>
               <TableHead>Rotation</TableHead>
+              <TableHead>Tags</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -516,6 +505,9 @@ export function SecretsManagerBrowser() {
                   ) : (
                     <span className="text-xs text-muted-foreground">Disabled</span>
                   )}
+                </TableCell>
+                <TableCell>
+                  <TagCountBadge count={Object.keys(secret.tags || {}).length} />
                 </TableCell>
               </TableRow>
             ))}

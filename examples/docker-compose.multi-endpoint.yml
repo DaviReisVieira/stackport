@@ -1,0 +1,54 @@
+# StackPort with multiple endpoints (local + local + real AWS)
+#
+# Usage:
+#   docker compose -f docker-compose.multi-endpoint.yml up -d
+#   Open http://localhost:8080
+#
+# This example connects StackPort to two local MiniStack emulators and a
+# real AWS account. Use the endpoint selector in the sidebar to switch.
+#
+# For the AWS endpoint, mount your ~/.aws credentials into the container
+# and set AWS_PROFILE. An empty URL (nprod=) means "use real AWS".
+
+services:
+  stackport:
+    image: davireis/stackport:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - STACKPORT_ENDPOINTS=dev=http://ministack-dev:4566,staging=http://ministack-staging:4566,nprod=
+      - AWS_REGION=us-west-1
+      - AWS_PROFILE=nprod
+    volumes:
+      - ~/.aws:/root/.aws:ro
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    depends_on:
+      ministack-dev:
+        condition: service_healthy
+      ministack-staging:
+        condition: service_healthy
+
+  ministack-dev:
+    image: ministackorg/ministack:latest
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  ministack-staging:
+    image: ministackorg/ministack:latest
+    ports:
+      - "4567:4566"
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5

@@ -1,11 +1,14 @@
 import threading
 import time
 
+from backend.config import STACKPORT_CACHE_TTL
+
 
 class TTLCache:
-    def __init__(self):
+    def __init__(self, default_ttl: int = STACKPORT_CACHE_TTL):
         self._store: dict = {}
         self._lock = threading.Lock()
+        self._default_ttl = default_ttl
 
     def get(self, key: str):
         with self._lock:
@@ -16,7 +19,9 @@ class TTLCache:
                 del self._store[key]
         return None
 
-    def set(self, key: str, value, ttl: float = 5):
+    def set(self, key: str, value, ttl: float | None = None):
+        if ttl is None:
+            ttl = self._default_ttl
         with self._lock:
             self._store[key] = (value, time.time() + ttl)
 

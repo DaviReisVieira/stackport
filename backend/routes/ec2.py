@@ -3,9 +3,10 @@
 import base64
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from backend.aws_client import get_client
+from backend.routes.common import get_endpoint_url
 
 router = APIRouter()
 
@@ -39,10 +40,10 @@ def _decode_user_data(encoded: str | None) -> str | None:
 
 
 @router.get("/instances")
-def list_instances() -> dict[str, Any]:
+def list_instances(endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """List all EC2 instances with enriched metadata."""
     try:
-        client = get_client("ec2")
+        client = get_client("ec2", endpoint_url)
         paginator = client.get_paginator("describe_instances")
 
         all_instances = []
@@ -74,10 +75,10 @@ def list_instances() -> dict[str, Any]:
 
 
 @router.get("/instances/{instance_id}")
-def get_instance_detail(instance_id: str) -> dict[str, Any]:
+def get_instance_detail(instance_id: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Get detailed information for a specific instance including user data."""
     try:
-        client = get_client("ec2")
+        client = get_client("ec2", endpoint_url)
 
         # Get instance details
         response = client.describe_instances(InstanceIds=[instance_id])
@@ -134,10 +135,10 @@ def get_instance_detail(instance_id: str) -> dict[str, Any]:
 
 
 @router.post("/instances/{instance_id}/start")
-def start_instance(instance_id: str) -> dict[str, Any]:
+def start_instance(instance_id: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Start a stopped EC2 instance."""
     try:
-        client = get_client("ec2")
+        client = get_client("ec2", endpoint_url)
         response = client.start_instances(InstanceIds=[instance_id])
 
         starting_instances = response.get("StartingInstances", [])
@@ -161,10 +162,10 @@ def start_instance(instance_id: str) -> dict[str, Any]:
 
 
 @router.post("/instances/{instance_id}/stop")
-def stop_instance(instance_id: str) -> dict[str, Any]:
+def stop_instance(instance_id: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Stop a running EC2 instance."""
     try:
-        client = get_client("ec2")
+        client = get_client("ec2", endpoint_url)
         response = client.stop_instances(InstanceIds=[instance_id])
 
         stopping_instances = response.get("StoppingInstances", [])
@@ -188,10 +189,10 @@ def stop_instance(instance_id: str) -> dict[str, Any]:
 
 
 @router.post("/instances/{instance_id}/reboot")
-def reboot_instance(instance_id: str) -> dict[str, Any]:
+def reboot_instance(instance_id: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Reboot an EC2 instance."""
     try:
-        client = get_client("ec2")
+        client = get_client("ec2", endpoint_url)
         client.reboot_instances(InstanceIds=[instance_id])
 
         return {"success": True, "message": f"Instance {instance_id} reboot initiated"}
@@ -205,10 +206,10 @@ def reboot_instance(instance_id: str) -> dict[str, Any]:
 
 
 @router.post("/instances/{instance_id}/terminate")
-def terminate_instance(instance_id: str) -> dict[str, Any]:
+def terminate_instance(instance_id: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """Terminate an EC2 instance."""
     try:
-        client = get_client("ec2")
+        client = get_client("ec2", endpoint_url)
         response = client.terminate_instances(InstanceIds=[instance_id])
 
         terminating_instances = response.get("TerminatingInstances", [])
@@ -232,10 +233,10 @@ def terminate_instance(instance_id: str) -> dict[str, Any]:
 
 
 @router.get("/security-groups")
-def list_security_groups() -> dict[str, Any]:
+def list_security_groups(endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """List all security groups with rules."""
     try:
-        client = get_client("ec2")
+        client = get_client("ec2", endpoint_url)
         response = client.describe_security_groups()
 
         security_groups = []
@@ -258,10 +259,10 @@ def list_security_groups() -> dict[str, Any]:
 
 
 @router.get("/vpcs")
-def list_vpcs() -> dict[str, Any]:
+def list_vpcs(endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """List all VPCs with their subnets."""
     try:
-        client = get_client("ec2")
+        client = get_client("ec2", endpoint_url)
         vpcs_response = client.describe_vpcs()
 
         vpcs = []
@@ -303,10 +304,10 @@ def list_vpcs() -> dict[str, Any]:
 
 
 @router.get("/key-pairs")
-def list_key_pairs() -> dict[str, Any]:
+def list_key_pairs(endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
     """List all key pairs."""
     try:
-        client = get_client("ec2")
+        client = get_client("ec2", endpoint_url)
         response = client.describe_key_pairs()
 
         key_pairs = []

@@ -30,6 +30,14 @@ class TestHealth:
         assert "services_count" in data
         assert isinstance(data["services_count"], int)
 
+    def test_health_returns_connection_type_and_writes_enabled(self):
+        resp = client.get("/api/health")
+        data = resp.json()
+        assert "connection_type" in data
+        assert data["connection_type"] in ("local", "aws")
+        assert "writes_enabled" in data
+        assert isinstance(data["writes_enabled"], bool)
+
 
 class TestStats:
     def test_stats_returns_structure(self):

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
-import { fetchLogGroups, fetchLogStreams, fetchLogEvents } from '@/lib/api'
+import { fetchLogGroups, fetchLogStreams, fetchLogEvents, fetchResourceTags, updateResourceTags } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import type { LogEvent, LogGroupsResponse, LogStreamsResponse } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -11,10 +12,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection } from '@/components/TagsSection'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { ScrollText, Search, FileText, Clock, Play, Pause, Copy, Filter, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -110,6 +113,7 @@ function LogEventView({ event }: { event: LogEvent }) {
 }
 
 export function LogsBrowser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Read selected group and stream from URL params
@@ -151,9 +155,10 @@ export function LogsBrowser() {
   // Time range filters (0 = no filter)
   const [startTime, setStartTime] = useState(0)
   const [endTime, setEndTime] = useState(0)
+  const [logGroupTags, setLogGroupTags] = useState<Record<string, string>>({})
 
   // Fetch log groups
-  const groupsFetcher = useCallback(() => fetchLogGroups(groupSearch), [groupSearch])
+  const groupsFetcher = useCallback(() => fetchLogGroups(groupSearch, '', activeEndpoint), [groupSearch, activeEndpoint])
   const { data: groupsData, loading: groupsLoading, refresh: refreshGroups } = useFetch<LogGroupsResponse>(
     groupsFetcher,
     10000
@@ -168,24 +173,31 @@ export function LogsBrowser() {
       setStreamsData(null)
       setSelectedStream(null)
       setEvents([])
+      setLogGroupTags({})
       return
     }
     setStreamsLoading(true)
-    fetchLogStreams(selectedGroup, streamSearch, 'LastEventTime', true, 50)
+    fetchLogStreams(selectedGroup, streamSearch, 'LastEventTime', true, 50, '', activeEndpoint)
       .then(setStreamsData)
       .catch((err) => {
         toast.error(`Failed to load log streams: ${err.message}`)
         setStreamsData(null)
       })
       .finally(() => setStreamsLoading(false))
-  }, [selectedGroup, streamSearch])
+    const group = groupsData?.log_groups?.find(g => g.name === selectedGroup)
+    if (group?.arn) {
+      fetchResourceTags('logs', 'log_groups', group.arn, activeEndpoint)
+        .then(res => setLogGroupTags(res.tags))
+        .catch(() => setLogGroupTags({}))
+    }
+  }, [selectedGroup, streamSearch, groupsData, activeEndpoint])
 
   // Fetch log events (manual)
   const loadEvents = useCallback(
     (append = false, nextToken = '') => {
       if (!selectedGroup || !selectedStream) return
       setEventsLoading(true)
-      fetchLogEvents(selectedGroup, selectedStream, startTime, endTime, appliedFilterPattern, 100, nextToken)
+      fetchLogEvents(selectedGroup, selectedStream, startTime, endTime, appliedFilterPattern, 100, nextToken, activeEndpoint)
         .then((res) => {
           setEvents((prev) => (append ? [...prev, ...res.events] : res.events))
           setEventsNextToken(res.next_token || null)
@@ -196,7 +208,7 @@ export function LogsBrowser() {
         })
         .finally(() => setEventsLoading(false))
     },
-    [selectedGroup, selectedStream, startTime, endTime, appliedFilterPattern]
+    [selectedGroup, selectedStream, startTime, endTime, appliedFilterPattern, activeEndpoint]
   )
 
   useEffect(() => {
@@ -217,7 +229,7 @@ export function LogsBrowser() {
       if (events.length > 0) {
         const lastEventTime = events[events.length - 1].timestamp_millis
         if (!selectedGroup || !selectedStream) return
-        fetchLogEvents(selectedGroup, selectedStream, lastEventTime + 1, 0, appliedFilterPattern, 100, '')
+        fetchLogEvents(selectedGroup, selectedStream, lastEventTime + 1, 0, appliedFilterPattern, 100, '', activeEndpoint)
           .then((res) => {
             if (res.events.length > 0) {
               setEvents((prev) => [...prev, ...res.events])
@@ -271,7 +283,13 @@ export function LogsBrowser() {
   return (
     <div className="space-y-4 h-full flex flex-col">
       <Breadcrumb segments={[createHomeSegment(), { label: 'CloudWatch Logs', icon: getServiceIcon('logs') }]} />
-      <div className="grid grid-cols-[300px,1fr,1fr] gap-4 flex-1 min-h-0">
+      <Tabs defaultValue="logs" className="flex-1 flex flex-col min-h-0">
+        <TabsList className="w-fit">
+          <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="tags">Tags</TabsTrigger>
+        </TabsList>
+        <TabsContent value="logs" className="flex-1 min-h-0">
+      <div className="grid grid-cols-[300px,1fr,1fr] gap-4 h-full">
       {/* Log Groups Panel */}
       <Card className="flex flex-col">
         <CardHeader className="pb-3">
@@ -584,6 +602,28 @@ export function LogsBrowser() {
         </CardContent>
       </Card>
       </div>
+        </TabsContent>
+        <TabsContent value="tags" className="space-y-4">
+          {selectedGroup && groupsData?.log_groups ? (
+            <TagsSection
+              tags={logGroupTags}
+              onSave={async (newTags) => {
+                const group = groupsData.log_groups.find(g => g.name === selectedGroup)
+                if (group?.arn) {
+                  await updateResourceTags('logs', 'log_groups', group.arn, newTags, activeEndpoint)
+                  setLogGroupTags(newTags)
+                }
+              }}
+            />
+          ) : (
+            <EmptyState
+              icon={ScrollText}
+              title="No log group selected"
+              description="Select a log group to view and manage tags"
+            />
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

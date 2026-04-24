@@ -55,4 +55,4 @@ class TestConnectionManager:
         """Test broadcast with no connections does nothing."""
         mgr = ConnectionManager()
         # Should not raise
-        await mgr.broadcast({"type": "stats", "data": {}})
+        await mgr.broadcast_to_endpoint(None, {"type": "stats", "data": {}})

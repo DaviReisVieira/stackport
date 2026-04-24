@@ -9,7 +9,14 @@ from backend.aws_client import get_client
 
 logger = logging.getLogger(__name__)
 from backend.cache import cache
-from backend.config import AWS_ENDPOINT_URL, AWS_REGION, STACKPORT_SERVICES
+from backend.config import (
+    AWS_ENDPOINT_URL,
+    AWS_REGION,
+    STACKPORT_ALLOW_WRITES,
+    STACKPORT_PROBE_WORKERS,
+    STACKPORT_SERVICES,
+    is_local_endpoint,
+)
 from backend.routes.common import get_endpoint_url
 
 router = APIRouter()
@@ -84,19 +91,24 @@ _start_time = time.time()
 
 
 @router.get("/health")
-def health():
+def health(endpoint_url: str | None = Depends(get_endpoint_url)):
     try:
         version = importlib.metadata.version("stackport")
     except importlib.metadata.PackageNotFoundError:
         version = "dev"
     enabled = [s.strip() for s in STACKPORT_SERVICES.split(",") if s.strip()]
+
+    connection_type = "local" if is_local_endpoint(endpoint_url) else "aws"
+
     return {
         "status": "ok",
         "version": version,
         "uptime_seconds": round(time.time() - _start_time, 1),
-        "endpoint_url": AWS_ENDPOINT_URL,
+        "endpoint_url": endpoint_url,
         "region": AWS_REGION,
         "services_count": len(enabled),
+        "connection_type": connection_type,
+        "writes_enabled": STACKPORT_ALLOW_WRITES,
     }
 
 
@@ -154,7 +166,7 @@ def get_stats(endpoint_url: str = Depends(get_endpoint_url)):
     services: dict = {}
     total_resources = 0
 
-    with ThreadPoolExecutor(max_workers=min(len(enabled_services), 10)) as executor:
+    with ThreadPoolExecutor(max_workers=min(len(enabled_services), STACKPORT_PROBE_WORKERS)) as executor:
         futures = {executor.submit(_probe_service, svc, endpoint_url): svc for svc in enabled_services}
         for future in as_completed(futures):
             svc_name, result = future.result()
@@ -169,5 +181,5 @@ def get_stats(endpoint_url: str = Depends(get_endpoint_url)):
         "total_resources": total_resources,
         "uptime_seconds": round(time.time() - _start_time, 1),
     }
-    cache.set(cache_key, response, ttl=5)
+    cache.set(cache_key, response)
     return response

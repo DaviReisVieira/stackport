@@ -2,10 +2,11 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from backend.aws_client import get_client
 from backend.cache import cache
+from backend.routes.common import get_endpoint_url
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +24,15 @@ def _epoch_millis_to_iso(timestamp: Optional[int]) -> Optional[str]:
 def list_log_groups(
     prefix: str = Query(default="", description="Log group name prefix filter"),
     next_token: str = Query(default="", description="Pagination token"),
+    endpoint_url: str | None = Depends(get_endpoint_url),
 ):
     """List CloudWatch log groups with optional prefix filtering."""
-    cache_key = f"logs:groups:{prefix}:{next_token}"
+    cache_key = f"{endpoint_url}:logs:groups:{prefix}:{next_token}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    logs = get_client("logs")
+    logs = get_client("logs", endpoint_url)
     params: dict = {"limit": 50}
     if prefix:
         params["logGroupNamePrefix"] = prefix
@@ -73,14 +75,15 @@ def list_log_streams(
     descending: bool = Query(default=True, description="Sort order"),
     limit: int = Query(default=50, description="Max streams to return"),
     next_token: str = Query(default="", description="Pagination token"),
+    endpoint_url: str | None = Depends(get_endpoint_url),
 ):
     """List log streams for a log group."""
-    cache_key = f"logs:streams:{name}:{prefix}:{order_by}:{descending}:{limit}:{next_token}"
+    cache_key = f"{endpoint_url}:logs:streams:{name}:{prefix}:{order_by}:{descending}:{limit}:{next_token}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    logs = get_client("logs")
+    logs = get_client("logs", endpoint_url)
     params: dict = {
         "logGroupName": name,
         "orderBy": order_by,
@@ -130,10 +133,11 @@ def get_log_events(
     filter_pattern: str = Query(default="", description="CloudWatch Logs filter pattern"),
     limit: int = Query(default=100, description="Max events to return"),
     next_token: str = Query(default="", description="Pagination token"),
+    endpoint_url: str | None = Depends(get_endpoint_url),
 ):
     """Get log events for a specific log stream with optional filtering."""
     # Events are NOT cached — tail mode needs fresh data
-    logs = get_client("logs")
+    logs = get_client("logs", endpoint_url)
 
     # Use filter_log_events (supports patterns) if filter_pattern is provided,
     # otherwise use get_log_events for simpler retrieval

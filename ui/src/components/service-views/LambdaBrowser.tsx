@@ -9,7 +9,9 @@ import {
   fetchLambdaEventSources,
   fetchLambdaAliases,
   fetchLambdaVersions,
+  updateResourceTags,
 } from '@/lib/api'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import type {
   LambdaFunction,
   LambdaFunctionDetail,
@@ -32,6 +34,7 @@ import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection } from '@/components/TagsSection'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -45,7 +48,6 @@ import {
   Clock,
   AlertCircle,
   CheckCircle,
-  Tag as TagIcon,
   Link as LinkIcon,
   GitBranch,
   RefreshCw,
@@ -67,19 +69,22 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function RuntimeBadge({ runtime }: { runtime: string }) {
+function RuntimeBadge({ runtime, packageType }: { runtime?: string; packageType?: string }) {
+  const isContainer = !runtime && packageType === 'Image'
+  const rt = runtime ?? (isContainer ? 'Container Image' : 'unknown')
   let color = 'bg-gray-500'
-  if (runtime.startsWith('python')) color = 'bg-blue-500'
-  else if (runtime.startsWith('nodejs')) color = 'bg-green-500'
-  else if (runtime.startsWith('java')) color = 'bg-red-500'
-  else if (runtime.startsWith('go')) color = 'bg-cyan-500'
-  else if (runtime.startsWith('dotnet')) color = 'bg-purple-500'
-  else if (runtime.startsWith('ruby')) color = 'bg-pink-500'
-  else if (runtime.startsWith('provided')) color = 'bg-gray-500'
+  if (rt.startsWith('python')) color = 'bg-blue-500'
+  else if (rt.startsWith('nodejs')) color = 'bg-green-500'
+  else if (rt.startsWith('java')) color = 'bg-red-500'
+  else if (rt.startsWith('go')) color = 'bg-cyan-500'
+  else if (rt.startsWith('dotnet')) color = 'bg-purple-500'
+  else if (rt.startsWith('ruby')) color = 'bg-pink-500'
+  else if (rt.startsWith('provided')) color = 'bg-orange-500'
+  else if (isContainer) color = 'bg-indigo-500'
 
   return (
     <Badge variant="secondary" className={`${color} text-white`}>
-      {runtime}
+      {rt}
     </Badge>
   )
 }
@@ -230,6 +235,7 @@ function InvokeSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { activeEndpoint } = useEndpoint()
   const [payload, setPayload] = useState(JSON.stringify(EVENT_TEMPLATES['Custom'], null, 2))
   const [template, setTemplate] = useState<keyof typeof EVENT_TEMPLATES>('Custom')
   const [invoking, setInvoking] = useState(false)
@@ -246,7 +252,7 @@ function InvokeSheet({
       setInvoking(true)
       setResult(null)
       const parsedPayload = JSON.parse(payload)
-      const response = await invokeLambdaFunction(functionName, { payload: parsedPayload })
+      const response = await invokeLambdaFunction(functionName, { payload: parsedPayload }, activeEndpoint)
       setResult(response)
       if (response.functionError) {
         toast.error(`Function error: ${response.functionError}`)
@@ -335,8 +341,9 @@ function InvokeSheet({
 }
 
 export function LambdaBrowser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
-  const functionsFetcher = useCallback(() => fetchLambdaFunctions(), [])
+  const functionsFetcher = useCallback(() => fetchLambdaFunctions(activeEndpoint), [activeEndpoint])
   const { data: functionsData, loading: functionsLoading, refresh: refreshFunctions } = useFetch<{ functions: LambdaFunction[] }>(
     functionsFetcher,
     10000
@@ -373,10 +380,10 @@ export function LambdaBrowser() {
       return
     }
     Promise.all([
-      fetchLambdaFunction(selectedFunction),
-      fetchLambdaEventSources(selectedFunction).catch(() => ({ eventSourceMappings: [] })),
-      fetchLambdaAliases(selectedFunction).catch(() => ({ aliases: [] })),
-      fetchLambdaVersions(selectedFunction).catch(() => ({ versions: [] })),
+      fetchLambdaFunction(selectedFunction, activeEndpoint),
+      fetchLambdaEventSources(selectedFunction, activeEndpoint).catch(() => ({ eventSourceMappings: [] })),
+      fetchLambdaAliases(selectedFunction, activeEndpoint).catch(() => ({ aliases: [] })),
+      fetchLambdaVersions(selectedFunction, activeEndpoint).catch(() => ({ versions: [] })),
     ])
       .then(([detail, sources, aliasData, versionData]) => {
         setFunctionDetail(detail)
@@ -390,7 +397,7 @@ export function LambdaBrowser() {
         setAliases([])
         setVersions([])
       })
-  }, [selectedFunction])
+  }, [selectedFunction, activeEndpoint])
 
   const functions = functionsData?.functions ?? []
   const filteredFunctions = functions.filter((f) =>
@@ -428,7 +435,6 @@ export function LambdaBrowser() {
     const hasEnvVars = config.Environment?.Variables && Object.keys(config.Environment.Variables).length > 0
     const hasLayers = config.Layers && config.Layers.length > 0
     const tags = functionDetail.tags || {}
-    const hasTags = Object.keys(tags).length > 0
 
     return (
       <div className="space-y-4">
@@ -453,9 +459,9 @@ export function LambdaBrowser() {
         </div>
 
         <div className="flex items-center gap-2">
-          <RuntimeBadge runtime={config.Runtime} />
+          <RuntimeBadge runtime={config.Runtime} packageType={config.PackageType} />
           <StateBadge state={config.State} />
-          {config.PackageType && (
+          {config.PackageType && config.Runtime && (
             <Badge variant="outline">{config.PackageType === 'Image' ? 'Container Image' : 'ZIP'}</Badge>
           )}
         </div>
@@ -479,7 +485,7 @@ export function LambdaBrowser() {
                   <div className="text-muted-foreground">Runtime</div>
                   <div className="font-mono">{config.Runtime}</div>
                   <div className="text-muted-foreground">Handler</div>
-                  <div className="font-mono">{config.Handler}</div>
+                  <div className="font-mono">{config.Handler ?? '—'}</div>
                   <div className="text-muted-foreground">Memory</div>
                   <div>{config.MemorySize} MB</div>
                   <div className="text-muted-foreground">Timeout</div>
@@ -582,7 +588,7 @@ export function LambdaBrowser() {
                 {config.PackageType !== 'Image' && functionDetail.code.Location && (
                   <div className="pt-2">
                     <Button variant="outline" size="sm" asChild>
-                      <a href={getLambdaCodeDownloadUrl(config.FunctionName)} download>
+                      <a href={getLambdaCodeDownloadUrl(config.FunctionName, activeEndpoint)} download>
                         <Download className="h-4 w-4 mr-2" />
                         Download Deployment Package
                       </a>
@@ -711,25 +717,12 @@ export function LambdaBrowser() {
           </TabsContent>
 
           <TabsContent value="tags" className="space-y-4">
-            {hasTags ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Tags</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(tags).map(([key, value]) => (
-                      <Badge key={key} variant="outline" className="text-xs">
-                        <TagIcon className="h-3 w-3 mr-1" />
-                        {key}: {value}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <EmptyState icon={TagIcon} title="No Tags" description="This function has no tags." />
-            )}
+            <TagsSection
+              tags={tags}
+              onSave={async (newTags) => {
+                await updateResourceTags('lambda', 'functions', config.FunctionName, newTags, activeEndpoint)
+              }}
+            />
           </TabsContent>
         </Tabs>
 
@@ -782,13 +775,13 @@ export function LambdaBrowser() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
-                <RuntimeBadge runtime={func.Runtime} />
+                <RuntimeBadge runtime={func.Runtime} packageType={func.PackageType} />
                 <StateBadge state={func.State} />
               </div>
               <div className="space-y-1 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Handler</span>
-                  <span className="font-mono">{func.Handler}</span>
+                  <span className="font-mono">{func.Handler ?? '—'}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Memory</span>

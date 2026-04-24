@@ -14,6 +14,7 @@ import {
   sendSQSMessagesBatch,
   deleteSQSMessagesBatch,
   updateSQSRedrivePolicy,
+  updateResourceTags
 } from '@/lib/api'
 import type {
   SQSQueue,
@@ -26,6 +27,7 @@ import type {
   SQSFavoriteMessage,
 } from '@/lib/types'
 import { useSQSFavoriteMessages } from '@/hooks/useSQSFavoriteMessages'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -39,6 +41,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
 import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
+import { TagsSection, TagCountBadge } from '@/components/TagsSection'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -52,7 +55,6 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  Tag as TagIcon,
   AlertTriangle,
   Eye,
   Copy,
@@ -551,6 +553,7 @@ function SendMessageSheet({
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
 }) {
+  const { activeEndpoint } = useEndpoint()
   const [messageBody, setMessageBody] = useState('')
   const [delaySeconds, setDelaySeconds] = useState(0)
   const [messageGroupId, setMessageGroupId] = useState('')
@@ -577,7 +580,7 @@ function SendMessageSheet({
         if (messageDeduplicationId) request.messageDeduplicationId = messageDeduplicationId
       }
 
-      const response = await sendSQSMessage(queue.name, request)
+      const response = await sendSQSMessage(queue.name, request, activeEndpoint)
       toast.success(`Message sent: ${response.messageId}`)
       setMessageBody('')
       setDelaySeconds(0)
@@ -677,6 +680,8 @@ function EditSettingsSheet({
   const [delaySeconds, setDelaySeconds] = useState(0)
   const [maximumMessageSize, setMaximumMessageSize] = useState(262144)
   const [receiveMessageWaitTime, setReceiveMessageWaitTime] = useState(0)
+  const { activeEndpoint } = useEndpoint()
+  const [deleting, setDeleting] = useState(false)
 
   // DLQ settings
   const [dlqEnabled, setDlqEnabled] = useState(false)
@@ -735,6 +740,10 @@ function EditSettingsSheet({
 
       toast.success('Queue settings updated successfully')
       onSuccess()
+      setDeleting(true)
+      await deleteSQSMessage(queueName, message.receiptHandle, activeEndpoint)
+      toast.success('Message deleted')
+      onDelete()
       onOpenChange(false)
     } catch (error) {
       toast.error(`Failed to update settings: ${error}`)
@@ -1980,8 +1989,9 @@ function DeleteConfirmSheet({
 }
 
 export function SQSBrowser() {
+  const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
-  const queuesFetcher = useCallback(() => fetchSQSQueues(), [])
+  const queuesFetcher = useCallback(() => fetchSQSQueues(activeEndpoint), [activeEndpoint])
   const { data: queuesData, loading: queuesLoading, refresh: refreshQueues } = useFetch<{ queues: SQSQueue[] }>(queuesFetcher, 10000)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -2062,17 +2072,17 @@ export function SQSBrowser() {
       setMessages([])
       return
     }
-    fetchSQSQueueDetail(selectedQueue)
+    fetchSQSQueueDetail(selectedQueue, activeEndpoint)
       .then(setQueueDetail)
       .catch(() => setQueueDetail(null))
-  }, [selectedQueue])
+  }, [selectedQueue, activeEndpoint])
 
   const handleReceiveMessages = async () => {
     if (!selectedQueue) return
 
     setLoadingMessages(true)
     try {
-      const response = await receiveSQSMessages(selectedQueue, 10, 0)
+      const response = await receiveSQSMessages(selectedQueue, 10, 0, activeEndpoint)
       setMessages(response.messages)
       if (response.messages.length === 0) {
         toast.info('No messages available. Queue may be empty or try again.')
@@ -2096,11 +2106,11 @@ export function SQSBrowser() {
     if (!selectedQueue) return
 
     try {
-      await purgeSQSQueue(selectedQueue)
+      await purgeSQSQueue(selectedQueue, activeEndpoint)
       toast.success('Queue purge initiated (may take up to 60 seconds)')
       setMessages([])
       // Refresh queue detail to see updated counts
-      fetchSQSQueueDetail(selectedQueue).then(setQueueDetail)
+      fetchSQSQueueDetail(selectedQueue, activeEndpoint).then(setQueueDetail)
     } catch (error) {
       toast.error(`Failed to purge queue: ${error}`)
       throw error
@@ -2717,25 +2727,12 @@ export function SQSBrowser() {
           </TabsContent>
 
           <TabsContent value="tags" className="space-y-4">
-            {Object.keys(queueDetail.tags).length > 0 ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Tags</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(queueDetail.tags).map(([key, value]) => (
-                      <Badge key={key} variant="outline" className="text-xs">
-                        <TagIcon className="h-3 w-3 mr-1" />
-                        {key}: {value}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <EmptyState icon={TagIcon} title="No Tags" description="This queue has no tags." />
-            )}
+            <TagsSection
+              tags={queueDetail.tags}
+              onSave={async (newTags) => {
+                await updateResourceTags('sqs', 'queues', queueDetail.name, newTags, activeEndpoint)
+              }}
+            />
           </TabsContent>
         </Tabs>
 
@@ -2745,7 +2742,7 @@ export function SQSBrowser() {
           onOpenChange={setSendSheetOpen}
           onSuccess={() => {
             // Refresh queue detail
-            fetchSQSQueueDetail(selectedQueue).then(setQueueDetail)
+            fetchSQSQueueDetail(selectedQueue, activeEndpoint).then(setQueueDetail)
           }}
         />
 
@@ -2777,7 +2774,7 @@ export function SQSBrowser() {
           onDelete={() => {
             // Remove deleted message from list and refresh queue detail
             setMessages(messages.filter((m) => m.messageId !== selectedMessage?.messageId))
-            fetchSQSQueueDetail(selectedQueue).then(setQueueDetail)
+            fetchSQSQueueDetail(selectedQueue, activeEndpoint).then(setQueueDetail)
           }}
         />
 
@@ -2966,6 +2963,7 @@ export function SQSBrowser() {
                 <div className="flex items-center gap-2">
                   <QueueTypeBadge type={queue.type} />
                   <QueueDepthBadge count={totalMessages} />
+                  <TagCountBadge count={Object.keys(queue.tags || {}).length} />
                   {queue.redrivePolicy && (
                     <Badge variant="outline" className="text-xs">
                       <AlertTriangle className="h-3 w-3 mr-1" />

@@ -70,6 +70,8 @@ vi.mock('@/lib/api', () => ({
   deleteS3ObjectsBatch: vi.fn(),
   createS3Folder: vi.fn(),
   fetchS3UploadConfig: vi.fn(() => Promise.resolve({ max_upload_bytes: 104857600 })),
+  fetchResourceTags: vi.fn(() => Promise.resolve({ tags: {} })),
+  updateResourceTags: vi.fn(() => Promise.resolve({ success: true })),
 }))
 
 function renderWithBucket(search = '?bucket=my-bucket') {
@@ -166,7 +168,7 @@ describe('S3Browser delete confirmation', () => {
     await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() => {
-      expect(deleteS3ObjectMock).toHaveBeenCalledWith('my-bucket', 'readme.txt')
+      expect(deleteS3ObjectMock).toHaveBeenCalledWith('my-bucket', 'readme.txt', null)
     })
   })
 })

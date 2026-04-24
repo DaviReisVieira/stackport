@@ -29,8 +29,9 @@ Requires a running AWS-compatible emulator (MiniStack on :4566 by default).
 
 **Backend** (`backend/`):
 - `main.py` — FastAPI app, CORS, static file mount for SPA, CLI entry point
-- `config.py` — All settings from env vars (`AWS_ENDPOINT_URL`, `AWS_REGION`, `STACKPORT_PORT`, `STACKPORT_SERVICES`)
-- `aws_client.py` — `get_client(service)` with `@lru_cache(maxsize=64)`
+- `config.py` — All settings from env vars (`AWS_ENDPOINT_URL`, `AWS_REGION`, `STACKPORT_PORT`, `STACKPORT_SERVICES`, `STACKPORT_ENDPOINTS`)
+- `aws_client.py` — `get_client(service, endpoint_url)` with `@lru_cache(maxsize=256)` keyed on `(service, endpoint_url)`
+- `routes/common.py` — `get_endpoint_url` FastAPI dependency resolves `?endpoint=` query param → endpoint URL
 - `cache.py` — Thread-safe `TTLCache` singleton (dict + timestamps + threading.Lock)
 - `routes/stats.py` — `GET /api/stats` — probes 35 services concurrently via ThreadPoolExecutor, cached 5s
 - `routes/resources.py` — `GET /api/resources/{svc}` and `GET /api/resources/{svc}/{type}/{id}` — generic list/detail
@@ -66,6 +67,9 @@ Requires a running AWS-compatible emulator (MiniStack on :4566 by default).
 | `STACKPORT_PORT` | `8080` | HTTP port |
 | `STACKPORT_S3_MAX_UPLOAD_MB` | `100` | Max S3 upload size per object (whole mebibytes; × 1024²) |
 | `STACKPORT_SERVICES` | *(35 services)* | Comma-separated list to probe |
+| `STACKPORT_PROBE_TIMEOUT` | `5` | Seconds before a service probe times out |
+| `STACKPORT_CACHE_TTL` | `5` | Seconds to cache service stats |
+| `STACKPORT_PROBE_WORKERS` | `10` | ThreadPoolExecutor max workers for concurrent probing |
 | `LOG_LEVEL` | `INFO` | Python log level (DEBUG shows healthcheck logs) |
 
 ## Adding a New Service to the Backend

@@ -4,7 +4,9 @@ import { toast } from 'sonner'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFavorites } from '../hooks/useFavorites'
-import { fetchStats, fetchResources, fetchResourceDetail } from '../lib/api'
+import { useEndpoint } from '../hooks/useEndpoint'
+import { fetchStats, fetchResources, fetchResourceDetail, fetchResourceTags, updateResourceTags, fetchTagsSupported } from '../lib/api'
+import type { TagsSupportedEntry } from '../lib/types'
 import type { StatsResponse, ServiceStats, ResourceListResponse, ResourceDetailResponse } from '../lib/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,7 +23,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/EmptyState'
+import { TagsSection } from '@/components/TagsSection'
 import { JsonViewer } from '@/components/JsonViewer'
 import { Breadcrumb, createHomeSegment, type BreadcrumbSegment } from '@/components/Breadcrumb'
 import { SERVICE_VIEWS } from '@/components/service-views'
@@ -90,11 +94,13 @@ function PaginationBar({
 export default function ResourceBrowser() {
   const { service } = useParams<{ service?: string }>()
   const navigate = useNavigate()
-  const statsFetcher = useCallback(() => fetchStats(), [])
+  const { activeEndpoint } = useEndpoint()
+  const statsFetcher = useCallback(() => fetchStats(activeEndpoint), [activeEndpoint])
   const { data: stats } = useWebSocket<StatsResponse>({
     fallbackFetcher: statsFetcher,
     fallbackInterval: 10000,
     messageType: 'stats',
+    endpoint: activeEndpoint,
   })
   const { favorites, toggleFavorite } = useFavorites()
   const [resources, setResources] = useState<Record<string, unknown[]> | null>(null)
@@ -107,6 +113,9 @@ export default function ResourceBrowser() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [, setTimestamp] = useState(0)
   const [selectedRow, setSelectedRow] = useState(-1)
+  const [detailTags, setDetailTags] = useState<Record<string, string>>({})
+  const [, setTagsLoading] = useState(false)
+  const [supportedTags, setSupportedTags] = useState<TagsSupportedEntry[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -120,7 +129,7 @@ export default function ResourceBrowser() {
     setResourceError(null)
     setPages({})
     setSearchQuery('')
-    fetchResources(service)
+    fetchResources(service, undefined, activeEndpoint)
       .then((data: ResourceListResponse) => {
         setResources(data.resources ?? {})
         setLastUpdated(new Date())
@@ -130,7 +139,7 @@ export default function ResourceBrowser() {
         setResourceError(e instanceof Error ? e.message : 'Failed to load resources')
       })
       .finally(() => setLoadingResources(false))
-  }, [service])
+  }, [service, activeEndpoint])
 
   // Update timestamp display every 5 seconds
   useEffect(() => {
@@ -140,9 +149,38 @@ export default function ResourceBrowser() {
     return () => clearInterval(interval)
   }, [])
 
+  // Fetch supported tag types once on mount
+  useEffect(() => {
+    fetchTagsSupported(activeEndpoint)
+      .then(res => setSupportedTags(res.supported))
+      .catch(() => setSupportedTags([]))
+  }, [activeEndpoint])
+
+  const detailTagSupport = useMemo(() => {
+    if (!detail || supportedTags.length === 0) return null
+    return supportedTags.find(s => s.service === detail.service && s.type === detail.type) ?? null
+  }, [detail, supportedTags])
+
+  // Fetch tags when detail sheet opens (only if supported)
+  useEffect(() => {
+    if (!detail) {
+      setDetailTags({})
+      return
+    }
+    if (!detailTagSupport) {
+      setDetailTags({})
+      return
+    }
+    setTagsLoading(true)
+    fetchResourceTags(detail.service, detail.type, detail.id, activeEndpoint)
+      .then(res => setDetailTags(res.tags))
+      .catch(() => setDetailTags({}))
+      .finally(() => setTagsLoading(false))
+  }, [detail, detailTagSupport, activeEndpoint])
+
   const openDetail = async (svc: string, type: string, id: string) => {
     try {
-      const data = await fetchResourceDetail(svc, type, id) as ResourceDetailResponse
+      const data = await fetchResourceDetail(svc, type, id, activeEndpoint) as ResourceDetailResponse
       setDetail(data)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load detail'
@@ -154,7 +192,7 @@ export default function ResourceBrowser() {
     if (!service) return
     setLoadingResources(true)
     setResourceError(null)
-    fetchResources(service)
+    fetchResources(service, undefined, activeEndpoint)
       .then((data: ResourceListResponse) => {
         setResources(data.resources ?? {})
         setLastUpdated(new Date())
@@ -265,13 +303,13 @@ export default function ResourceBrowser() {
   return (
     <div className="flex h-full min-h-0 min-w-0 w-full flex-1">
       {/* Service sidebar */}
-      <ScrollArea className="w-52 border-r bg-card/50">
-        <div className="px-3 py-3 border-b">
+      <ScrollArea className="w-56 border-r bg-card/50">
+        <div className="px-4 py-3 border-b">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Services</h3>
         </div>
         {favoriteSidebarServices.length > 0 && (
           <>
-            <div className="px-3 pt-2 pb-1">
+            <div className="px-4 pt-2 pb-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Favorites</span>
             </div>
             <ul className="py-0.5">
@@ -280,7 +318,7 @@ export default function ResourceBrowser() {
                 const Icon = getServiceIcon(name)
                 return (
                   <li key={name} className="group">
-                    <div className={`flex items-center px-3 py-2 text-sm transition-colors ${
+                    <div className={`flex items-center px-4 py-2 text-sm transition-colors ${
                       service === name
                         ? 'bg-accent text-accent-foreground'
                         : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -308,11 +346,11 @@ export default function ResourceBrowser() {
                 )
               })}
             </ul>
-            <div className="mx-3 border-b" />
+            <div className="mx-4 border-b" />
           </>
         )}
         {favoriteSidebarServices.length > 0 && (
-          <div className="px-3 pt-2 pb-1">
+          <div className="px-4 pt-2 pb-1">
             <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">All Services</span>
           </div>
         )}
@@ -322,7 +360,7 @@ export default function ResourceBrowser() {
             const Icon = getServiceIcon(name)
             return (
               <li key={name} className="group">
-                <div className={`flex items-center px-3 py-2 text-sm transition-colors ${
+                <div className={`flex items-center px-4 py-2 text-sm transition-colors ${
                   service === name
                     ? 'bg-accent text-accent-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -353,7 +391,7 @@ export default function ResourceBrowser() {
       </ScrollArea>
 
       {/* Resource content */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
         {!service && (
           <EmptyState
             icon={FolderOpen}
@@ -597,10 +635,10 @@ export default function ResourceBrowser() {
                                       }
                                       data-row-index={rowIdx}
                                     >
-                                      <TableCell className="text-primary font-mono font-medium text-xs">
+                                      <TableCell className="text-primary font-mono font-medium text-xs pl-4">
                                         {String(item.id ?? i)}
                                       </TableCell>
-                                      <TableCell className="text-muted-foreground text-xs truncate max-w-md">
+                                      <TableCell className="text-muted-foreground text-xs truncate max-w-md pr-4">
                                         {Object.entries(item)
                                           .filter(([k]) => k !== "id")
                                           .slice(0, 4)
@@ -644,7 +682,26 @@ export default function ResourceBrowser() {
                   <SheetTitle>{detail.type} / {detail.id}</SheetTitle>
                   <SheetDescription>{detail.service}</SheetDescription>
                 </SheetHeader>
-                <JsonViewer data={detail.detail} />
+                <Tabs defaultValue="details" className="mt-4">
+                  <TabsList className="w-fit">
+                    <TabsTrigger value="details">Details</TabsTrigger>
+                    {detailTagSupport && <TabsTrigger value="tags">Tags</TabsTrigger>}
+                  </TabsList>
+                  <TabsContent value="details">
+                    <JsonViewer data={detail.detail} />
+                  </TabsContent>
+                  {detailTagSupport && (
+                    <TabsContent value="tags">
+                      <TagsSection
+                        tags={detailTags}
+                        onSave={detailTagSupport.writable ? async (newTags) => {
+                          await updateResourceTags(detail!.service, detail!.type, detail!.id, newTags, activeEndpoint)
+                          setDetailTags(newTags)
+                        } : undefined}
+                      />
+                    </TabsContent>
+                  )}
+                </Tabs>
               </>
             )}
           </SheetContent>
