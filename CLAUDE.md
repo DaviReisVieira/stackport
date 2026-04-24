@@ -37,6 +37,12 @@ Requires a running AWS-compatible emulator (MiniStack on :4566 by default).
 - `routes/resources.py` — `GET /api/resources/{svc}` and `GET /api/resources/{svc}/{type}/{id}` — generic list/detail
 - `routes/s3.py` — `GET /api/s3/buckets`, `/api/s3/buckets/{name}/objects`, `/api/s3/buckets/{name}/objects/{key}` — S3-specific with download support
 
+**Schemas** (`backend/schemas/`):
+- Pydantic request/response models, one module per service: `sqs.py`, `s3.py`, `dynamodb.py`, `tags.py`
+- Route files import schemas — they never define `BaseModel` subclasses inline
+- When adding a new service with write endpoints, create `backend/schemas/<service>.py`
+- Uses `Field(alias="camelCase")` + `populate_by_name: True` for camelCase JSON ↔ snake_case Python
+
 **Key registries in backend:**
 - `SERVICE_REGISTRY` (stats.py) — maps service name → list of `(resource_type, boto3_service, method, response_key)` tuples. 35 services.
 - `DESCRIBE_REGISTRY` (resources.py) — maps `(service, resource_type)` → boto3 describe call for detail views. 19 entries.
@@ -84,10 +90,11 @@ Requires a running AWS-compatible emulator (MiniStack on :4566 by default).
 
 For services that need richer UX than the generic resource table (like S3's file browser):
 
-1. Add backend endpoints in a new `backend/routes/{service}.py`, register in `main.py`
-2. Add fetch functions in `ui/src/lib/api.ts`
-3. Create `ui/src/components/service-views/{Service}Browser.tsx`
-4. Register in `SERVICE_VIEWS` in `ui/src/components/service-views/index.ts`
+1. If the service has write endpoints, add Pydantic request models in `backend/schemas/{service}.py`
+2. Add backend endpoints in a new `backend/routes/{service}.py`, register in `main.py`
+3. Add fetch functions in `ui/src/lib/api.ts` and TypeScript types in `ui/src/lib/types.ts`
+4. Create `ui/src/components/service-views/{Service}Browser.tsx` — for complex views, extract sub-components into `ui/src/components/service-views/{service}/`
+5. Register in `SERVICE_VIEWS` in `ui/src/components/service-views/index.ts`
 
 ResourceBrowser renders `SERVICE_VIEWS[service]` when available, falls back to generic table.
 
