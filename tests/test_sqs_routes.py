@@ -296,9 +296,9 @@ class TestCreateQueue:
         mock_sqs = MagicMock()
         mock_get_client.return_value = mock_sqs
         mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
-        mock_sqs.create_queue.return_value = {
-            "QueueUrl": QUEUE_URL,
-            "QueueArn": "arn:aws:sqs:us-east-1:000:test-queue",
+        mock_sqs.create_queue.return_value = {"QueueUrl": QUEUE_URL}
+        mock_sqs.get_queue_attributes.return_value = {
+            "Attributes": {"QueueArn": "arn:aws:sqs:us-east-1:000:test-queue"}
         }
 
         resp = client.post(
@@ -309,14 +309,17 @@ class TestCreateQueue:
         data = resp.json()
         assert data["queueName"] == "test-queue"
         assert data["queueUrl"] == QUEUE_URL
+        assert data["queueArn"] == "arn:aws:sqs:us-east-1:000:test-queue"
 
     @patch("backend.routes.sqs.get_client")
     def test_create_fifo_queue(self, mock_get_client):
         mock_sqs = MagicMock()
         mock_get_client.return_value = mock_sqs
         mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
-        mock_sqs.create_queue.return_value = {
-            "QueueUrl": "http://localhost:4566/000000000000/orders.fifo",
+        fifo_url = "http://localhost:4566/000000000000/orders.fifo"
+        mock_sqs.create_queue.return_value = {"QueueUrl": fifo_url}
+        mock_sqs.get_queue_attributes.return_value = {
+            "Attributes": {"QueueArn": "arn:aws:sqs:us-east-1:000:orders.fifo"}
         }
 
         resp = client.post(
@@ -332,8 +335,10 @@ class TestCreateQueue:
         mock_sqs = MagicMock()
         mock_get_client.return_value = mock_sqs
         mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
-        mock_sqs.create_queue.return_value = {
-            "QueueUrl": "http://localhost:4566/000000000000/orders.fifo",
+        fifo_url = "http://localhost:4566/000000000000/orders.fifo"
+        mock_sqs.create_queue.return_value = {"QueueUrl": fifo_url}
+        mock_sqs.get_queue_attributes.return_value = {
+            "Attributes": {"QueueArn": "arn:aws:sqs:us-east-1:000:orders.fifo"}
         }
 
         resp = client.post(
@@ -350,6 +355,9 @@ class TestCreateQueue:
         mock_get_client.return_value = mock_sqs
         mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
         mock_sqs.create_queue.return_value = {"QueueUrl": QUEUE_URL}
+        mock_sqs.get_queue_attributes.return_value = {
+            "Attributes": {"QueueArn": "arn:aws:sqs:us-east-1:000:test-queue"}
+        }
 
         resp = client.post(
             "/api/sqs/queues",
@@ -373,6 +381,9 @@ class TestCreateQueue:
         mock_get_client.return_value = mock_sqs
         mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
         mock_sqs.create_queue.return_value = {"QueueUrl": QUEUE_URL}
+        mock_sqs.get_queue_attributes.return_value = {
+            "Attributes": {"QueueArn": "arn:aws:sqs:us-east-1:000:test-queue"}
+        }
 
         resp = client.post(
             "/api/sqs/queues",
@@ -394,6 +405,9 @@ class TestCreateQueue:
         mock_get_client.return_value = mock_sqs
         mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
         mock_sqs.create_queue.return_value = {"QueueUrl": QUEUE_URL}
+        mock_sqs.get_queue_attributes.return_value = {
+            "Attributes": {"QueueArn": "arn:aws:sqs:us-east-1:000:test-queue"}
+        }
 
         resp = client.post(
             "/api/sqs/queues",
@@ -401,6 +415,136 @@ class TestCreateQueue:
         )
         assert resp.status_code == 200
         mock_sqs.tag_queue.assert_called_once()
+
+
+class TestCreateQueueWithDLQ:
+    @patch("backend.routes.sqs.get_client")
+    def test_create_queue_with_dlq_auto_creation(self, mock_get_client):
+        """DLQ auto-creation: creates DLQ, fetches its ARN, sets redrive policy."""
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.exceptions.QueueDoesNotExist = QueueDoesNotExist
+
+        # DLQ does not exist yet
+        mock_sqs.get_queue_url.side_effect = QueueDoesNotExist()
+
+        dlq_url = "http://localhost:4566/000000000000/test-queue-dlq"
+        dlq_arn = "arn:aws:sqs:us-east-1:000:test-queue-dlq"
+        main_url = QUEUE_URL
+        main_arn = "arn:aws:sqs:us-east-1:000:test-queue"
+
+        # First create_queue call is for DLQ, second is for main queue
+        mock_sqs.create_queue.side_effect = [
+            {"QueueUrl": dlq_url},
+            {"QueueUrl": main_url},
+        ]
+        # get_queue_attributes called for DLQ ARN, then main queue ARN
+        mock_sqs.get_queue_attributes.side_effect = [
+            {"Attributes": {"QueueArn": dlq_arn}},
+            {"Attributes": {"QueueArn": main_arn}},
+        ]
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={
+                "queueName": "test-queue",
+                "queueType": "Standard",
+                "dlqEnabled": True,
+                "maxReceiveCount": 3,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["queueName"] == "test-queue"
+        assert data["queueArn"] == main_arn
+        assert data["dlqQueueName"] == "test-queue-dlq"
+
+        # Verify DLQ was created
+        assert mock_sqs.create_queue.call_count == 2
+        dlq_create_kwargs = mock_sqs.create_queue.call_args_list[0][1]
+        assert dlq_create_kwargs["QueueName"] == "test-queue-dlq"
+
+        # Verify redrive policy was set on the main queue
+        main_create_kwargs = mock_sqs.create_queue.call_args_list[1][1]
+        import json
+        redrive = json.loads(main_create_kwargs["Attributes"]["RedrivePolicy"])
+        assert redrive["deadLetterTargetArn"] == dlq_arn
+        assert redrive["maxReceiveCount"] == 3
+
+    @patch("backend.routes.sqs.get_client")
+    def test_create_fifo_queue_with_dlq_auto_creation(self, mock_get_client):
+        """FIFO DLQ auto-creation: DLQ gets -dlq.fifo suffix."""
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.exceptions.QueueDoesNotExist = QueueDoesNotExist
+
+        mock_sqs.get_queue_url.side_effect = QueueDoesNotExist()
+
+        dlq_url = "http://localhost:4566/000000000000/orders-dlq.fifo"
+        dlq_arn = "arn:aws:sqs:us-east-1:000:orders-dlq.fifo"
+        main_url = "http://localhost:4566/000000000000/orders.fifo"
+        main_arn = "arn:aws:sqs:us-east-1:000:orders.fifo"
+
+        mock_sqs.create_queue.side_effect = [
+            {"QueueUrl": dlq_url},
+            {"QueueUrl": main_url},
+        ]
+        mock_sqs.get_queue_attributes.side_effect = [
+            {"Attributes": {"QueueArn": dlq_arn}},
+            {"Attributes": {"QueueArn": main_arn}},
+        ]
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={
+                "queueName": "orders",
+                "queueType": "FIFO",
+                "dlqEnabled": True,
+                "maxReceiveCount": 5,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["queueName"] == "orders.fifo"
+        assert data["dlqQueueName"] == "orders-dlq.fifo"
+
+        dlq_create_kwargs = mock_sqs.create_queue.call_args_list[0][1]
+        assert dlq_create_kwargs["QueueName"] == "orders-dlq.fifo"
+        assert dlq_create_kwargs["Attributes"]["FifoQueue"] == "true"
+
+    @patch("backend.routes.sqs.get_client")
+    def test_create_queue_with_existing_dlq(self, mock_get_client):
+        """When DLQ already exists, reuse it instead of creating."""
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+
+        dlq_url = "http://localhost:4566/000000000000/test-queue-dlq"
+        dlq_arn = "arn:aws:sqs:us-east-1:000:test-queue-dlq"
+        main_arn = "arn:aws:sqs:us-east-1:000:test-queue"
+
+        # DLQ already exists
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": dlq_url}
+
+        mock_sqs.create_queue.return_value = {"QueueUrl": QUEUE_URL}
+        mock_sqs.get_queue_attributes.side_effect = [
+            {"Attributes": {"QueueArn": dlq_arn}},  # DLQ ARN lookup
+            {"Attributes": {"QueueArn": main_arn}},  # Main queue ARN
+        ]
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={
+                "queueName": "test-queue",
+                "dlqEnabled": True,
+                "maxReceiveCount": 10,
+            },
+        )
+        assert resp.status_code == 200
+        # Only one create_queue call (for main queue, not DLQ)
+        assert mock_sqs.create_queue.call_count == 1
 
 
 class TestDeleteQueue:

@@ -23,6 +23,7 @@ import type {
   SQSSendMessageRequest,
   SQSCreateQueueRequest,
   SQSBatchSendRequest,
+  SQSBatchSendMessageEntry,
   SQSUpdateAttributesRequest,
   SQSFavoriteMessage,
 } from '@/lib/types'
@@ -65,6 +66,7 @@ import {
   Square,
   Edit,
   Star,
+  Tag as TagIcon,
 } from 'lucide-react'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
@@ -680,8 +682,6 @@ function EditSettingsSheet({
   const [delaySeconds, setDelaySeconds] = useState(0)
   const [maximumMessageSize, setMaximumMessageSize] = useState(262144)
   const [receiveMessageWaitTime, setReceiveMessageWaitTime] = useState(0)
-  const { activeEndpoint } = useEndpoint()
-  const [deleting, setDeleting] = useState(false)
 
   // DLQ settings
   const [dlqEnabled, setDlqEnabled] = useState(false)
@@ -727,23 +727,16 @@ function EditSettingsSheet({
       }
       await updateSQSQueueAttributes(queue.name, attrsRequest)
 
-      // Update DLQ if needed
-      if (dlqEnabled) {
+      // Update DLQ only if it was changed
+      if (dlqEnabled && dlqTargetArn) {
         await updateSQSRedrivePolicy(queue.name, {
           deadLetterTargetArn: dlqTargetArn,
           maxReceiveCount: maxReceiveCount,
         })
-      } else {
-        // Remove DLQ by passing null
-        await updateSQSRedrivePolicy(queue.name, null)
       }
 
       toast.success('Queue settings updated successfully')
       onSuccess()
-      setDeleting(true)
-      await deleteSQSMessage(queueName, message.receiptHandle, activeEndpoint)
-      toast.success('Message deleted')
-      onDelete()
       onOpenChange(false)
     } catch (error) {
       toast.error(`Failed to update settings: ${error}`)
@@ -959,7 +952,7 @@ function BatchSendSheet({
     }
 
     // Transform and validate each entry
-    const transformedEntries: Array<{ id: string; messageBody: string }> = []
+    const transformedEntries: SQSBatchSendMessageEntry[] = []
 
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i]
@@ -969,19 +962,28 @@ function BatchSendSheet({
         return
       }
 
-      // Always auto-generate id for SQS batch entry (msg-1, msg-2, etc.)
       const id = `msg-${i + 1}`
 
-      // If messageBody exists, use it; otherwise stringify the entire entry as-is
       let messageBody: string
       if ('messageBody' in entry && typeof entry.messageBody === 'string') {
         messageBody = entry.messageBody
       } else {
-        // Stringify entire object - user's id (if any) is preserved inside
         messageBody = JSON.stringify(entry)
       }
 
-      transformedEntries.push({ id, messageBody })
+      const batchEntry: SQSBatchSendMessageEntry = { id, messageBody }
+
+      if ('delaySeconds' in entry && typeof entry.delaySeconds === 'number') {
+        batchEntry.delaySeconds = entry.delaySeconds
+      }
+      if ('messageGroupId' in entry && typeof entry.messageGroupId === 'string') {
+        batchEntry.messageGroupId = entry.messageGroupId
+      }
+      if ('messageDeduplicationId' in entry && typeof entry.messageDeduplicationId === 'string') {
+        batchEntry.messageDeduplicationId = entry.messageDeduplicationId
+      }
+
+      transformedEntries.push(batchEntry)
     }
 
     try {
@@ -1633,17 +1635,15 @@ function MessageViewerSheet({
   onDelete: () => void
 }) {
   const [deleting, setDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const { activeEndpoint } = useEndpoint()
 
   const handleDelete = async () => {
     if (!message) return
 
-    if (!confirm('Delete this message? This action cannot be undone.')) {
-      return
-    }
-
     try {
       setDeleting(true)
-      await deleteSQSMessage(queueName, message.receiptHandle)
+      await deleteSQSMessage(queueName, message.receiptHandle, activeEndpoint)
       toast.success('Message deleted')
       onDelete()
       onOpenChange(false)
@@ -1651,6 +1651,7 @@ function MessageViewerSheet({
       toast.error(`Failed to delete message: ${error}`)
     } finally {
       setDeleting(false)
+      setShowDeleteConfirm(false)
     }
   }
 
@@ -1689,10 +1690,21 @@ function MessageViewerSheet({
                 <Copy className="h-4 w-4 mr-1" />
                 Copy Body
               </Button>
-              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
-                <Trash2 className="h-4 w-4 mr-1" />
-                {deleting ? 'Deleting...' : 'Delete'}
-              </Button>
+              {showDeleteConfirm ? (
+                <>
+                  <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
+                    {deleting ? 'Deleting...' : 'Confirm Delete'}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1988,6 +2000,77 @@ function DeleteConfirmSheet({
   )
 }
 
+function DeleteMessagesConfirmSheet({
+  messageCount,
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  messageCount: number
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => Promise<void>
+}) {
+  const [confirmText, setConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDelete = async () => {
+    if (confirmText !== 'DELETE') {
+      toast.error('Type DELETE to confirm.')
+      return
+    }
+    setDeleting(true)
+    try {
+      await onConfirm()
+      setConfirmText('')
+      onOpenChange(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2 text-destructive">
+            <Trash2 className="h-5 w-5" />
+            Delete {messageCount} Message{messageCount !== 1 ? 's' : ''}
+          </SheetTitle>
+        </SheetHeader>
+
+        <div className="space-y-4 py-4">
+          <p className="text-sm text-muted-foreground">
+            This will permanently delete {messageCount} selected message{messageCount !== 1 ? 's' : ''}.
+            This action cannot be undone.
+          </p>
+
+          <div className="space-y-2">
+            <Label htmlFor="confirm-delete-msgs">Type DELETE to confirm</Label>
+            <Input
+              id="confirm-delete-msgs"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="DELETE"
+              className="font-mono"
+              autoFocus
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <Button variant="destructive" onClick={handleDelete} disabled={deleting || confirmText !== 'DELETE'} className="flex-1">
+            {deleting ? 'Deleting...' : `Delete ${messageCount} Message${messageCount !== 1 ? 's' : ''}`}
+          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={deleting}>
+            Cancel
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
 export function SQSBrowser() {
   const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -2030,6 +2113,7 @@ export function SQSBrowser() {
   // Confirmation sheets state
   const [purgeConfirmSheetOpen, setPurgeConfirmSheetOpen] = useState(false)
   const [deleteConfirmSheetOpen, setDeleteConfirmSheetOpen] = useState(false)
+  const [deleteMessagesConfirmOpen, setDeleteMessagesConfirmOpen] = useState(false)
 
   // Favorites state
   const { favoriteMessages, addFavorite, addFavorites, removeFavorite, updateFavorite } = useSQSFavoriteMessages()
@@ -2137,17 +2221,13 @@ export function SQSBrowser() {
     }
   }
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = () => {
     if (!selectedQueue || selectedMessages.size === 0) return
+    setDeleteMessagesConfirmOpen(true)
+  }
 
-    const confirmText = prompt(
-      `Type "DELETE" to confirm deletion of ${selectedMessages.size} message(s). This action cannot be undone.`
-    )
-
-    if (confirmText !== 'DELETE') {
-      toast.error('Deletion cancelled.')
-      return
-    }
+  const confirmDeleteSelected = async () => {
+    if (!selectedQueue || selectedMessages.size === 0) return
 
     try {
       const receiptHandles = messages
@@ -2157,12 +2237,11 @@ export function SQSBrowser() {
       await deleteSQSMessagesBatch(selectedQueue, { receiptHandles })
       toast.success(`Deleted ${selectedMessages.size} message(s)`)
       setSelectedMessages(new Set())
-      // Remove deleted messages from the list
       setMessages(messages.filter((msg) => !selectedMessages.has(msg.messageId)))
-      // Refresh queue detail
-      fetchSQSQueueDetail(selectedQueue).then(setQueueDetail)
+      fetchSQSQueueDetail(selectedQueue, activeEndpoint).then(setQueueDetail)
     } catch (error) {
       toast.error(`Failed to delete messages: ${error}`)
+      throw error
     }
   }
 
@@ -2804,6 +2883,13 @@ export function SQSBrowser() {
           onConfirm={confirmDelete}
         />
 
+        <DeleteMessagesConfirmSheet
+          messageCount={selectedMessages.size}
+          open={deleteMessagesConfirmOpen}
+          onOpenChange={setDeleteMessagesConfirmOpen}
+          onConfirm={confirmDeleteSelected}
+        />
+
         <DeleteFavoriteConfirmSheet
           favorite={favoriteToDelete}
           open={deleteFavoriteConfirmOpen}
@@ -2929,9 +3015,7 @@ export function SQSBrowser() {
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">All Queues</h3>
           )}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {paginatedQueues
-            .filter((queue) => !favorites.has(queue.name))
-            .map((queue) => {
+          {paginatedQueues.map((queue) => {
           const totalMessages =
             queue.approximateNumberOfMessages +
             queue.approximateNumberOfMessagesNotVisible +

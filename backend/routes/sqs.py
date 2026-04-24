@@ -168,8 +168,6 @@ def create_queue(body: dict[str, Any]) -> dict[str, Any]:
 
             # Check if DLQ already exists
             try:
-                client.get_queue_url(QueueName=dlq_queue_name)
-                # DLQ exists, get its ARN
                 dlq_url_response = client.get_queue_url(QueueName=dlq_queue_name)
                 dlq_url = dlq_url_response["QueueUrl"]
                 dlq_attrs_response = client.get_queue_attributes(
@@ -187,7 +185,10 @@ def create_queue(body: dict[str, Any]) -> dict[str, Any]:
                     QueueName=dlq_queue_name, Attributes=dlq_attributes
                 )
                 dlq_url = dlq_response["QueueUrl"]
-                dlq_arn = dlq_response.get("QueueArn", "")
+                dlq_attrs_response = client.get_queue_attributes(
+                    QueueUrl=dlq_url, AttributeNames=["QueueArn"]
+                )
+                dlq_arn = dlq_attrs_response["Attributes"]["QueueArn"]
 
             # Set redrive policy with auto-created DLQ ARN
             max_receive_count = body.get("maxReceiveCount", 5)
@@ -218,7 +219,10 @@ def create_queue(body: dict[str, Any]) -> dict[str, Any]:
         response = client.create_queue(**create_kwargs)
 
         queue_url = response["QueueUrl"]
-        queue_arn = response.get("QueueArn", "")
+        arn_response = client.get_queue_attributes(
+            QueueUrl=queue_url, AttributeNames=["QueueArn"]
+        )
+        queue_arn = arn_response["Attributes"]["QueueArn"]
 
         # Apply tags if provided
         tags = body.get("tags")
