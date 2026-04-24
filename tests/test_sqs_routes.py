@@ -664,7 +664,7 @@ class TestSendMessageBatch:
             "/api/sqs/queues/test-queue/messages/batch",
             json={"entries": entries},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     @patch("backend.routes.sqs.get_client")
     def test_send_message_batch_partial_failure(self, mock_get_client):
@@ -724,7 +724,7 @@ class TestDeleteMessagesBatch:
             content=json_mod.dumps({"receiptHandles": handles}).encode(),
             headers={"Content-Type": "application/json"},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
 
 class TestUpdateRedrivePolicy:
@@ -757,7 +757,7 @@ class TestUpdateRedrivePolicy:
             "/api/sqs/queues/test-queue/redrive-policy",
             json={"maxReceiveCount": 5},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     @patch("backend.routes.sqs.get_client")
     def test_update_redrive_policy_invalid_count(self, mock_get_client):
@@ -773,4 +773,4 @@ class TestUpdateRedrivePolicy:
                 "maxReceiveCount": 0,
             },
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422

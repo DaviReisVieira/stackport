@@ -3,26 +3,12 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from backend.aws_client import get_client
 from backend.routes.common import get_endpoint_url
+from backend.schemas.tags import BulkDeleteRequest, BulkTagRequest, TagUpdateRequest
 
 router = APIRouter()
-
-
-class TagUpdateRequest(BaseModel):
-    tags: dict[str, str]
-
-
-class BulkTagRequest(BaseModel):
-    action: str  # "add" or "remove"
-    tags: dict[str, str]
-    resources: list[dict[str, str]]  # [{"service": "s3", "type": "buckets", "id": "my-bucket"}, ...]
-
-
-class BulkDeleteRequest(BaseModel):
-    resources: list[dict[str, str]]  # [{"service": "s3", "type": "buckets", "id": "my-bucket"}, ...]
 
 
 # --- Tag getters: (service, type) -> callable(client, resource_id) -> dict ---

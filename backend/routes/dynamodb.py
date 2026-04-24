@@ -2,11 +2,11 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
 
 from backend.aws_client import get_client
 from backend.cache import cache
 from backend.routes.common import get_endpoint_url
+from backend.schemas.dynamodb import QueryRequest
 
 logger = logging.getLogger(__name__)
 
@@ -153,12 +153,6 @@ def scan_table(
         logger.error("Failed to scan table %s: %s", name, e, exc_info=True)
         return {"error": str(e), "items": [], "count": 0}
 
-
-class QueryRequest(BaseModel):
-    partition_key_value: str
-    sort_key_value: str | None = None
-    sort_key_operator: str = "="  # =, <, <=, >, >=, BETWEEN, BEGINS_WITH
-    limit: int = 25
 
 
 @router.post("/tables/{name}/query")
