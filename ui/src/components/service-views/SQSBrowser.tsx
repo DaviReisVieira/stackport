@@ -35,6 +35,15 @@ import { Input } from '@/components/ui/input'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { toast } from 'sonner'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
   Inbox,
   Send,
   Trash2,
@@ -44,10 +53,9 @@ import {
   Copy,
   RefreshCw,
   Plus,
-  Edit,
   Star,
-  CheckSquare,
-  Square,
+  MoreHorizontal,
+  Settings,
 } from 'lucide-react'
 
 // Extracted sub-components
@@ -384,9 +392,9 @@ export function SQSBrowser() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-10 w-full" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-32" />
+            <Skeleton key={i} className="h-[72px]" />
           ))}
         </div>
       </div>
@@ -455,47 +463,52 @@ export function SQSBrowser() {
           { label: queueDetail.name },
         ]} />
 
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-2xl font-bold flex items-center gap-3">
-              <Inbox className="h-6 w-6" />
-              {queueDetail.name}
-              <button
-                onClick={() => toggleFavorite(queueDetail.name)}
-                className="p-1 rounded-md hover:bg-accent transition-colors"
-                title={isFavorite(queueDetail.name) ? 'Remove from favorites' : 'Add to favorites'}
-              >
-                <Star className={`h-5 w-5 ${isFavorite(queueDetail.name) ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} />
-              </button>
-            </h2>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Inbox className="h-6 w-6 flex-shrink-0" />
+            <h2 className="text-2xl font-bold truncate">{queueDetail.name}</h2>
+            <button
+              onClick={() => toggleFavorite(queueDetail.name)}
+              className="p-1 rounded-md hover:bg-accent transition-colors flex-shrink-0"
+              title={isFavorite(queueDetail.name) ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              <Star className={`h-5 w-5 ${isFavorite(queueDetail.name) ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} />
+            </button>
+            <QueueTypeBadge type={queueDetail.type} />
+            <QueueDepthBadge count={totalMessages} />
           </div>
-          <div className="flex gap-2">
-            <Button onClick={() => setSendSheetOpen(true)}>
-              <Send className="h-4 w-4 mr-2" />
-              Send Message
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button size="sm" className="h-8" onClick={() => setSendSheetOpen(true)}>
+              <Send className="h-3.5 w-3.5 mr-1.5" />
+              Send
             </Button>
-            <Button onClick={() => setBatchSendSheetOpen(true)} variant="secondary">
-              <Send className="h-4 w-4 mr-2" />
-              Batch Send
+            <Button size="sm" variant="secondary" className="h-8" onClick={() => setBatchSendSheetOpen(true)}>
+              <Send className="h-3.5 w-3.5 mr-1.5" />
+              Batch
             </Button>
-            <Button onClick={() => setEditSettingsSheetOpen(true)} variant="outline">
-              <Edit className="h-4 w-4 mr-2" />
-              Edit Settings
-            </Button>
-            <Button variant="destructive" onClick={handlePurge}>
-              <AlertTriangle className="h-4 w-4 mr-2" />
-              Purge Queue
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteQueue}>
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Queue
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setEditSettingsSheetOpen(true)}>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Edit Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handlePurge} className="text-destructive focus:text-destructive">
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  Purge Queue
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDeleteQueue} className="text-destructive focus:text-destructive">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Queue
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <QueueTypeBadge type={queueDetail.type} />
-          <QueueDepthBadge count={totalMessages} />
         </div>
 
         <Tabs defaultValue="messages" className="w-full" value={activeTab} onValueChange={setActiveTab}>
@@ -553,43 +566,33 @@ export function SQSBrowser() {
                     description="Click 'Peek Messages' to receive messages from the queue."
                   />
                 ) : (
+                  <div className="rounded-md border">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-10">
-                          <button
-                            onClick={toggleSelectAll}
-                            className="flex items-center justify-center w-full"
+                          <Checkbox
+                            checked={selectedMessages.size === messages.length}
+                            onCheckedChange={toggleSelectAll}
                             aria-label={selectedMessages.size === messages.length ? 'Deselect all' : 'Select all'}
-                          >
-                            {selectedMessages.size === messages.length ? (
-                              <CheckSquare className="h-4 w-4" />
-                            ) : (
-                              <Square className="h-4 w-4" />
-                            )}
-                          </button>
+                          />
                         </TableHead>
-                        <TableHead>Message ID</TableHead>
-                        <TableHead>Body Preview</TableHead>
-                        <TableHead>Receive Count</TableHead>
-                        <TableHead>Sent</TableHead>
-                        <TableHead>Actions</TableHead>
+                        <TableHead className="text-muted-foreground">Message ID</TableHead>
+                        <TableHead className="text-muted-foreground">Body Preview</TableHead>
+                        <TableHead className="text-muted-foreground">Receive Count</TableHead>
+                        <TableHead className="text-muted-foreground">Sent</TableHead>
+                        <TableHead className="text-muted-foreground">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {messages.map((msg) => (
-                        <TableRow key={msg.messageId}>
+                        <TableRow key={msg.messageId} className="hover:bg-accent/50">
                           <TableCell>
-                            <button
-                              onClick={() => toggleMessageSelection(msg.messageId)}
+                            <Checkbox
+                              checked={selectedMessages.has(msg.messageId)}
+                              onCheckedChange={() => toggleMessageSelection(msg.messageId)}
                               aria-label={selectedMessages.has(msg.messageId) ? 'Deselect' : 'Select'}
-                            >
-                              {selectedMessages.has(msg.messageId) ? (
-                                <CheckSquare className="h-4 w-4" />
-                              ) : (
-                                <Square className="h-4 w-4" />
-                              )}
-                            </button>
+                            />
                           </TableCell>
                           <TableCell className="font-mono text-xs">{msg.messageId.slice(0, 16)}...</TableCell>
                           <TableCell className="text-xs max-w-xs truncate">{msg.body.slice(0, 100)}</TableCell>
@@ -601,17 +604,23 @@ export function SQSBrowser() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => handleAddFavorite(msg)}
+                                  >
+                                    <Star className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Save as favorite</TooltipContent>
+                              </Tooltip>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleAddFavorite(msg)}
-                                title="Save as favorite"
-                              >
-                                <Star className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
+                                className="h-8"
                                 onClick={() => {
                                   setSelectedMessage(msg)
                                   setMessageViewerOpen(true)
@@ -625,6 +634,7 @@ export function SQSBrowser() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -655,19 +665,20 @@ export function SQSBrowser() {
                     description="Save messages as favorites to quickly reuse them later."
                   />
                 ) : (
+                  <div className="rounded-md border">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Message Body Preview</TableHead>
-                        <TableHead>Source</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead>Actions</TableHead>
+                        <TableHead className="text-muted-foreground">Name</TableHead>
+                        <TableHead className="text-muted-foreground">Body Preview</TableHead>
+                        <TableHead className="text-muted-foreground">Source</TableHead>
+                        <TableHead className="text-muted-foreground">Created</TableHead>
+                        <TableHead className="text-muted-foreground">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {favoriteMessages.map((fav) => (
-                        <TableRow key={fav.id}>
+                        <TableRow key={fav.id} className="hover:bg-accent/50">
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
                               {fav.name}
@@ -690,6 +701,7 @@ export function SQSBrowser() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                className="h-8"
                                 onClick={() => {
                                   setSelectedFavorite(fav)
                                   setFavoriteViewerOpen(true)
@@ -697,39 +709,55 @@ export function SQSBrowser() {
                               >
                                 View
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleResendFavorite(fav)}
-                                title={`Send to ${selectedQueue || 'queue'}`}
-                              >
-                                <Send className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(fav.messageBody)
-                                  toast.success('Copied message body to clipboard')
-                                }}
-                                title="Copy body"
-                              >
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDeleteFavorite(fav.id)}
-                                title="Delete favorite"
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => handleResendFavorite(fav)}
+                                  >
+                                    <Send className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Send to {selectedQueue}</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(fav.messageBody)
+                                      toast.success('Copied message body to clipboard')
+                                    }}
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Copy body</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => handleDeleteFavorite(fav.id)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Delete favorite</TooltipContent>
+                              </Tooltip>
                             </div>
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -740,27 +768,23 @@ export function SQSBrowser() {
               <CardHeader>
                 <CardTitle className="text-lg">Queue Configuration</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                  <div className="text-muted-foreground">ARN</div>
-                  <div className="font-mono text-xs break-all">{queueDetail.arn}</div>
-                  <div className="text-muted-foreground">URL</div>
-                  <div className="font-mono text-xs break-all">{queueDetail.url}</div>
-                  <div className="text-muted-foreground">Type</div>
-                  <div>{queueDetail.type}</div>
-                  <div className="text-muted-foreground">Visibility Timeout</div>
-                  <div>{formatDuration(queueDetail.visibilityTimeout)}</div>
-                  <div className="text-muted-foreground">Message Retention</div>
-                  <div>{formatDuration(queueDetail.messageRetentionPeriod)}</div>
-                  <div className="text-muted-foreground">Max Message Size</div>
-                  <div>{(queueDetail.maximumMessageSize / 1024).toFixed(0)} KB</div>
-                  <div className="text-muted-foreground">Delay</div>
-                  <div>{queueDetail.delaySeconds}s</div>
-                  <div className="text-muted-foreground">Messages (approx.)</div>
-                  <div>
-                    {queueDetail.approximateNumberOfMessages} visible, {queueDetail.approximateNumberOfMessagesNotVisible} in-flight,{' '}
-                    {queueDetail.approximateNumberOfMessagesDelayed} delayed
-                  </div>
+              <CardContent className="text-sm p-0">
+                <div className="divide-y divide-border/50">
+                  {[
+                    ['ARN', <span key="arn" className="font-mono text-xs break-all">{queueDetail.arn}</span>],
+                    ['URL', <span key="url" className="font-mono text-xs break-all">{queueDetail.url}</span>],
+                    ['Type', queueDetail.type],
+                    ['Visibility Timeout', formatDuration(queueDetail.visibilityTimeout)],
+                    ['Message Retention', formatDuration(queueDetail.messageRetentionPeriod)],
+                    ['Max Message Size', `${(queueDetail.maximumMessageSize / 1024).toFixed(0)} KB`],
+                    ['Delay', `${queueDetail.delaySeconds}s`],
+                    ['Messages', `${queueDetail.approximateNumberOfMessages} visible, ${queueDetail.approximateNumberOfMessagesNotVisible} in-flight, ${queueDetail.approximateNumberOfMessagesDelayed} delayed`],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="flex items-baseline justify-between gap-4 px-6 py-3">
+                      <span className="text-muted-foreground text-sm flex-shrink-0">{label}</span>
+                      <span className="text-sm text-right">{value}</span>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -770,14 +794,16 @@ export function SQSBrowser() {
                 <CardHeader>
                   <CardTitle className="text-lg">Dead-Letter Queue Configuration</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                    <div className="text-muted-foreground">DLQ ARN</div>
-                    <div className="font-mono text-xs break-all">
-                      {queueDetail.redrivePolicy.deadLetterTargetArn}
+                <CardContent className="text-sm p-0">
+                  <div className="divide-y divide-border/50">
+                    <div className="flex items-baseline justify-between gap-4 px-6 py-3">
+                      <span className="text-muted-foreground text-sm flex-shrink-0">DLQ ARN</span>
+                      <span className="font-mono text-xs text-right break-all">{queueDetail.redrivePolicy.deadLetterTargetArn}</span>
                     </div>
-                    <div className="text-muted-foreground">Max Receive Count</div>
-                    <div>{queueDetail.redrivePolicy.maxReceiveCount}</div>
+                    <div className="flex items-baseline justify-between gap-4 px-6 py-3">
+                      <span className="text-muted-foreground text-sm flex-shrink-0">Max Receive Count</span>
+                      <span className="text-sm">{queueDetail.redrivePolicy.maxReceiveCount}</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -788,10 +814,10 @@ export function SQSBrowser() {
                 <CardHeader>
                   <CardTitle className="text-lg">FIFO Settings</CardTitle>
                 </CardHeader>
-                <CardContent className="text-sm">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                    <div className="text-muted-foreground">Content-Based Deduplication</div>
-                    <div>{queueDetail.contentBasedDeduplication ? 'Enabled' : 'Disabled'}</div>
+                <CardContent className="text-sm p-0">
+                  <div className="flex items-baseline justify-between gap-4 px-6 py-3">
+                    <span className="text-muted-foreground text-sm">Content-Based Deduplication</span>
+                    <span className="text-sm">{queueDetail.contentBasedDeduplication ? 'Enabled' : 'Disabled'}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -943,7 +969,7 @@ export function SQSBrowser() {
       {favorites.size > 0 && (
         <div className="space-y-3 mt-6">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Favorites</h3>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3">
             {favoriteQueues.map((queue) => (
               <QueueCard
                 key={queue.name}
@@ -963,7 +989,7 @@ export function SQSBrowser() {
           {favorites.size > 0 && (
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">All Queues</h3>
           )}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3">
           {paginatedQueues.map((queue) => (
             <QueueCard
               key={queue.name}
@@ -971,7 +997,6 @@ export function SQSBrowser() {
               isFavorite={isFavorite(queue.name)}
               onSelect={setSelectedQueue}
               onToggleFavorite={toggleFavorite}
-              showExtendedStats
             />
           ))}
           </div>
