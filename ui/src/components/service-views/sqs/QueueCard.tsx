@@ -1,13 +1,13 @@
 import type { SQSQueue } from '@/lib/types'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
 import { TagCountBadge } from '@/components/TagsSection'
-import { QueueTypeBadge, QueueDepthBadge } from './QueueBadges'
+import { QueueTypeBadge } from './QueueBadges'
 import { formatNumber, formatDuration } from './utils'
 import {
   Inbox,
   AlertTriangle,
   Star,
+  ChevronRight,
 } from 'lucide-react'
 
 export function QueueCard({
@@ -15,13 +15,11 @@ export function QueueCard({
   isFavorite,
   onSelect,
   onToggleFavorite,
-  showExtendedStats = false,
 }: {
   queue: SQSQueue
   isFavorite: boolean
   onSelect: (queueName: string) => void
   onToggleFavorite: (queueName: string) => void
-  showExtendedStats?: boolean
 }) {
   const totalMessages =
     queue.approximateNumberOfMessages +
@@ -30,57 +28,54 @@ export function QueueCard({
 
   return (
     <Card
-      className="cursor-pointer hover:bg-accent/50 transition-colors relative group"
+      className="cursor-pointer hover:bg-accent/50 transition-colors"
       onClick={() => onSelect(queue.name)}
     >
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          onToggleFavorite(queue.name)
-        }}
-        className="absolute top-2 right-2 p-1.5 rounded-md bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-accent"
-        title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-      >
-        <Star className={`h-4 w-4 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} />
-      </button>
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <Inbox className="h-4 w-4" />
-          {queue.name}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center gap-2">
-          <QueueTypeBadge type={queue.type} />
-          <QueueDepthBadge count={totalMessages} />
-          {showExtendedStats && <TagCountBadge count={Object.keys(queue.tags || {}).length} />}
-          {queue.redrivePolicy && (
-            <Badge variant="outline" className="text-xs">
-              <AlertTriangle className="h-3 w-3 mr-1" />
-              DLQ
-            </Badge>
-          )}
-        </div>
-        <div className="space-y-1 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Messages</span>
-            <span>~{formatNumber(queue.approximateNumberOfMessages)}</span>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleFavorite(queue.name)
+              }}
+              className="flex-shrink-0 p-0.5 rounded hover:bg-accent transition-colors"
+              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              <Star className={`h-4 w-4 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} />
+            </button>
+            <Inbox className="h-5 w-5 text-primary flex-shrink-0" />
+            <div className="min-w-0">
+              <div className="font-medium text-sm truncate">{queue.name}</div>
+              <div className="flex items-center gap-2 mt-1">
+                <QueueTypeBadge type={queue.type} />
+                {queue.redrivePolicy && (
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <AlertTriangle className="h-3 w-3" />
+                    DLQ
+                  </span>
+                )}
+                <TagCountBadge count={Object.keys(queue.tags || {}).length} />
+              </div>
+            </div>
           </div>
-          {showExtendedStats && (
-            <>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">In-Flight</span>
-                <span>~{formatNumber(queue.approximateNumberOfMessagesNotVisible)}</span>
+
+          <div className="flex items-center gap-6 flex-shrink-0">
+            <div className="hidden sm:flex items-center gap-6">
+              <div className="text-right">
+                <div className="text-sm font-medium">{formatNumber(totalMessages)}</div>
+                <div className="text-xs text-muted-foreground">messages</div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Delayed</span>
-                <span>~{formatNumber(queue.approximateNumberOfMessagesDelayed)}</span>
+              <div className="text-right">
+                <div className="text-sm font-medium">{formatNumber(queue.approximateNumberOfMessagesNotVisible)}</div>
+                <div className="text-xs text-muted-foreground">in-flight</div>
               </div>
-            </>
-          )}
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Retention</span>
-            <span>{formatDuration(queue.messageRetentionPeriod)}</span>
+              <div className="text-right">
+                <div className="text-sm font-medium">{formatDuration(queue.messageRetentionPeriod)}</div>
+                <div className="text-xs text-muted-foreground">retention</div>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           </div>
         </div>
       </CardContent>
