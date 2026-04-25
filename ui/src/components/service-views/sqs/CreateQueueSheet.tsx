@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createSQSQueue } from '@/lib/api'
 import type { SQSCreateQueueRequest } from '@/lib/types'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -26,7 +27,7 @@ export function CreateQueueSheet({
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
 }) {
-  // Basic settings
+  const { activeEndpoint } = useEndpoint()
   const [queueName, setQueueName] = useState('')
   const [queueType, setQueueType] = useState<'Standard' | 'FIFO'>('Standard')
   const [contentBasedDeduplication, setContentBasedDeduplication] = useState(false)
@@ -79,7 +80,7 @@ export function CreateQueueSheet({
         request.tags = tags
       }
 
-      const response = await createSQSQueue(request)
+      const response = await createSQSQueue(request, activeEndpoint)
       toast.success(`Queue created: ${response.queueName}`)
 
       // Reset form

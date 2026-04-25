@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { updateSQSQueueAttributes, updateSQSRedrivePolicy } from '@/lib/api'
 import type { SQSQueueDetail, SQSUpdateAttributesRequest } from '@/lib/types'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Separator } from '@/components/ui/separator'
@@ -21,6 +22,7 @@ export function EditSettingsSheet({
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
 }) {
+  const { activeEndpoint } = useEndpoint()
   const [visibilityTimeout, setVisibilityTimeout] = useState(30)
   const [messageRetentionPeriod, setMessageRetentionPeriod] = useState(345600)
   const [delaySeconds, setDelaySeconds] = useState(0)
@@ -69,14 +71,14 @@ export function EditSettingsSheet({
         maximumMessageSize,
         receiveMessageWaitTime,
       }
-      await updateSQSQueueAttributes(queue.name, attrsRequest)
+      await updateSQSQueueAttributes(queue.name, attrsRequest, activeEndpoint)
 
       // Update DLQ only if it was changed
       if (dlqEnabled && dlqTargetArn) {
         await updateSQSRedrivePolicy(queue.name, {
           deadLetterTargetArn: dlqTargetArn,
           maxReceiveCount: maxReceiveCount,
-        })
+        }, activeEndpoint)
       }
 
       toast.success('Queue settings updated successfully')

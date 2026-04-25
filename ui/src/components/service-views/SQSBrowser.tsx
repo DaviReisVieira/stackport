@@ -211,7 +211,7 @@ export function SQSBrowser() {
     if (!selectedQueue) return
 
     try {
-      await deleteSQSQueue(selectedQueue)
+      await deleteSQSQueue(selectedQueue, activeEndpoint)
       toast.success(`Queue "${selectedQueue}" deleted successfully`)
       setSelectedQueue(null)
       // Refresh the queue list
@@ -235,7 +235,7 @@ export function SQSBrowser() {
         .filter((msg) => selectedMessages.has(msg.messageId))
         .map((msg) => msg.receiptHandle)
 
-      await deleteSQSMessagesBatch(selectedQueue, { receiptHandles })
+      await deleteSQSMessagesBatch(selectedQueue, { receiptHandles }, activeEndpoint)
       toast.success(`Deleted ${selectedMessages.size} message(s)`)
       setSelectedMessages(new Set())
       setMessages(messages.filter((msg) => !selectedMessages.has(msg.messageId)))
@@ -336,7 +336,7 @@ export function SQSBrowser() {
             : JSON.stringify(entry),
         }))
 
-        const response = await sendSQSMessagesBatch(selectedQueue, { entries: transformedEntries })
+        const response = await sendSQSMessagesBatch(selectedQueue, { entries: transformedEntries }, activeEndpoint)
         if (response.failed.length > 0) {
           toast.error(`Sent ${response.successful.length}, Failed ${response.failed.length}`)
         } else {
@@ -350,10 +350,10 @@ export function SQSBrowser() {
           messageGroupId: favorite.messageGroupId,
           messageDeduplicationId: favorite.messageDeduplicationId,
         }
-        await sendSQSMessage(selectedQueue, request)
+        await sendSQSMessage(selectedQueue, request, activeEndpoint)
         toast.success(`Sent "${favorite.name}" to ${selectedQueue}`)
       }
-      fetchSQSQueueDetail(selectedQueue).then(setQueueDetail)
+      fetchSQSQueueDetail(selectedQueue, activeEndpoint).then(setQueueDetail)
     } catch (error) {
       toast.error(`Failed to send: ${error}`)
     }
@@ -849,8 +849,7 @@ export function SQSBrowser() {
           open={batchSendSheetOpen}
           onOpenChange={setBatchSendSheetOpen}
           onSuccess={() => {
-            // Refresh queue detail
-            fetchSQSQueueDetail(selectedQueue).then(setQueueDetail)
+            fetchSQSQueueDetail(selectedQueue, activeEndpoint).then(setQueueDetail)
           }}
         />
 
@@ -859,8 +858,7 @@ export function SQSBrowser() {
           open={editSettingsSheetOpen}
           onOpenChange={setEditSettingsSheetOpen}
           onSuccess={() => {
-            // Refresh queue detail
-            fetchSQSQueueDetail(selectedQueue).then(setQueueDetail)
+            fetchSQSQueueDetail(selectedQueue, activeEndpoint).then(setQueueDetail)
           }}
         />
 

@@ -350,8 +350,9 @@ export async function purgeSQSQueue(queueName: string, endpoint?: string | null)
   return res.json()
 }
 
-export async function createSQSQueue(request: SQSCreateQueueRequest): Promise<SQSCreateQueueResponse> {
-  const res = await fetch(`${API_BASE}/sqs/queues`, {
+export async function createSQSQueue(request: SQSCreateQueueRequest, endpoint?: string | null): Promise<SQSCreateQueueResponse> {
+  const url = buildUrl('/sqs/queues', endpoint)
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -360,18 +361,19 @@ export async function createSQSQueue(request: SQSCreateQueueRequest): Promise<SQ
   return res.json()
 }
 
-export async function deleteSQSQueue(queueName: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}`, {
-    method: 'DELETE',
-  })
+export async function deleteSQSQueue(queueName: string, endpoint?: string | null): Promise<void> {
+  const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}`, endpoint)
+  const res = await fetch(url, { method: 'DELETE' })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
 }
 
 export async function updateSQSQueueAttributes(
   queueName: string,
-  request: SQSUpdateAttributesRequest
+  request: SQSUpdateAttributesRequest,
+  endpoint?: string | null,
 ): Promise<{ success: boolean; message: string }> {
-  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/attributes`, {
+  const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}/attributes`, endpoint)
+  const res = await fetch(url, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -382,9 +384,11 @@ export async function updateSQSQueueAttributes(
 
 export async function sendSQSMessagesBatch(
   queueName: string,
-  request: SQSBatchSendRequest
+  request: SQSBatchSendRequest,
+  endpoint?: string | null,
 ): Promise<SQSBatchSendResponse> {
-  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/messages/batch`, {
+  const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}/messages/batch`, endpoint)
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -393,8 +397,9 @@ export async function sendSQSMessagesBatch(
   return res.json()
 }
 
-export async function deleteSQSMessagesBatch(queueName: string, request: SQSBatchDeleteRequest): Promise<void> {
-  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/messages/batch`, {
+export async function deleteSQSMessagesBatch(queueName: string, request: SQSBatchDeleteRequest, endpoint?: string | null): Promise<void> {
+  const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}/messages/batch`, endpoint)
+  const res = await fetch(url, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -404,9 +409,11 @@ export async function deleteSQSMessagesBatch(queueName: string, request: SQSBatc
 
 export async function updateSQSRedrivePolicy(
   queueName: string,
-  policy: RedrivePolicy | null
+  policy: RedrivePolicy | null,
+  endpoint?: string | null,
 ): Promise<{ success: boolean; message: string }> {
-  const res = await fetch(`${API_BASE}/sqs/queues/${encodeURIComponent(queueName)}/redrive-policy`, {
+  const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}/redrive-policy`, endpoint)
+  const res = await fetch(url, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(policy || { deadLetterTargetArn: null, maxReceiveCount: null }),

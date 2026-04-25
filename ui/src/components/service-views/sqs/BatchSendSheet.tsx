@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { sendSQSMessagesBatch } from '@/lib/api'
 import type { SQSQueueDetail, SQSBatchSendRequest, SQSBatchSendMessageEntry } from '@/lib/types'
+import { useEndpoint } from '@/hooks/useEndpoint'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
@@ -19,6 +20,7 @@ export function BatchSendSheet({
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
 }) {
+  const { activeEndpoint } = useEndpoint()
   const [jsonInput, setJsonInput] = useState('')
   const [sending, setSending] = useState(false)
 
@@ -120,7 +122,7 @@ export function BatchSendSheet({
     try {
       setSending(true)
       const request: SQSBatchSendRequest = { entries: transformedEntries }
-      const response = await sendSQSMessagesBatch(queue.name, request)
+      const response = await sendSQSMessagesBatch(queue.name, request, activeEndpoint)
 
       if (response.failed.length > 0) {
         toast.error(
