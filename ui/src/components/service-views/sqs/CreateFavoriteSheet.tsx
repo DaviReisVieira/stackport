@@ -37,12 +37,14 @@ export function CreateFavoriteSheet({
   onCreated,
   addFavorite,
   initialData,
+  queueName,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreated: () => void
   addFavorite: (data: AddFavoriteData) => void
   initialData?: CreateFavoriteInitialData
+  queueName?: string | null
 }) {
   const [mode, setMode] = useState<'single' | 'batch'>('single')
 
@@ -124,7 +126,7 @@ export function CreateFavoriteSheet({
         delaySeconds: delaySeconds || undefined,
         messageGroupId: messageGroupId || undefined,
         messageDeduplicationId: messageDeduplicationId || undefined,
-        sourceQueue: initialData?.sourceQueue,
+        sourceQueue: initialData?.sourceQueue || queueName || undefined,
         originalMessageId: initialData?.originalMessageId,
         messageAttributes: initialData?.messageAttributes,
         isBatch: false,
@@ -183,6 +185,7 @@ export function CreateFavoriteSheet({
       addFavorite({
         name: batchName.trim(),
         messageBody: JSON.stringify(entries, null, 2),
+        sourceQueue: queueName || undefined,
         isBatch: true,
       })
       toast.success(`Created batch favorite "${batchName.trim()}"`)

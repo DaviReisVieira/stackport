@@ -123,7 +123,10 @@ export function SQSBrowser() {
   const [deleteMessagesConfirmOpen, setDeleteMessagesConfirmOpen] = useState(false)
 
   // Favorites state
-  const { favoriteMessages, addFavorite, addFavorites, removeFavorite, updateFavorite } = useSQSFavoriteMessages()
+  const { favoriteMessages: allFavoriteMessages, addFavorite, addFavorites, removeFavorite, updateFavorite } = useSQSFavoriteMessages()
+  const favoriteMessages = selectedQueue
+    ? allFavoriteMessages.filter((f) => f.sourceQueue === selectedQueue)
+    : allFavoriteMessages
   const [activeTab, setActiveTab] = useState('messages')
   const [createFavoriteSheetOpen, setCreateFavoriteSheetOpen] = useState(false)
   const [saveFavoriteInitialData, setSaveFavoriteInitialData] = useState<CreateFavoriteInitialData | undefined>(undefined)
@@ -168,6 +171,7 @@ export function SQSBrowser() {
     setLoadingMessages(true)
     try {
       const response = await receiveSQSMessages(selectedQueue, 10, 0, activeEndpoint)
+      setSelectedMessages(new Set())
       setMessages(response.messages)
       if (response.messages.length === 0) {
         toast.info('No messages available. Queue may be empty or try again.')
@@ -868,8 +872,12 @@ export function SQSBrowser() {
           open={messageViewerOpen}
           onOpenChange={setMessageViewerOpen}
           onDelete={() => {
-            // Remove deleted message from list and refresh queue detail
-            setMessages(messages.filter((m) => m.messageId !== selectedMessage?.messageId))
+            if (selectedMessage) {
+              setMessages(messages.filter((m) => m.messageId !== selectedMessage.messageId))
+              const newSelected = new Set(selectedMessages)
+              newSelected.delete(selectedMessage.messageId)
+              setSelectedMessages(newSelected)
+            }
             fetchSQSQueueDetail(selectedQueue, activeEndpoint).then(setQueueDetail)
           }}
         />
@@ -925,6 +933,7 @@ export function SQSBrowser() {
           }}
           addFavorite={addFavorite}
           initialData={saveFavoriteInitialData}
+          queueName={selectedQueue}
         />
 
       </div>
