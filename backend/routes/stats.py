@@ -75,7 +75,10 @@ SERVICE_REGISTRY: dict[str, list[tuple[str, str, str, str]]] = {
         ("crawlers", "glue", "get_crawlers", "Crawlers"),
     ],
     "athena": [("workgroups", "athena", "list_work_groups", "WorkGroups")],
-    "apigateway": [("apis", "apigatewayv2", "get_apis", "Items")],
+    "apigateway": [
+        ("rest_apis", "apigateway", "get_rest_apis", "items"),
+        ("apis", "apigatewayv2", "get_apis", "Items"),
+    ],
     "firehose": [("delivery_streams", "firehose", "list_delivery_streams", "DeliveryStreamNames")],
     "cognito-idp": [("user_pools", "cognito-idp", "list_user_pools", "UserPools")],
     "cognito-identity": [("identity_pools", "cognito-identity", "list_identity_pools", "IdentityPools")],

@@ -356,6 +356,52 @@ def _set_tags_elasticache_cluster(client: Any, resource_id: str, tags: dict[str,
         client.add_tags_to_resource(ResourceName=arn, Tags=tag_list)
 
 
+def _get_tags_cognito_idp_user_pool(client: Any, resource_id: str) -> dict[str, str]:
+    pool = client.describe_user_pool(UserPoolId=resource_id)
+    arn = pool["UserPool"]["Arn"]
+    resp = client.list_tags_for_resource(ResourceArn=arn)
+    return resp.get("Tags", {})
+
+
+def _get_tags_emr_cluster(client: Any, resource_id: str) -> dict[str, str]:
+    resp = client.describe_cluster(ClusterId=resource_id)
+    return {t["Key"]: t["Value"] for t in resp["Cluster"].get("Tags", [])}
+
+
+def _get_tags_apigateway_rest_api(client: Any, resource_id: str) -> dict[str, str]:
+    arn = f"arn:aws:apigateway:{client.meta.region_name}::/restapis/{resource_id}"
+    resp = client.get_tags(resourceArn=arn)
+    return resp.get("tags", {})
+
+
+def _set_tags_cognito_idp_user_pool(client: Any, resource_id: str, tags: dict[str, str]) -> None:
+    pool = client.describe_user_pool(UserPoolId=resource_id)
+    arn = pool["UserPool"]["Arn"]
+    existing = client.list_tags_for_resource(ResourceArn=arn).get("Tags", {})
+    if existing:
+        client.untag_resource(ResourceArn=arn, TagKeys=list(existing.keys()))
+    if tags:
+        client.tag_resource(ResourceArn=arn, Tags=tags)
+
+
+def _set_tags_emr_cluster(client: Any, resource_id: str, tags: dict[str, str]) -> None:
+    existing = _get_tags_emr_cluster(client, resource_id)
+    if existing:
+        client.remove_tags(ResourceId=resource_id, TagKeys=list(existing.keys()))
+    if tags:
+        tag_list = [{"Key": k, "Value": v} for k, v in tags.items()]
+        client.add_tags(ResourceId=resource_id, Tags=tag_list)
+
+
+def _set_tags_apigateway_rest_api(client: Any, resource_id: str, tags: dict[str, str]) -> None:
+    arn = f"arn:aws:apigateway:{client.meta.region_name}::/restapis/{resource_id}"
+    existing = client.get_tags(resourceArn=arn).get("tags", {})
+    if existing:
+        client.untag_resource(resourceArn=arn, tagKeys=list(existing.keys()))
+    if tags:
+        client.tag_resource(resourceArn=arn, tags=tags)
+
+
 # --- Registries ---
 
 TAG_GETTER_REGISTRY: dict[tuple[str, str], tuple[str, Any]] = {
@@ -380,6 +426,9 @@ TAG_GETTER_REGISTRY: dict[tuple[str, str], tuple[str, Any]] = {
     ("ssm", "parameters"): ("ssm", _get_tags_ssm_parameter),
     ("elasticloadbalancing", "load_balancers"): ("elbv2", _get_tags_elbv2_load_balancer),
     ("elasticache", "cache_clusters"): ("elasticache", _get_tags_elasticache_cluster),
+    ("cognito-idp", "user_pools"): ("cognito-idp", _get_tags_cognito_idp_user_pool),
+    ("elasticmapreduce", "clusters"): ("emr", _get_tags_emr_cluster),
+    ("apigateway", "rest_apis"): ("apigateway", _get_tags_apigateway_rest_api),
 }
 
 TAG_SETTER_REGISTRY: dict[tuple[str, str], tuple[str, Any]] = {
@@ -403,6 +452,9 @@ TAG_SETTER_REGISTRY: dict[tuple[str, str], tuple[str, Any]] = {
     ("ssm", "parameters"): ("ssm", _set_tags_ssm_parameter),
     ("elasticloadbalancing", "load_balancers"): ("elbv2", _set_tags_elbv2_load_balancer),
     ("elasticache", "cache_clusters"): ("elasticache", _set_tags_elasticache_cluster),
+    ("cognito-idp", "user_pools"): ("cognito-idp", _set_tags_cognito_idp_user_pool),
+    ("elasticmapreduce", "clusters"): ("emr", _set_tags_emr_cluster),
+    ("apigateway", "rest_apis"): ("apigateway", _set_tags_apigateway_rest_api),
 }
 
 # Delete registry: (service, type) -> (boto3_service, callable(client, resource_id))
