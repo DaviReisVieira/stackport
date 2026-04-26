@@ -88,6 +88,26 @@ class TestReadOnlyMiddleware:
             # Should NOT be blocked by middleware
             assert resp.status_code != 403
 
+    def test_dynamodb_item_write_post_blocked_when_writes_disabled(self):
+        """POST to item write paths must be blocked (not whitelisted like /query)."""
+        with patch("backend.main.STACKPORT_ALLOW_WRITES", False):
+            from backend.main import app
+
+            client = TestClient(app, raise_server_exceptions=False)
+
+            resp = client.post(
+                "/api/dynamodb/tables/t/items",
+                json={"item": {"pk": {"S": "a"}}, "item_format": "dynamodb"},
+            )
+            assert resp.status_code == 403
+            assert "disabled" in resp.json()["detail"].lower()
+
+            resp = client.post(
+                "/api/dynamodb/tables/t/items/batch",
+                json={"requests": []},
+            )
+            assert resp.status_code == 403
+
     def test_writes_allowed_when_enabled(self):
         """All write operations work when STACKPORT_ALLOW_WRITES=true."""
         with patch("backend.main.STACKPORT_ALLOW_WRITES", True):

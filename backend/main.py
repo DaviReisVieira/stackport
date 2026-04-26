@@ -58,11 +58,14 @@ class ReadOnlyMiddleware(BaseHTTPMiddleware):
 
     WRITE_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 
-    # POST endpoints that are read-only (query/invoke operations)
-    READ_ONLY_POST_PATTERNS = (
-        "/api/dynamodb/tables/",  # /tables/{name}/query
-        "/api/lambda/functions/",  # /functions/{name}/invoke
-    )
+    @staticmethod
+    def _is_read_only_post(path: str) -> bool:
+        """POST routes that are reads (not writes). Must not use path prefixes alone — e.g. item CRUD also lives under /api/dynamodb/tables/."""
+        if path.startswith("/api/dynamodb/tables/") and path.endswith("/query"):
+            return True
+        if path.startswith("/api/lambda/functions/") and path.endswith("/invoke"):
+            return True
+        return False
 
     async def dispatch(self, request: Request, call_next):
         if STACKPORT_ALLOW_WRITES:
@@ -74,10 +77,8 @@ class ReadOnlyMiddleware(BaseHTTPMiddleware):
 
         # Allow read-only POST operations (query, invoke)
         path = request.url.path
-        if request.method == "POST":
-            if any(path.startswith(p) for p in self.READ_ONLY_POST_PATTERNS):
-                # These are read operations that happen to use POST
-                return await call_next(request)
+        if request.method == "POST" and self._is_read_only_post(path):
+            return await call_next(request)
 
         # Block all write operations
         return JSONResponse(
