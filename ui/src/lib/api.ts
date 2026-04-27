@@ -22,6 +22,10 @@ import type {
   DynamoDBScanResponse,
   DynamoDBQueryRequest,
   DynamoDBQueryResponse,
+  DynamoDBItem,
+  DynamoDBItemFormat,
+  DynamoDBWriteResponse,
+  DynamoDBBatchOperation,
   LambdaFunction,
   LambdaFunctionDetail,
   LambdaInvokeRequest,
@@ -261,6 +265,80 @@ export async function queryDynamoDBTable(name: string, request: DynamoDBQueryReq
   })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()
+}
+
+async function parseDynamoDBErrorResponse(res: Response, fallback: string): Promise<never> {
+  try {
+    const j = (await res.json()) as { detail?: unknown }
+    if (typeof j.detail === 'string') throw new Error(`${res.status}: ${j.detail}`)
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith(`${res.status}:`)) throw e
+  }
+  throw new Error(fallback)
+}
+
+export async function putDynamoDBItem(
+  name: string,
+  item: DynamoDBItem,
+  itemFormat: DynamoDBItemFormat = 'dynamodb',
+  endpoint?: string | null,
+  method: 'POST' | 'PUT' = 'POST',
+): Promise<DynamoDBWriteResponse> {
+  const url = buildUrl(`/dynamodb/tables/${encodeURIComponent(name)}/items`, endpoint)
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ item, item_format: itemFormat }),
+  })
+  if (!res.ok) {
+    await parseDynamoDBErrorResponse(res, `${res.status}: ${res.statusText}`)
+  }
+  return res.json() as Promise<DynamoDBWriteResponse>
+}
+
+export async function updateDynamoDBItem(
+  name: string,
+  item: DynamoDBItem,
+  itemFormat: DynamoDBItemFormat = 'dynamodb',
+  endpoint?: string | null,
+): Promise<DynamoDBWriteResponse> {
+  return putDynamoDBItem(name, item, itemFormat, endpoint, 'PUT')
+}
+
+export async function deleteDynamoDBItem(
+  name: string,
+  key: DynamoDBItem,
+  itemFormat: DynamoDBItemFormat = 'dynamodb',
+  endpoint?: string | null,
+): Promise<DynamoDBWriteResponse> {
+  const url = buildUrl(`/dynamodb/tables/${encodeURIComponent(name)}/items`, endpoint)
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, item_format: itemFormat }),
+  })
+  if (!res.ok) {
+    await parseDynamoDBErrorResponse(res, `${res.status}: ${res.statusText}`)
+  }
+  return res.json() as Promise<DynamoDBWriteResponse>
+}
+
+export async function batchWriteDynamoDBItems(
+  name: string,
+  operations: DynamoDBBatchOperation[],
+  itemFormat: DynamoDBItemFormat = 'dynamodb',
+  endpoint?: string | null,
+): Promise<DynamoDBWriteResponse> {
+  const url = buildUrl(`/dynamodb/tables/${encodeURIComponent(name)}/items/batch`, endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ item_format: itemFormat, operations }),
+  })
+  if (!res.ok) {
+    await parseDynamoDBErrorResponse(res, `${res.status}: ${res.statusText}`)
+  }
+  return res.json() as Promise<DynamoDBWriteResponse>
 }
 
 // --- Lambda ---

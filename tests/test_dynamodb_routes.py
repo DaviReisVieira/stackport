@@ -253,3 +253,157 @@ class TestQueryTable:
         # Verify the query used begins_with
         call_kwargs = mock_ddb.query.call_args[1]
         assert "begins_with" in call_kwargs["KeyConditionExpression"]
+
+
+class TestItemWrites:
+    @patch("backend.routes.dynamodb.get_client")
+    def test_put_item_dynamodb(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        mock_ddb.describe_table.return_value = {
+            "Table": {
+                "KeySchema": [{"AttributeName": "pk", "KeyType": "HASH"}],
+                "AttributeDefinitions": [{"AttributeName": "pk", "AttributeType": "S"}],
+            }
+        }
+
+        resp = client.put(
+            "/api/dynamodb/tables/t1/items",
+            json={"item": {"pk": {"S": "a"}, "name": {"S": "X"}}, "item_format": "dynamodb"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        mock_ddb.put_item.assert_called_once()
+        call_kw = mock_ddb.put_item.call_args[1]
+        assert call_kw["TableName"] == "t1"
+        assert call_kw["Item"]["pk"]["S"] == "a"
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_put_item_plain(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        mock_ddb.describe_table.return_value = {
+            "Table": {
+                "KeySchema": [{"AttributeName": "pk", "KeyType": "HASH"}],
+                "AttributeDefinitions": [{"AttributeName": "pk", "AttributeType": "S"}],
+            }
+        }
+
+        resp = client.post(
+            "/api/dynamodb/tables/t1/items",
+            json={"item": {"pk": "hello", "n": 42}, "item_format": "plain"},
+        )
+        assert resp.status_code == 200
+        it = mock_ddb.put_item.call_args[1]["Item"]
+        assert it["pk"]["S"] == "hello"
+        assert it["n"]["N"] == "42"
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_put_item_missing_key_returns_400(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        mock_ddb.describe_table.return_value = {
+            "Table": {
+                "KeySchema": [
+                    {"AttributeName": "pk", "KeyType": "HASH"},
+                    {"AttributeName": "sk", "KeyType": "RANGE"},
+                ],
+                "AttributeDefinitions": [
+                    {"AttributeName": "pk", "AttributeType": "S"},
+                    {"AttributeName": "sk", "AttributeType": "S"},
+                ],
+            }
+        }
+
+        resp = client.post(
+            "/api/dynamodb/tables/t1/items",
+            json={"item": {"pk": {"S": "a"}}, "item_format": "dynamodb"},
+        )
+        assert resp.status_code == 400
+        assert "sort" in resp.json()["detail"].lower() or "sk" in resp.json()["detail"].lower()
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_delete_item(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        mock_ddb.describe_table.return_value = {
+            "Table": {
+                "KeySchema": [{"AttributeName": "pk", "KeyType": "HASH"}],
+                "AttributeDefinitions": [{"AttributeName": "pk", "AttributeType": "S"}],
+            }
+        }
+
+        resp = client.request(
+            "DELETE",
+            "/api/dynamodb/tables/t1/items",
+            json={"key": {"pk": {"S": "a"}}, "item_format": "dynamodb"},
+        )
+        assert resp.status_code == 200
+        call_kw = mock_ddb.delete_item.call_args[1]
+        assert call_kw["Key"]["pk"]["S"] == "a"
+        assert call_kw["TableName"] == "t1"
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_batch_write(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        mock_ddb.describe_table.return_value = {
+            "Table": {
+                "KeySchema": [{"AttributeName": "pk", "KeyType": "HASH"}],
+                "AttributeDefinitions": [{"AttributeName": "pk", "AttributeType": "S"}],
+            }
+        }
+        mock_ddb.batch_write_item.return_value = {"UnprocessedItems": {}}
+
+        resp = client.post(
+            "/api/dynamodb/tables/t1/items/batch",
+            json={
+                "item_format": "dynamodb",
+                "operations": [
+                    {"op": "put", "item": {"pk": {"S": "1"}}},
+                    {"op": "delete", "key": {"pk": {"S": "2"}}},
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        req = mock_ddb.batch_write_item.call_args[1]["RequestItems"]
+        assert "t1" in req
+        assert len(req["t1"]) == 2
+        assert "PutRequest" in req["t1"][0]
+        assert "DeleteRequest" in req["t1"][1]
+
+    @patch("backend.routes.dynamodb.cache.delete")
+    @patch("backend.routes.dynamodb.get_client")
+    def test_batch_write_partial_invalidates_cache(self, mock_get_client, mock_cache_delete):
+        """Cache must be invalidated even when some items are unprocessed,
+        because items NOT listed in UnprocessedItems were already written."""
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        mock_ddb.describe_table.return_value = {
+            "Table": {
+                "KeySchema": [{"AttributeName": "pk", "KeyType": "HASH"}],
+                "AttributeDefinitions": [{"AttributeName": "pk", "AttributeType": "S"}],
+            }
+        }
+        unprocessed = {"t1": [{"PutRequest": {"Item": {"pk": {"S": "1"}}}}]}
+        mock_ddb.batch_write_item.return_value = {"UnprocessedItems": unprocessed}
+
+        resp = client.post(
+            "/api/dynamodb/tables/t1/items/batch",
+            json={
+                "item_format": "dynamodb",
+                "operations": [
+                    {"op": "put", "item": {"pk": {"S": "1"}}},
+                    {"op": "put", "item": {"pk": {"S": "2"}}},
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["unprocessed"] == unprocessed
+        assert "message" in body
+
+        cache_keys = [c.args[0] for c in mock_cache_delete.call_args_list]
+        assert any(k.endswith(":dynamodb:item_count:t1") for k in cache_keys), (
+            f"expected item_count cache invalidation, got calls: {cache_keys}"
+        )

@@ -1,5 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fetchDynamoDBTables, fetchDynamoDBTable, fetchDynamoDBItems, queryDynamoDBTable } from '@/lib/api'
+import {
+  batchWriteDynamoDBItems,
+  deleteDynamoDBItem,
+  fetchDynamoDBTable,
+  fetchDynamoDBItems,
+  fetchDynamoDBTables,
+  putDynamoDBItem,
+  queryDynamoDBTable,
+  updateDynamoDBItem,
+} from '@/lib/api'
 
 const mockFetch = vi.fn()
 global.fetch = mockFetch
@@ -20,6 +29,7 @@ function mockError(status: number) {
     ok: false,
     status,
     statusText: 'Error',
+    json: () => Promise.resolve({}),
   })
 }
 
@@ -111,5 +121,66 @@ describe('queryDynamoDBTable', () => {
     await expect(
       queryDynamoDBTable('users', { partition_key_value: 'test' })
     ).rejects.toThrow('400')
+  })
+})
+
+describe('putDynamoDBItem / updateDynamoDBItem / deleteDynamoDBItem / batchWriteDynamoDBItems', () => {
+  it('putDynamoDBItem uses POST and JSON body', async () => {
+    mockOk({ ok: true, table: 't' })
+    await putDynamoDBItem('t', { pk: { S: 'a' } }, 'dynamodb')
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/dynamodb/tables/t/items',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ item: { pk: { S: 'a' } }, item_format: 'dynamodb' }),
+      })
+    )
+  })
+
+  it('updateDynamoDBItem uses PUT', async () => {
+    mockOk({ ok: true, table: 't' })
+    await updateDynamoDBItem('t', { pk: { S: 'a' } }, 'dynamodb')
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/dynamodb/tables/t/items',
+      expect.objectContaining({ method: 'PUT' })
+    )
+  })
+
+  it('deleteDynamoDBItem sends DELETE with key body', async () => {
+    mockOk({ ok: true, table: 't' })
+    await deleteDynamoDBItem('t', { pk: { S: 'a' } })
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/dynamodb/tables/t/items',
+      expect.objectContaining({
+        method: 'DELETE',
+        body: JSON.stringify({ key: { pk: { S: 'a' } }, item_format: 'dynamodb' }),
+      })
+    )
+  })
+
+  it('batchWriteDynamoDBItems posts to batch path', async () => {
+    mockOk({ ok: true, table: 't' })
+    const ops = [
+      { op: 'put' as const, item: { pk: { S: '1' } } },
+      { op: 'delete' as const, key: { pk: { S: '2' } } },
+    ]
+    await batchWriteDynamoDBItems('t', ops)
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/dynamodb/tables/t/items/batch',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ item_format: 'dynamodb', operations: ops }),
+      })
+    )
+  })
+
+  it('batchWriteDynamoDBItems forwards unprocessed items so callers can warn', async () => {
+    const unprocessed = { t: [{ PutRequest: { Item: { pk: { S: '1' } } } }] }
+    mockOk({ ok: true, table: 't', unprocessed, message: 'partial' })
+    const resp = await batchWriteDynamoDBItems('t', [
+      { op: 'put' as const, item: { pk: { S: '1' } } },
+    ])
+    expect(resp.unprocessed).toEqual(unprocessed)
+    expect(resp.message).toBe('partial')
   })
 })
