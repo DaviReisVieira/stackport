@@ -174,6 +174,19 @@ export interface DynamoDBQueryResponse {
   scanned_count: number
 }
 
+export type DynamoDBItemFormat = 'dynamodb' | 'plain'
+
+export interface DynamoDBWriteResponse {
+  ok: boolean
+  table: string
+  unprocessed?: unknown
+  message?: string
+}
+
+export type DynamoDBBatchOperation =
+  | { op: 'put'; item: DynamoDBItem }
+  | { op: 'delete'; key: DynamoDBItem }
+
 export interface LambdaFunction {
   FunctionName: string
   FunctionArn: string

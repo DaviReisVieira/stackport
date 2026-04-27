@@ -1,14 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
+  batchWriteDynamoDBItems,
+  deleteDynamoDBItem,
   fetchDynamoDBTables,
   fetchDynamoDBTable,
   fetchDynamoDBItems,
+  putDynamoDBItem,
   queryDynamoDBTable,
+  updateDynamoDBItem,
   fetchResourceTags,
   updateResourceTags,
 } from '@/lib/api'
 import { useEndpoint } from '@/hooks/useEndpoint'
+import { useHealth } from '@/hooks/useHealth'
+import {
+  buildDefaultPlainItem,
+  countUnprocessed,
+  dynamoItemToPlainMap,
+  extractKeyDynamo,
+  plainItemToDynamoMap,
+} from '@/lib/dynamodb-marshal'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import type {
   DynamoDBTable,
@@ -16,10 +28,21 @@ import type {
   DynamoDBItem,
   DynamoDBScanResponse,
 } from '@/lib/types'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -44,6 +67,10 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  Pencil,
+  Trash2,
+  Plus,
+  Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -153,6 +180,8 @@ function PaginationBar({
 
 export function DynamoDBBrowser() {
   const { activeEndpoint } = useEndpoint()
+  const { data: health } = useHealth()
+  const writesEnabled = health?.writes_enabled ?? true
   const [searchParams, setSearchParams] = useSearchParams()
   const tablesFetcher = useCallback(() => fetchDynamoDBTables(activeEndpoint), [activeEndpoint])
   const { data: tablesData, loading: tablesLoading, refresh: refreshTables } = useFetch<{ tables: DynamoDBTable[] }>(tablesFetcher, 10000)
@@ -185,6 +214,15 @@ export function DynamoDBBrowser() {
   const [querySortKeyOp, setQuerySortKeyOp] = useState('=')
   const [tableTags, setTableTags] = useState<Record<string, string>>({})
 
+  const [itemEditorOpen, setItemEditorOpen] = useState(false)
+  const [itemEditorMode, setItemEditorMode] = useState<'create' | 'edit'>('create')
+  const [itemEditorText, setItemEditorText] = useState('')
+  const [itemView, setItemView] = useState<'plain' | 'dynamodb'>('plain')
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
+
   useEffect(() => {
     if (!selectedTable) {
       setTableDetail(null)
@@ -199,6 +237,10 @@ export function DynamoDBBrowser() {
       .then(res => setTableTags(res.tags))
       .catch(() => setTableTags({}))
   }, [selectedTable, activeEndpoint])
+
+  useEffect(() => {
+    setSelectedRows(new Set())
+  }, [itemsData])
 
   useEffect(() => {
     if (!selectedTable) return
@@ -266,6 +308,203 @@ export function DynamoDBBrowser() {
     setItemDetail(item)
   }
 
+  const reloadCurrentItems = async () => {
+    if (!selectedTable) return
+    if (mode === 'query' && queryPartitionKey) {
+      setLoadingItems(true)
+      try {
+        const data = await queryDynamoDBTable(
+          selectedTable,
+          {
+            partition_key_value: queryPartitionKey,
+            sort_key_value: querySortKey || null,
+            sort_key_operator: querySortKeyOp,
+            limit: pageSize,
+          },
+          activeEndpoint
+        )
+        setItemsData({ ...data, next_token: null })
+      } catch {
+        toast.error('Refresh failed')
+      } finally {
+        setLoadingItems(false)
+      }
+    } else {
+      await loadItems()
+    }
+  }
+
+  const openCreateItem = () => {
+    if (!tableDetail?.partition_key) {
+      toast.error('Table key schema not loaded')
+      return
+    }
+    setItemEditorMode('create')
+    setItemView('plain')
+    const def = buildDefaultPlainItem(
+      tableDetail.partition_key,
+      tableDetail.sort_key,
+      tableDetail.partition_key_type,
+      tableDetail.sort_key_type
+    )
+    setItemEditorText(JSON.stringify(def, null, 2))
+    setItemEditorOpen(true)
+  }
+
+  const openEditItem = (item: DynamoDBItem) => {
+    setItemEditorMode('edit')
+    setItemView('dynamodb')
+    setItemEditorText(JSON.stringify(item, null, 2))
+    setItemEditorOpen(true)
+  }
+
+  const switchItemView = (next: 'plain' | 'dynamodb') => {
+    if (next === itemView) return
+    try {
+      const parsed = JSON.parse(itemEditorText) as unknown
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        toast.error('Item must be a JSON object')
+        return
+      }
+      if (next === 'dynamodb') {
+        const plain =
+          itemView === 'plain'
+            ? (parsed as Record<string, unknown>)
+            : dynamoItemToPlainMap(parsed as DynamoDBItem)
+        setItemEditorText(JSON.stringify(plainItemToDynamoMap(plain), null, 2))
+      } else {
+        const ddb =
+          itemView === 'dynamodb' ? (parsed as DynamoDBItem) : plainItemToDynamoMap(parsed as Record<string, unknown>)
+        setItemEditorText(JSON.stringify(dynamoItemToPlainMap(ddb), null, 2))
+      }
+      setItemView(next)
+    } catch {
+      toast.error('Invalid JSON')
+    }
+  }
+
+  const saveItemDialog = async () => {
+    if (!selectedTable) return
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(itemEditorText)
+    } catch {
+      toast.error('Invalid JSON')
+      return
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      toast.error('Item must be a JSON object')
+      return
+    }
+    const fmt = itemView === 'plain' ? 'plain' : 'dynamodb'
+    const payload = parsed as DynamoDBItem
+    try {
+      if (itemEditorMode === 'create') {
+        await putDynamoDBItem(selectedTable, payload, fmt, activeEndpoint, 'POST')
+      } else {
+        await updateDynamoDBItem(selectedTable, payload, fmt, activeEndpoint)
+      }
+      toast.success('Item saved')
+      setItemEditorOpen(false)
+      setItemDetail(null)
+      await reloadCurrentItems()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Save failed')
+    }
+  }
+
+  const deleteItemByKey = async (item: DynamoDBItem) => {
+    if (!selectedTable || !tableDetail?.partition_key) return
+    if (!window.confirm('Delete this item? This cannot be undone.')) return
+    const key = extractKeyDynamo(item, tableDetail.partition_key, tableDetail.sort_key)
+    try {
+      await deleteDynamoDBItem(selectedTable, key, 'dynamodb', activeEndpoint)
+      toast.success('Item deleted')
+      setItemDetail(null)
+      await reloadCurrentItems()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed')
+    }
+  }
+
+  const runImport = async () => {
+    if (!selectedTable) return
+    let data: unknown
+    try {
+      data = JSON.parse(importText)
+    } catch {
+      toast.error('Invalid JSON')
+      return
+    }
+    if (!Array.isArray(data)) {
+      toast.error('Expected a JSON array of objects')
+      return
+    }
+    const rows = data as Record<string, unknown>[]
+    try {
+      let unprocessedTotal = 0
+      for (let i = 0; i < rows.length; i += 25) {
+        const chunk = rows.slice(i, i + 25)
+        const operations = chunk.map((obj) => ({ op: 'put' as const, item: obj as DynamoDBItem }))
+        const resp = await batchWriteDynamoDBItems(selectedTable, operations, 'plain', activeEndpoint)
+        unprocessedTotal += countUnprocessed(resp, selectedTable)
+      }
+      if (unprocessedTotal > 0) {
+        const written = rows.length - unprocessedTotal
+        toast.warning(
+          `Imported ${written} of ${rows.length} item(s); ${unprocessedTotal} not processed — retry needed`
+        )
+      } else {
+        toast.success(`Imported ${rows.length} item(s)`)
+      }
+      setImportOpen(false)
+      setImportText('')
+      await reloadCurrentItems()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Import failed')
+    }
+  }
+
+  const runBulkDelete = async () => {
+    if (!selectedTable || !tableDetail?.partition_key) return
+    const list = itemsData?.items ?? []
+    const idxs = Array.from(selectedRows).sort((a, b) => a - b)
+    const ops: { op: 'delete'; key: DynamoDBItem }[] = idxs.map((i) => {
+      const it = list[i]!
+      return {
+        op: 'delete' as const,
+        key: extractKeyDynamo(it, tableDetail.partition_key!, tableDetail.sort_key),
+      }
+    })
+    try {
+      let unprocessedTotal = 0
+      for (let i = 0; i < ops.length; i += 25) {
+        const chunk = ops.slice(i, i + 25)
+        const resp = await batchWriteDynamoDBItems(
+          selectedTable,
+          chunk.map((o) => ({ op: 'delete' as const, key: o.key })),
+          'dynamodb',
+          activeEndpoint
+        )
+        unprocessedTotal += countUnprocessed(resp, selectedTable)
+      }
+      if (unprocessedTotal > 0) {
+        const deleted = ops.length - unprocessedTotal
+        toast.warning(
+          `Deleted ${deleted} of ${ops.length} item(s); ${unprocessedTotal} not processed — retry needed`
+        )
+      } else {
+        toast.success(`Deleted ${ops.length} item(s)`)
+      }
+      setBulkDeleteOpen(false)
+      setSelectedRows(new Set())
+      setItemDetail(null)
+      await reloadCurrentItems()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Bulk delete failed')
+    }
+  }
+
   const tables = tablesData?.tables ?? []
   const filteredTables = tableSearch
     ? tables.filter((t) => t.name.toLowerCase().includes(tableSearch.toLowerCase()))
@@ -283,20 +522,26 @@ export function DynamoDBBrowser() {
   if (!selectedTable) {
     if (tablesLoading) {
       return (
-        <div className="space-y-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 w-full" />
-          ))}
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-auto p-4">
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-24 w-full" />
+            ))}
+          </div>
         </div>
       )
     }
 
     if (tables.length === 0) {
-      return <EmptyState icon={Database} title="No DynamoDB tables" description="Create a table to see it here." />
+      return (
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col items-center justify-center p-4">
+          <EmptyState icon={Database} title="No DynamoDB tables" description="Create a table to see it here." />
+        </div>
+      )
     }
 
     return (
-      <div className="space-y-4">
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-auto p-4">
         <Breadcrumb segments={[createHomeSegment(), { label: 'DynamoDB', icon: getServiceIcon('dynamodb') }]} />
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -415,8 +660,8 @@ export function DynamoDBBrowser() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden p-4 text-card-foreground">
+      <div className="flex shrink-0 items-center gap-2">
         <Breadcrumb segments={[
           createHomeSegment(),
           { label: 'DynamoDB', href: '/resources/dynamodb', icon: getServiceIcon('dynamodb') },
@@ -445,38 +690,77 @@ export function DynamoDBBrowser() {
         )}
       </div>
 
-      <Tabs defaultValue="items" className="w-full">
-        <TabsList>
+      <Tabs defaultValue="items" className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3">
+        <TabsList className="h-9 w-fit shrink-0">
           <TabsTrigger value="items">Items</TabsTrigger>
           <TabsTrigger value="tags">Tags</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="items" className="space-y-4">
-      <Card>
-        <CardHeader className="p-4 pb-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Select value={mode} onValueChange={(v) => setMode(v as 'scan' | 'query')}>
-                <SelectTrigger className="w-[120px] h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="scan">Scan</SelectItem>
-                  <SelectItem value="query">Query</SelectItem>
-                </SelectContent>
-              </Select>
-              {itemsData && (
-                <span className="text-xs text-muted-foreground">
-                  {itemsData.count} items (scanned {itemsData.scanned_count})
-                </span>
-              )}
-              {items.length > 0 && <ExportDropdown service="dynamodb" resourceType="items" data={items as unknown as Record<string, unknown>[]} />}
+        <TabsContent
+          value="items"
+          className="mt-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden focus-visible:outline-none data-[state=active]:flex data-[state=inactive]:hidden"
+        >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-border/60">
+        <div className="shrink-0 border-b border-border/50 p-4 pb-2">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <Select value={mode} onValueChange={(v) => setMode(v as 'scan' | 'query')}>
+                  <SelectTrigger className="w-[120px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="scan">Scan</SelectItem>
+                    <SelectItem value="query">Query</SelectItem>
+                  </SelectContent>
+                </Select>
+                {itemsData && (
+                  <span className="text-xs text-muted-foreground">
+                    {itemsData.count} items (scanned {itemsData.scanned_count})
+                  </span>
+                )}
+                {items.length > 0 && <ExportDropdown service="dynamodb" resourceType="items" data={items as unknown as Record<string, unknown>[]} />}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {writesEnabled && tableDetail?.partition_key && (
+                  <>
+                    <Button type="button" size="sm" onClick={openCreateItem} className="h-8" title="Create item (JSON)">
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      New item
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setImportText('')
+                        setImportOpen(true)
+                      }}
+                      className="h-8"
+                    >
+                      <Upload className="h-3.5 w-3.5 mr-1" />
+                      Import
+                    </Button>
+                    {selectedRows.size > 0 && (
+                      <Button type="button" size="sm" variant="destructive" className="h-8" onClick={() => setBulkDeleteOpen(true)}>
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Delete ({selectedRows.size})
+                      </Button>
+                    )}
+                  </>
+                )}
+                {mode === 'scan' && (
+                  <Button type="button" size="sm" onClick={loadItems} disabled={loadingItems} className="h-8">
+                    Refresh
+                  </Button>
+                )}
+                {mode === 'query' && (
+                  <Button type="button" size="sm" onClick={executeQuery} disabled={loadingItems} className="h-8">
+                    Refresh
+                  </Button>
+                )}
+              </div>
             </div>
-            {mode === 'scan' && (
-              <Button size="sm" onClick={loadItems} disabled={loadingItems} className="h-8">
-                Refresh
-              </Button>
-            )}
           </div>
           {mode === 'query' && tableDetail && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3">
@@ -533,8 +817,8 @@ export function DynamoDBBrowser() {
               </div>
             </div>
           )}
-        </CardHeader>
-        <CardContent className="p-0">
+        </div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {loadingItems ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -543,14 +827,31 @@ export function DynamoDBBrowser() {
             </div>
           ) : items.length > 0 ? (
             <>
-              <div className="overflow-x-auto">
+              <div className="min-h-0 flex-1 overflow-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10 p-2">
+                        <Checkbox
+                          checked={
+                            items.length > 0 && selectedRows.size === items.length
+                              ? true
+                              : selectedRows.size > 0
+                                ? 'indeterminate'
+                                : false
+                          }
+                          onCheckedChange={(c) => {
+                            if (c) setSelectedRows(new Set(items.map((_, i) => i)))
+                            else setSelectedRows(new Set())
+                          }}
+                          aria-label="Select all items on this page"
+                        />
+                      </TableHead>
                       {itemKeys.slice(0, 6).map((key) => (
                         <TableHead key={key}>{key}</TableHead>
                       ))}
                       {itemKeys.length > 6 && <TableHead>...</TableHead>}
+                      <TableHead className="w-[88px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -560,6 +861,23 @@ export function DynamoDBBrowser() {
                         className="cursor-pointer hover:bg-accent/50"
                         onClick={() => openItem(item)}
                       >
+                        <TableCell
+                          className="w-10 p-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={selectedRows.has(idx)}
+                            onCheckedChange={(c) => {
+                              setSelectedRows((prev) => {
+                                const n = new Set(prev)
+                                if (c) n.add(idx)
+                                else n.delete(idx)
+                                return n
+                              })
+                            }}
+                            aria-label="Select row"
+                          />
+                        </TableCell>
                         {itemKeys.slice(0, 6).map((key) => (
                           <TableCell key={key} className="text-xs font-mono max-w-[200px] truncate">
                             {formatAttributeValue(item[key])}
@@ -570,13 +888,48 @@ export function DynamoDBBrowser() {
                             <Layers className="h-3.5 w-3.5" />
                           </TableCell>
                         )}
+                        <TableCell
+                          className="p-1 text-right w-[88px]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {writesEnabled && tableDetail ? (
+                            <div className="inline-flex items-center justify-end gap-0.5">
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                title="Edit item"
+                                onClick={() => {
+                                  openEditItem(item)
+                                }}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                title="Delete item"
+                                onClick={() => {
+                                  void deleteItemByKey(item)
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
               {mode === 'scan' && (
-                <div className="border-t">
+                <div className="shrink-0 border-t border-border/50">
                   <PaginationBar
                     page={itemPage}
                     totalPages={1}
@@ -596,17 +949,22 @@ export function DynamoDBBrowser() {
               )}
             </>
           ) : (
-            <EmptyState
-              icon={TableIcon}
-              title="No items"
-              description={mode === 'query' ? 'No items match your query.' : 'This table is empty.'}
-            />
+            <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+              <EmptyState
+                icon={TableIcon}
+                title="No items"
+                description={mode === 'query' ? 'No items match your query.' : 'This table is empty.'}
+              />
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
         </TabsContent>
 
-        <TabsContent value="tags" className="space-y-4">
+        <TabsContent
+          value="tags"
+          className="mt-0 w-full min-w-0 flex-1 space-y-4 overflow-y-auto py-0 outline-none focus-visible:outline-none data-[state=inactive]:hidden"
+        >
           <TagsSection
             tags={tableTags}
             onSave={async (newTags) => {
@@ -617,13 +975,128 @@ export function DynamoDBBrowser() {
         </TabsContent>
       </Tabs>
 
+      <Dialog open={itemEditorOpen} onOpenChange={setItemEditorOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{itemEditorMode === 'create' ? 'New item' : 'Edit item'}</DialogTitle>
+            <DialogDescription>
+              {itemView === 'plain' ? 'Plain JSON (JavaScript values). On save, the server maps types for DynamoDB.' : 'DynamoDB attribute map (S, N, M, L, ...).'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="ddb-view-mode" className="text-xs text-muted-foreground">
+                Plain JSON
+              </Label>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="ddb-view-mode"
+                  checked={itemView === 'dynamodb'}
+                  onCheckedChange={(c) => switchItemView(c ? 'dynamodb' : 'plain')}
+                />
+                <span className="text-xs text-muted-foreground">DynamoDB JSON</span>
+              </div>
+            </div>
+            <Textarea
+              value={itemEditorText}
+              onChange={(e) => setItemEditorText(e.target.value)}
+              className="min-h-[280px] font-mono text-xs"
+              spellCheck={false}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setItemEditorOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void saveItemDialog()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Import items</DialogTitle>
+            <DialogDescription>Paste a JSON array of objects. Keys and values use plain JSON; each object is written as one item (batched by 25).</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            className="min-h-[200px] font-mono text-xs"
+            placeholder='[ { "pk": "a", "name": "x" }, ... ]'
+            spellCheck={false}
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void runImport()}>
+              Import
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {selectedRows.size} item(s)?</DialogTitle>
+            <DialogDescription>This cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBulkDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => void runBulkDelete()}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Sheet open={!!itemDetail} onOpenChange={(open) => !open && setItemDetail(null)}>
         <SheetContent className="sm:max-w-lg overflow-auto">
           {itemDetail && (
             <>
               <SheetHeader>
-                <SheetTitle className="text-base">Item Detail</SheetTitle>
-                <SheetDescription>DynamoDB item attributes</SheetDescription>
+                <div className="flex items-start justify-between gap-3 pr-6">
+                  <div>
+                    <SheetTitle className="text-base">Item Detail</SheetTitle>
+                    <SheetDescription>DynamoDB item attributes</SheetDescription>
+                  </div>
+                  {writesEnabled && tableDetail?.partition_key && (
+                    <div className="flex gap-1 shrink-0">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8"
+                        onClick={() => {
+                          const cur = itemDetail
+                          setItemDetail(null)
+                          openEditItem(cur)
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        className="h-8"
+                        onClick={() => {
+                          void deleteItemByKey(itemDetail)
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Delete
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </SheetHeader>
 
               <div className="space-y-4 mt-4">

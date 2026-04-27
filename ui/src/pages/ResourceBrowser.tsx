@@ -32,6 +32,7 @@ import { SERVICE_VIEWS } from '@/components/service-views'
 import { getServiceIcon } from '@/lib/service-icons'
 import { FolderOpen, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Search, X, Star, Download } from 'lucide-react'
 import { exportData } from '@/lib/export'
+import { cn } from '@/lib/utils'
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100]
 
@@ -391,7 +392,12 @@ export default function ResourceBrowser() {
       </ScrollArea>
 
       {/* Resource content */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
+      <div
+        className={cn(
+          'flex min-h-0 flex-1 flex-col p-6',
+          service && SERVICE_VIEWS[service] ? 'min-h-0 overflow-hidden p-4' : 'overflow-auto',
+        )}
+      >
         {!service && (
           <EmptyState
             icon={FolderOpen}
@@ -403,8 +409,10 @@ export default function ResourceBrowser() {
         {service && SERVICE_VIEWS[service] && (() => {
           const CustomBrowser = SERVICE_VIEWS[service]
           return (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <CustomBrowser />
+            <div className="flex h-full min-h-0 min-w-0 w-full flex-1 flex-col">
+              <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-sm">
+                <CustomBrowser />
+              </div>
             </div>
           )
         })()}
