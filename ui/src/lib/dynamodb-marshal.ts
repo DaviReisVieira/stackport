@@ -1,4 +1,4 @@
-import type { DynamoDBItem } from '@/lib/types'
+import type { DynamoDBItem, DynamoDBWriteResponse } from '@/lib/types'
 
 /** Map plain JSON (JavaScript values) to DynamoDB attribute-value form (browser-side, mirrors boto TypeSerializer for common types). */
 export function plainItemToDynamoMap(obj: Record<string, unknown>): DynamoDBItem {
@@ -89,4 +89,11 @@ export function extractKeyDynamo(
   const k: DynamoDBItem = { [partitionKey]: item[partitionKey] as unknown }
   if (sortKey) k[sortKey] = item[sortKey] as unknown
   return k
+}
+
+export function countUnprocessed(resp: DynamoDBWriteResponse, table: string): number {
+  const u = resp.unprocessed
+  if (!u || typeof u !== 'object') return 0
+  const arr = (u as Record<string, unknown>)[table]
+  return Array.isArray(arr) ? arr.length : 0
 }

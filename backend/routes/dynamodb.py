@@ -350,6 +350,8 @@ def batch_write_items(
         msg = _client_error_message(e)
         raise HTTPException(status_code=400, detail=msg) from e
 
+    _invalidate_table_item_count(name, endpoint_url)
+
     uproc = resp.get("UnprocessedItems", {})
     if uproc:
         return {
@@ -359,5 +361,4 @@ def batch_write_items(
             "message": "Some items were not processed; retry with returned keys.",
         }
 
-    _invalidate_table_item_count(name, endpoint_url)
     return {"ok": True, "table": name, "unprocessed": {}}

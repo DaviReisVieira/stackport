@@ -371,3 +371,39 @@ class TestItemWrites:
         assert len(req["t1"]) == 2
         assert "PutRequest" in req["t1"][0]
         assert "DeleteRequest" in req["t1"][1]
+
+    @patch("backend.routes.dynamodb.cache.delete")
+    @patch("backend.routes.dynamodb.get_client")
+    def test_batch_write_partial_invalidates_cache(self, mock_get_client, mock_cache_delete):
+        """Cache must be invalidated even when some items are unprocessed,
+        because items NOT listed in UnprocessedItems were already written."""
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        mock_ddb.describe_table.return_value = {
+            "Table": {
+                "KeySchema": [{"AttributeName": "pk", "KeyType": "HASH"}],
+                "AttributeDefinitions": [{"AttributeName": "pk", "AttributeType": "S"}],
+            }
+        }
+        unprocessed = {"t1": [{"PutRequest": {"Item": {"pk": {"S": "1"}}}}]}
+        mock_ddb.batch_write_item.return_value = {"UnprocessedItems": unprocessed}
+
+        resp = client.post(
+            "/api/dynamodb/tables/t1/items/batch",
+            json={
+                "item_format": "dynamodb",
+                "operations": [
+                    {"op": "put", "item": {"pk": {"S": "1"}}},
+                    {"op": "put", "item": {"pk": {"S": "2"}}},
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["unprocessed"] == unprocessed
+        assert "message" in body
+
+        cache_keys = [c.args[0] for c in mock_cache_delete.call_args_list]
+        assert any(k.endswith(":dynamodb:item_count:t1") for k in cache_keys), (
+            f"expected item_count cache invalidation, got calls: {cache_keys}"
+        )

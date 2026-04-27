@@ -173,4 +173,14 @@ describe('putDynamoDBItem / updateDynamoDBItem / deleteDynamoDBItem / batchWrite
       })
     )
   })
+
+  it('batchWriteDynamoDBItems forwards unprocessed items so callers can warn', async () => {
+    const unprocessed = { t: [{ PutRequest: { Item: { pk: { S: '1' } } } }] }
+    mockOk({ ok: true, table: 't', unprocessed, message: 'partial' })
+    const resp = await batchWriteDynamoDBItems('t', [
+      { op: 'put' as const, item: { pk: { S: '1' } } },
+    ])
+    expect(resp.unprocessed).toEqual(unprocessed)
+    expect(resp.message).toBe('partial')
+  })
 })

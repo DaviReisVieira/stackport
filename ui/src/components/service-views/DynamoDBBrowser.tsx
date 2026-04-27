@@ -16,6 +16,7 @@ import { useEndpoint } from '@/hooks/useEndpoint'
 import { useHealth } from '@/hooks/useHealth'
 import {
   buildDefaultPlainItem,
+  countUnprocessed,
   dynamoItemToPlainMap,
   extractKeyDynamo,
   plainItemToDynamoMap,
@@ -441,12 +442,21 @@ export function DynamoDBBrowser() {
     }
     const rows = data as Record<string, unknown>[]
     try {
+      let unprocessedTotal = 0
       for (let i = 0; i < rows.length; i += 25) {
         const chunk = rows.slice(i, i + 25)
         const operations = chunk.map((obj) => ({ op: 'put' as const, item: obj as DynamoDBItem }))
-        await batchWriteDynamoDBItems(selectedTable, operations, 'plain', activeEndpoint)
+        const resp = await batchWriteDynamoDBItems(selectedTable, operations, 'plain', activeEndpoint)
+        unprocessedTotal += countUnprocessed(resp, selectedTable)
       }
-      toast.success(`Imported ${rows.length} item(s)`)
+      if (unprocessedTotal > 0) {
+        const written = rows.length - unprocessedTotal
+        toast.warning(
+          `Imported ${written} of ${rows.length} item(s); ${unprocessedTotal} not processed — retry needed`
+        )
+      } else {
+        toast.success(`Imported ${rows.length} item(s)`)
+      }
       setImportOpen(false)
       setImportText('')
       await reloadCurrentItems()
@@ -467,16 +477,25 @@ export function DynamoDBBrowser() {
       }
     })
     try {
+      let unprocessedTotal = 0
       for (let i = 0; i < ops.length; i += 25) {
         const chunk = ops.slice(i, i + 25)
-        await batchWriteDynamoDBItems(
+        const resp = await batchWriteDynamoDBItems(
           selectedTable,
           chunk.map((o) => ({ op: 'delete' as const, key: o.key })),
           'dynamodb',
           activeEndpoint
         )
+        unprocessedTotal += countUnprocessed(resp, selectedTable)
       }
-      toast.success(`Deleted ${ops.length} item(s)`)
+      if (unprocessedTotal > 0) {
+        const deleted = ops.length - unprocessedTotal
+        toast.warning(
+          `Deleted ${deleted} of ${ops.length} item(s); ${unprocessedTotal} not processed — retry needed`
+        )
+      } else {
+        toast.success(`Deleted ${ops.length} item(s)`)
+      }
       setBulkDeleteOpen(false)
       setSelectedRows(new Set())
       setItemDetail(null)
