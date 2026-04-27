@@ -66,6 +66,7 @@ DESCRIBE_REGISTRY: dict[tuple[str, str], tuple[str, str, str, str | None]] = {
     ("glue", "crawlers"): ("glue", "get_crawler", "Name", "Crawler"),
     ("athena", "workgroups"): ("athena", "get_work_group", "WorkGroup", "WorkGroup"),
     # API
+    ("apigateway", "rest_apis"): ("apigateway", "get_rest_api", "restApiId", None),
     ("apigateway", "apis"): ("apigatewayv2", "get_api", "ApiId", None),
     ("appsync", "graphql_apis"): ("appsync", "get_graphql_api", "apiId", "graphqlApi"),
     # EMR
@@ -79,6 +80,10 @@ _PREFERRED_ID_FIELD: dict[tuple[str, str], str] = {
     ("events", "rules"): "Name",
     ("events", "event_buses"): "Name",
     ("wafv2", "web_acls"): "Name",
+    ("appsync", "graphql_apis"): "apiId",
+    ("elasticmapreduce", "clusters"): "Id",
+    ("cognito-idp", "user_pools"): "Id",
+    ("apigateway", "rest_apis"): "id",
 }
 
 # Known ID field names for extracting a resource identifier from list results
@@ -126,6 +131,8 @@ _ID_FIELDS = [
     "CrawlerName",
     "DatabaseName",
     "DistributionId",
+    "apiId",
+    "ClusterId",
 ]
 
 
@@ -200,6 +207,29 @@ def get_resource_detail(service: str, res_type: str, res_id: str, endpoint_url: 
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
+
+    # SES identities are plain strings — aggregate detail from multiple APIs
+    if (service, res_type) == ("ses", "identities"):
+        try:
+            client = get_client("ses", endpoint_url)
+            verif = client.get_identity_verification_attributes(Identities=[res_id])
+            attrs = verif.get("VerificationAttributes", {}).get(res_id, {})
+            dkim = client.get_identity_dkim_attributes(Identities=[res_id])
+            dkim_attrs = dkim.get("DkimAttributes", {}).get(res_id, {})
+            detail = _serialize({
+                "Identity": res_id,
+                "VerificationStatus": attrs.get("VerificationStatus", "Unknown"),
+                "VerificationToken": attrs.get("VerificationToken"),
+                "DkimEnabled": dkim_attrs.get("DkimEnabled", False),
+                "DkimVerificationStatus": dkim_attrs.get("DkimVerificationStatus", "Unknown"),
+                "DkimTokens": dkim_attrs.get("DkimTokens", []),
+            })
+            result = {"service": service, "type": res_type, "id": res_id, "detail": detail}
+            cache.set(cache_key, result, ttl=5)
+            return result
+        except Exception as exc:
+            logger.warning("Failed to get detail for %s/%s/%s", service, res_type, res_id, exc_info=True)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     # WAFv2 get_web_acl requires Name, Scope, AND Id — resolve Id from list first
     if (service, res_type) == ("wafv2", "web_acls"):

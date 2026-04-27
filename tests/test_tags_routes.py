@@ -336,7 +336,7 @@ class TestTagsSupported:
         assert resp.status_code == 200
         data = resp.json()
         supported = data["supported"]
-        assert len(supported) == 21
+        assert len(supported) == 24
 
         keys = {(s["service"], s["type"]) for s in supported}
         assert ("s3", "buckets") in keys
@@ -360,6 +360,9 @@ class TestTagsSupported:
         assert ("ssm", "parameters") in keys
         assert ("elasticloadbalancing", "load_balancers") in keys
         assert ("elasticache", "cache_clusters") in keys
+        assert ("cognito-idp", "user_pools") in keys
+        assert ("elasticmapreduce", "clusters") in keys
+        assert ("apigateway", "rest_apis") in keys
 
     def test_writable_flag(self):
         resp = client.get("/api/tags/supported")
@@ -367,7 +370,7 @@ class TestTagsSupported:
         writable_lookup = {(e["service"], e["type"]): e["writable"] for e in supported}
         assert writable_lookup[("cloudformation", "stacks")] is False
         writable_count = sum(1 for e in supported if e["writable"])
-        assert writable_count == 20
+        assert writable_count == 23
 
 
 # --- PUT tags ---
