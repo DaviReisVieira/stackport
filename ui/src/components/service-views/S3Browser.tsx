@@ -17,7 +17,9 @@ import {
   fetchS3Lifecycle,
   putS3Lifecycle,
   fetchS3Notifications,
+  putS3Notifications,
   fetchS3CORS,
+  putS3CORS,
 } from '@/lib/api'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import type { S3Bucket, S3File, S3ObjectsResponse, S3ObjectDetail } from '@/lib/types'
@@ -1178,8 +1180,26 @@ export function S3Browser() {
 
               {/* Notifications */}
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-base">Event Notifications</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const newNotif = {
+                        id: `notif-${Date.now()}`,
+                        destination_type: 'Lambda',
+                        destination_arn: '',
+                        events: ['s3:ObjectCreated:*'],
+                        filter_prefix: '',
+                        filter_suffix: '',
+                      }
+                      setNotifications([...notifications, newNotif])
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    Add Notification
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   {notifications.length === 0 ? (
@@ -1187,38 +1207,148 @@ export function S3Browser() {
                       No event notifications configured
                     </div>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>ID</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Destination</TableHead>
-                          <TableHead>Events</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {notifications.map((n) => (
-                          <TableRow key={n.id}>
-                            <TableCell className="font-mono text-xs">{n.id}</TableCell>
-                            <TableCell>
-                              <Badge variant="secondary">{n.destination_type}</Badge>
-                            </TableCell>
-                            <TableCell className="font-mono text-xs max-w-[200px] truncate">
-                              {n.destination_arn}
-                            </TableCell>
-                            <TableCell className="text-xs">{n.events.join(', ')}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <div className="space-y-3">
+                      {notifications.map((n, idx) => (
+                        <div key={n.id} className="flex items-start gap-3 p-3 border rounded-lg">
+                          <div className="flex-1 grid grid-cols-2 gap-3">
+                            <div>
+                              <Label className="text-xs">Type</Label>
+                              <Select
+                                value={n.destination_type}
+                                onValueChange={(v) => {
+                                  const updated = [...notifications]
+                                  updated[idx] = { ...updated[idx], destination_type: v }
+                                  setNotifications(updated)
+                                }}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Lambda">Lambda</SelectItem>
+                                  <SelectItem value="SQS">SQS</SelectItem>
+                                  <SelectItem value="SNS">SNS</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label className="text-xs">Events</Label>
+                              <Input
+                                value={n.events.join(', ')}
+                                onChange={(e) => {
+                                  const updated = [...notifications]
+                                  updated[idx] = { ...updated[idx], events: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }
+                                  setNotifications(updated)
+                                }}
+                                placeholder="s3:ObjectCreated:*"
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="col-span-2">
+                              <Label className="text-xs">Destination ARN</Label>
+                              <Input
+                                value={n.destination_arn}
+                                onChange={(e) => {
+                                  const updated = [...notifications]
+                                  updated[idx] = { ...updated[idx], destination_arn: e.target.value }
+                                  setNotifications(updated)
+                                }}
+                                placeholder="arn:aws:lambda:us-east-1:123456789012:function:my-func"
+                                className="h-8 text-sm font-mono"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Filter Prefix</Label>
+                              <Input
+                                value={n.filter_prefix}
+                                onChange={(e) => {
+                                  const updated = [...notifications]
+                                  updated[idx] = { ...updated[idx], filter_prefix: e.target.value }
+                                  setNotifications(updated)
+                                }}
+                                placeholder="(optional)"
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Filter Suffix</Label>
+                              <Input
+                                value={n.filter_suffix}
+                                onChange={(e) => {
+                                  const updated = [...notifications]
+                                  updated[idx] = { ...updated[idx], filter_suffix: e.target.value }
+                                  setNotifications(updated)
+                                }}
+                                placeholder="(optional)"
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive mt-4"
+                            onClick={() => {
+                              setNotifications(notifications.filter((_, i) => i !== idx))
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await putS3Notifications(
+                              selectedBucket!,
+                              notifications.map((n) => ({
+                                id: n.id,
+                                destinationType: n.destination_type,
+                                destinationArn: n.destination_arn,
+                                events: n.events,
+                                filterPrefix: n.filter_prefix,
+                                filterSuffix: n.filter_suffix,
+                              })),
+                              activeEndpoint
+                            )
+                            toast.success('Notifications saved')
+                            await loadSettings()
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : 'Failed to save notifications')
+                          }
+                        }}
+                      >
+                        Save Notifications
+                      </Button>
+                    </div>
                   )}
                 </CardContent>
               </Card>
 
               {/* CORS */}
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-base">CORS Configuration</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const newRule = {
+                        id: `cors-${Date.now()}`,
+                        allowed_origins: ['*'],
+                        allowed_methods: ['GET'],
+                        allowed_headers: [],
+                        expose_headers: [],
+                        max_age_seconds: null,
+                      }
+                      setCorsRules([...corsRules, newRule])
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    Add Rule
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   {corsRules.length === 0 ? (
@@ -1228,27 +1358,101 @@ export function S3Browser() {
                   ) : (
                     <div className="space-y-3">
                       {corsRules.map((rule, idx) => (
-                        <div key={idx} className="p-3 border rounded-lg space-y-2">
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                            <div className="text-muted-foreground">Allowed Origins</div>
-                            <div className="font-mono text-xs">{rule.allowed_origins.join(', ')}</div>
-                            <div className="text-muted-foreground">Allowed Methods</div>
-                            <div className="font-mono text-xs">{rule.allowed_methods.join(', ')}</div>
-                            {rule.allowed_headers.length > 0 && (
-                              <>
-                                <div className="text-muted-foreground">Allowed Headers</div>
-                                <div className="font-mono text-xs">{rule.allowed_headers.join(', ')}</div>
-                              </>
-                            )}
-                            {rule.max_age_seconds !== null && (
-                              <>
-                                <div className="text-muted-foreground">Max Age</div>
-                                <div className="text-xs">{rule.max_age_seconds}s</div>
-                              </>
-                            )}
+                        <div key={idx} className="flex items-start gap-3 p-3 border rounded-lg">
+                          <div className="flex-1 grid grid-cols-2 gap-3">
+                            <div>
+                              <Label className="text-xs">Allowed Origins (comma-separated)</Label>
+                              <Input
+                                value={rule.allowed_origins.join(', ')}
+                                onChange={(e) => {
+                                  const updated = [...corsRules]
+                                  updated[idx] = { ...updated[idx], allowed_origins: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }
+                                  setCorsRules(updated)
+                                }}
+                                placeholder="*"
+                                className="h-8 text-sm font-mono"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Allowed Methods (comma-separated)</Label>
+                              <Input
+                                value={rule.allowed_methods.join(', ')}
+                                onChange={(e) => {
+                                  const updated = [...corsRules]
+                                  updated[idx] = { ...updated[idx], allowed_methods: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }
+                                  setCorsRules(updated)
+                                }}
+                                placeholder="GET, POST, PUT"
+                                className="h-8 text-sm font-mono"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Allowed Headers (comma-separated)</Label>
+                              <Input
+                                value={rule.allowed_headers.join(', ')}
+                                onChange={(e) => {
+                                  const updated = [...corsRules]
+                                  updated[idx] = { ...updated[idx], allowed_headers: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }
+                                  setCorsRules(updated)
+                                }}
+                                placeholder="*"
+                                className="h-8 text-sm font-mono"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Max Age (seconds)</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={rule.max_age_seconds ?? ''}
+                                onChange={(e) => {
+                                  const updated = [...corsRules]
+                                  updated[idx] = { ...updated[idx], max_age_seconds: e.target.value ? parseInt(e.target.value) : null }
+                                  setCorsRules(updated)
+                                }}
+                                placeholder="3600"
+                                className="h-8 text-sm"
+                              />
+                            </div>
                           </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive mt-4"
+                            onClick={() => {
+                              setCorsRules(corsRules.filter((_, i) => i !== idx))
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       ))}
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await putS3CORS(
+                              selectedBucket!,
+                              corsRules.map((r) => ({
+                                id: r.id ?? undefined,
+                                allowedOrigins: r.allowed_origins,
+                                allowedMethods: r.allowed_methods,
+                                allowedHeaders: r.allowed_headers,
+                                exposeHeaders: r.expose_headers,
+                                maxAgeSeconds: r.max_age_seconds ?? undefined,
+                              })),
+                              activeEndpoint
+                            )
+                            toast.success('CORS configuration saved')
+                            await loadSettings()
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : 'Failed to save CORS configuration')
+                          }
+                        }}
+                      >
+                        Save CORS
+                      </Button>
                     </div>
                   )}
                 </CardContent>
