@@ -12,6 +12,12 @@ import {
   fetchS3UploadConfig,
   fetchResourceTags,
   updateResourceTags,
+  fetchS3Versioning,
+  putS3Versioning,
+  fetchS3Lifecycle,
+  putS3Lifecycle,
+  fetchS3Notifications,
+  fetchS3CORS,
 } from '@/lib/api'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import type { S3Bucket, S3File, S3ObjectsResponse, S3ObjectDetail } from '@/lib/types'
@@ -35,6 +41,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { JsonViewer } from '@/components/JsonViewer'
@@ -66,6 +74,9 @@ import {
   Upload,
   Trash2,
   FolderPlus,
+  Settings,
+  Plus,
+  AlertCircle,
 } from 'lucide-react'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
@@ -201,6 +212,14 @@ export function S3Browser() {
   const [newFolderSegment, setNewFolderSegment] = useState('')
   const [bucketTags, setBucketTags] = useState<Record<string, string>>({})
 
+  // Settings state
+  const [versioningStatus, setVersioningStatus] = useState<string>('Disabled')
+  const [lifecycleRules, setLifecycleRules] = useState<Array<{ id: string; prefix: string; expiration_days: number; enabled: boolean }>>([])
+  const [notifications, setNotifications] = useState<Array<{ id: string; destination_type: string; destination_arn: string; events: string[]; filter_prefix: string; filter_suffix: string }>>([])
+  const [corsRules, setCorsRules] = useState<Array<{ id: string | null; allowed_origins: string[]; allowed_methods: string[]; allowed_headers: string[]; expose_headers: string[]; max_age_seconds: number | null }>>([])
+  const [loadingSettings, setLoadingSettings] = useState(false)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+
   // Fetch bucket tags when selectedBucket changes
   useEffect(() => {
     if (!selectedBucket) {
@@ -210,6 +229,28 @@ export function S3Browser() {
     fetchResourceTags('s3', 'buckets', selectedBucket, activeEndpoint)
       .then(res => setBucketTags(res.tags))
       .catch(() => setBucketTags({}))
+  }, [selectedBucket, activeEndpoint])
+
+  const loadSettings = useCallback(async () => {
+    if (!selectedBucket) return
+    setLoadingSettings(true)
+    setSettingsError(null)
+    try {
+      const [versioningData, lifecycleData, notificationsData, corsData] = await Promise.all([
+        fetchS3Versioning(selectedBucket, activeEndpoint).catch(() => ({ status: 'Disabled', mfa_delete: 'Disabled' })),
+        fetchS3Lifecycle(selectedBucket, activeEndpoint).catch(() => ({ rules: [] })),
+        fetchS3Notifications(selectedBucket, activeEndpoint).catch(() => ({ configurations: [] })),
+        fetchS3CORS(selectedBucket, activeEndpoint).catch(() => ({ rules: [] })),
+      ])
+      setVersioningStatus(versioningData.status)
+      setLifecycleRules(lifecycleData.rules)
+      setNotifications(notificationsData.configurations)
+      setCorsRules(corsData.rules)
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : 'Failed to load settings')
+    } finally {
+      setLoadingSettings(false)
+    }
   }, [selectedBucket, activeEndpoint])
 
   // Helper to update URL params
@@ -336,12 +377,21 @@ export function S3Browser() {
     ? buckets.filter((b) => b.name.toLowerCase().includes(bucketSearch.toLowerCase()))
     : buckets
 
-  const filteredFolders = fileSearch && objectsData
-    ? objectsData.folders.filter((f) => f.slice(prefix.length).toLowerCase().includes(fileSearch.toLowerCase()))
-    : objectsData?.folders ?? []
-  const filteredFiles = fileSearch && objectsData
-    ? objectsData.files.filter((f) => f.name.toLowerCase().includes(fileSearch.toLowerCase()))
-    : objectsData?.files ?? []
+  const filteredFolders = useMemo(
+    () =>
+      fileSearch && objectsData
+        ? objectsData.folders.filter((f) => f.slice(prefix.length).toLowerCase().includes(fileSearch.toLowerCase()))
+        : objectsData?.folders ?? [],
+    [fileSearch, objectsData, prefix]
+  )
+
+  const filteredFiles = useMemo(
+    () =>
+      fileSearch && objectsData
+        ? objectsData.files.filter((f) => f.name.toLowerCase().includes(fileSearch.toLowerCase()))
+        : objectsData?.files ?? [],
+    [fileSearch, objectsData]
+  )
 
   // Paginate buckets
   const bucketTotalPages = Math.max(1, Math.ceil(filteredBuckets.length / pageSize))
@@ -679,10 +729,14 @@ export function S3Browser() {
         onChange={onFileInputChange}
       />
 
-      <Tabs defaultValue="objects" className="flex-1 flex flex-col min-h-0">
+      <Tabs defaultValue="objects" className="flex-1 flex flex-col min-h-0" onValueChange={(v) => { if (v === 'settings') void loadSettings() }}>
         <TabsList className="w-fit">
           <TabsTrigger value="objects">Objects</TabsTrigger>
           <TabsTrigger value="tags">Tags</TabsTrigger>
+          <TabsTrigger value="settings">
+            <Settings className="h-3.5 w-3.5 mr-1.5" />
+            Settings
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="objects" className="flex-1 min-h-0">
       <div
@@ -959,6 +1013,248 @@ export function S3Browser() {
               setBucketTags(newTags)
             }}
           />
+        </TabsContent>
+        <TabsContent value="settings" className="space-y-4">
+          {loadingSettings ? (
+            <div className="space-y-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-32 w-full" />
+              ))}
+            </div>
+          ) : settingsError ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{settingsError}</AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              {/* Versioning */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Versioning</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium text-sm">Bucket Versioning</div>
+                      <div className="text-xs text-muted-foreground">
+                        Keep multiple versions of each object
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant={versioningStatus === 'Enabled' ? 'default' : 'secondary'}>
+                        {versioningStatus}
+                      </Badge>
+                      <Switch
+                        checked={versioningStatus === 'Enabled'}
+                        onCheckedChange={async (checked) => {
+                          const newStatus = checked ? 'Enabled' : 'Suspended'
+                          try {
+                            await putS3Versioning(selectedBucket!, newStatus, activeEndpoint)
+                            setVersioningStatus(newStatus)
+                            toast.success(`Versioning ${newStatus.toLowerCase()}`)
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : 'Failed to update versioning')
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Lifecycle Rules */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">Lifecycle Rules</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const newRule = {
+                        id: `rule-${Date.now()}`,
+                        prefix: '',
+                        expiration_days: 30,
+                        enabled: true,
+                      }
+                      setLifecycleRules([...lifecycleRules, newRule])
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    Add Rule
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {lifecycleRules.length === 0 ? (
+                    <div className="text-center py-6 text-sm text-muted-foreground">
+                      No lifecycle rules configured
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {lifecycleRules.map((rule, idx) => (
+                        <div key={rule.id} className="flex items-center gap-3 p-3 border rounded-lg">
+                          <div className="flex-1 grid grid-cols-3 gap-3">
+                            <div>
+                              <Label className="text-xs">Prefix</Label>
+                              <Input
+                                value={rule.prefix}
+                                onChange={(e) => {
+                                  const updated = [...lifecycleRules]
+                                  updated[idx].prefix = e.target.value
+                                  setLifecycleRules(updated)
+                                }}
+                                placeholder="(all)"
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Expire after (days)</Label>
+                              <Input
+                                type="number"
+                                min="1"
+                                value={rule.expiration_days}
+                                onChange={(e) => {
+                                  const updated = [...lifecycleRules]
+                                  updated[idx].expiration_days = parseInt(e.target.value) || 1
+                                  setLifecycleRules(updated)
+                                }}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="flex items-end gap-2">
+                              <div className="flex items-center gap-2">
+                                <Switch
+                                  checked={rule.enabled}
+                                  onCheckedChange={(checked) => {
+                                    const updated = [...lifecycleRules]
+                                    updated[idx].enabled = checked
+                                    setLifecycleRules(updated)
+                                  }}
+                                />
+                                <span className="text-xs text-muted-foreground">Enabled</span>
+                              </div>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              setLifecycleRules(lifecycleRules.filter((_, i) => i !== idx))
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await putS3Lifecycle(
+                              selectedBucket!,
+                              lifecycleRules.map((r) => ({
+                                id: r.id,
+                                prefix: r.prefix,
+                                expirationDays: r.expiration_days,
+                                enabled: r.enabled,
+                              })),
+                              activeEndpoint
+                            )
+                            toast.success('Lifecycle rules saved')
+                            await loadSettings()
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : 'Failed to save lifecycle rules')
+                          }
+                        }}
+                      >
+                        Save Rules
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Notifications */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Event Notifications</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {notifications.length === 0 ? (
+                    <div className="text-center py-6 text-sm text-muted-foreground">
+                      No event notifications configured
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Destination</TableHead>
+                          <TableHead>Events</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {notifications.map((n) => (
+                          <TableRow key={n.id}>
+                            <TableCell className="font-mono text-xs">{n.id}</TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">{n.destination_type}</Badge>
+                            </TableCell>
+                            <TableCell className="font-mono text-xs max-w-[200px] truncate">
+                              {n.destination_arn}
+                            </TableCell>
+                            <TableCell className="text-xs">{n.events.join(', ')}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* CORS */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">CORS Configuration</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {corsRules.length === 0 ? (
+                    <div className="text-center py-6 text-sm text-muted-foreground">
+                      No CORS rules configured
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {corsRules.map((rule, idx) => (
+                        <div key={idx} className="p-3 border rounded-lg space-y-2">
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                            <div className="text-muted-foreground">Allowed Origins</div>
+                            <div className="font-mono text-xs">{rule.allowed_origins.join(', ')}</div>
+                            <div className="text-muted-foreground">Allowed Methods</div>
+                            <div className="font-mono text-xs">{rule.allowed_methods.join(', ')}</div>
+                            {rule.allowed_headers.length > 0 && (
+                              <>
+                                <div className="text-muted-foreground">Allowed Headers</div>
+                                <div className="font-mono text-xs">{rule.allowed_headers.join(', ')}</div>
+                              </>
+                            )}
+                            {rule.max_age_seconds !== null && (
+                              <>
+                                <div className="text-muted-foreground">Max Age</div>
+                                <div className="text-xs">{rule.max_age_seconds}s</div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
         </TabsContent>
       </Tabs>
 

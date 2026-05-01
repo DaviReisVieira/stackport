@@ -400,3 +400,231 @@ class TestBucketStatsRealAws:
         assert bucket["versioning"] == "Enabled"
         mock_s3.get_bucket_versioning.assert_called_once()
         mock_s3.get_paginator.assert_called_once()
+
+
+def test_get_bucket_versioning():
+    """Test GET /api/s3/buckets/{name}/versioning."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+        mock_s3.get_bucket_versioning.return_value = {"Status": "Enabled", "MFADelete": "Disabled"}
+
+        resp = client.get("/api/s3/buckets/test-bucket/versioning")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert data["status"] == "Enabled"
+        assert data["mfa_delete"] == "Disabled"
+
+
+def test_put_bucket_versioning():
+    """Test PUT /api/s3/buckets/{name}/versioning."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+
+        resp = client.put("/api/s3/buckets/test-bucket/versioning", json={"status": "Enabled"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert data["status"] == "Enabled"
+        mock_s3.put_bucket_versioning.assert_called_once_with(
+            Bucket="test-bucket",
+            VersioningConfiguration={"Status": "Enabled"},
+        )
+
+
+def test_get_bucket_lifecycle():
+    """Test GET /api/s3/buckets/{name}/lifecycle."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+        mock_s3.get_bucket_lifecycle_configuration.return_value = {
+            "Rules": [
+                {
+                    "ID": "rule-1",
+                    "Status": "Enabled",
+                    "Filter": {"Prefix": "logs/"},
+                    "Expiration": {"Days": 30},
+                }
+            ]
+        }
+
+        resp = client.get("/api/s3/buckets/test-bucket/lifecycle")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert len(data["rules"]) == 1
+        assert data["rules"][0]["id"] == "rule-1"
+        assert data["rules"][0]["prefix"] == "logs/"
+        assert data["rules"][0]["expiration_days"] == 30
+        assert data["rules"][0]["enabled"] is True
+
+
+def test_put_bucket_lifecycle():
+    """Test PUT /api/s3/buckets/{name}/lifecycle."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+
+        resp = client.put(
+            "/api/s3/buckets/test-bucket/lifecycle",
+            json={
+                "rules": [
+                    {"id": "rule-1", "prefix": "logs/", "expirationDays": 30, "enabled": True}
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert data["rules_count"] == 1
+
+
+def test_delete_bucket_lifecycle():
+    """Test DELETE /api/s3/buckets/{name}/lifecycle."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+
+        resp = client.delete("/api/s3/buckets/test-bucket/lifecycle")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert data["deleted"] is True
+        mock_s3.delete_bucket_lifecycle.assert_called_once_with(Bucket="test-bucket")
+
+
+def test_get_bucket_notifications():
+    """Test GET /api/s3/buckets/{name}/notifications."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+        mock_s3.get_bucket_notification_configuration.return_value = {
+            "LambdaFunctionConfigurations": [
+                {
+                    "Id": "notif-1",
+                    "LambdaFunctionArn": "arn:aws:lambda:us-east-1:123456789012:function:my-func",
+                    "Events": ["s3:ObjectCreated:*"],
+                }
+            ]
+        }
+
+        resp = client.get("/api/s3/buckets/test-bucket/notifications")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert len(data["configurations"]) == 1
+        assert data["configurations"][0]["id"] == "notif-1"
+        assert data["configurations"][0]["destination_type"] == "Lambda"
+
+
+def test_put_bucket_notifications():
+    """Test PUT /api/s3/buckets/{name}/notifications."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+
+        resp = client.put(
+            "/api/s3/buckets/test-bucket/notifications",
+            json={
+                "configurations": [
+                    {
+                        "id": "notif-1",
+                        "destinationType": "Lambda",
+                        "destinationArn": "arn:aws:lambda:us-east-1:123456789012:function:my-func",
+                        "events": ["s3:ObjectCreated:*"],
+                        "filterPrefix": "",
+                        "filterSuffix": "",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert data["configurations_count"] == 1
+
+
+def test_get_bucket_tags():
+    """Test GET /api/s3/buckets/{name}/tags."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+        mock_s3.get_bucket_tagging.return_value = {
+            "TagSet": [{"Key": "env", "Value": "dev"}, {"Key": "team", "Value": "eng"}]
+        }
+
+        resp = client.get("/api/s3/buckets/test-bucket/tags")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert data["tags"] == {"env": "dev", "team": "eng"}
+
+
+def test_put_bucket_tags():
+    """Test PUT /api/s3/buckets/{name}/tags."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+
+        resp = client.put(
+            "/api/s3/buckets/test-bucket/tags",
+            json={"tags": {"env": "prod", "team": "eng"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert data["tags"] == {"env": "prod", "team": "eng"}
+
+
+def test_get_bucket_cors():
+    """Test GET /api/s3/buckets/{name}/cors."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+        mock_s3.get_bucket_cors.return_value = {
+            "CORSRules": [
+                {
+                    "ID": "cors-1",
+                    "AllowedOrigins": ["*"],
+                    "AllowedMethods": ["GET", "POST"],
+                    "AllowedHeaders": ["*"],
+                    "MaxAgeSeconds": 3600,
+                }
+            ]
+        }
+
+        resp = client.get("/api/s3/buckets/test-bucket/cors")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert len(data["rules"]) == 1
+        assert data["rules"][0]["id"] == "cors-1"
+        assert data["rules"][0]["allowed_origins"] == ["*"]
+
+
+def test_put_bucket_cors():
+    """Test PUT /api/s3/buckets/{name}/cors."""
+    with patch("backend.routes.s3.get_client") as mock_get_client:
+        mock_s3 = MagicMock()
+        mock_get_client.return_value = mock_s3
+
+        resp = client.put(
+            "/api/s3/buckets/test-bucket/cors",
+            json={
+                "rules": [
+                    {
+                        "id": "cors-1",
+                        "allowedOrigins": ["*"],
+                        "allowedMethods": ["GET", "POST"],
+                        "allowedHeaders": ["*"],
+                        "maxAgeSeconds": 3600,
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == "test-bucket"
+        assert data["rules_count"] == 1

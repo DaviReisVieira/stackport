@@ -10,7 +10,15 @@ from backend.aws_client import get_client
 from backend.cache import cache
 from backend.config import AWS_REGION, S3_MAX_UPLOAD_BYTES, is_local_endpoint
 from backend.routes.common import get_endpoint_url
-from backend.schemas.s3 import CreateFolderBody, DeleteBatchBody
+from backend.schemas.s3 import (
+    CreateFolderBody,
+    DeleteBatchBody,
+    PutVersioningBody,
+    PutLifecycleBody,
+    PutNotificationsBody,
+    PutBucketTagsBody,
+    PutCORSBody,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -341,3 +349,318 @@ def get_object_detail(
         "preserved_headers": {},
         "tags": tags,
     }
+
+
+@router.get("/buckets/{name}/versioning")
+def get_bucket_versioning(name: str, endpoint_url: str | None = Depends(get_endpoint_url)):
+    """Get bucket versioning status."""
+    s3 = get_client("s3", endpoint_url)
+    try:
+        resp = s3.get_bucket_versioning(Bucket=name)
+        status = resp.get("Status", "Disabled")
+        mfa_delete = resp.get("MFADelete", "Disabled")
+        return {"bucket": name, "status": status, "mfa_delete": mfa_delete}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="Versioning not supported by this endpoint") from e
+        raise
+
+
+@router.put("/buckets/{name}/versioning")
+def put_bucket_versioning(
+    name: str,
+    body: PutVersioningBody,
+    endpoint_url: str | None = Depends(get_endpoint_url),
+):
+    """Enable or suspend bucket versioning."""
+    s3 = get_client("s3", endpoint_url)
+    try:
+        s3.put_bucket_versioning(
+            Bucket=name,
+            VersioningConfiguration={"Status": body.status},
+        )
+        return {"bucket": name, "status": body.status}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="Versioning not supported by this endpoint") from e
+        raise
+
+
+@router.get("/buckets/{name}/lifecycle")
+def get_bucket_lifecycle(name: str, endpoint_url: str | None = Depends(get_endpoint_url)):
+    """Get bucket lifecycle configuration."""
+    s3 = get_client("s3", endpoint_url)
+    try:
+        resp = s3.get_bucket_lifecycle_configuration(Bucket=name)
+        rules = []
+        for rule in resp.get("Rules", []):
+            rules.append({
+                "id": rule["ID"],
+                "prefix": rule.get("Filter", {}).get("Prefix", ""),
+                "expiration_days": rule.get("Expiration", {}).get("Days", 0),
+                "enabled": rule["Status"] == "Enabled",
+            })
+        return {"bucket": name, "rules": rules}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NoSuchLifecycleConfiguration", "404"):
+            return {"bucket": name, "rules": []}
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="Lifecycle not supported by this endpoint") from e
+        raise
+
+
+@router.put("/buckets/{name}/lifecycle")
+def put_bucket_lifecycle(
+    name: str,
+    body: PutLifecycleBody,
+    endpoint_url: str | None = Depends(get_endpoint_url),
+):
+    """Set bucket lifecycle configuration."""
+    s3 = get_client("s3", endpoint_url)
+    rules = []
+    for rule in body.rules:
+        lifecycle_rule = {
+            "ID": rule.id,
+            "Status": "Enabled" if rule.enabled else "Disabled",
+            "Filter": {"Prefix": rule.prefix},
+            "Expiration": {"Days": rule.expiration_days},
+        }
+        rules.append(lifecycle_rule)
+
+    try:
+        s3.put_bucket_lifecycle_configuration(
+            Bucket=name,
+            LifecycleConfiguration={"Rules": rules},
+        )
+        return {"bucket": name, "rules_count": len(rules)}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="Lifecycle not supported by this endpoint") from e
+        raise
+
+
+@router.delete("/buckets/{name}/lifecycle")
+def delete_bucket_lifecycle(name: str, endpoint_url: str | None = Depends(get_endpoint_url)):
+    """Delete bucket lifecycle configuration."""
+    s3 = get_client("s3", endpoint_url)
+    try:
+        s3.delete_bucket_lifecycle(Bucket=name)
+        return {"bucket": name, "deleted": True}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NoSuchLifecycleConfiguration", "404"):
+            return {"bucket": name, "deleted": False, "reason": "No lifecycle configuration"}
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="Lifecycle not supported by this endpoint") from e
+        raise
+
+
+@router.get("/buckets/{name}/notifications")
+def get_bucket_notifications(name: str, endpoint_url: str | None = Depends(get_endpoint_url)):
+    """Get bucket notification configuration."""
+    s3 = get_client("s3", endpoint_url)
+    try:
+        resp = s3.get_bucket_notification_configuration(Bucket=name)
+        configurations = []
+
+        for config in resp.get("LambdaFunctionConfigurations", []):
+            configurations.append({
+                "id": config["Id"],
+                "destination_type": "Lambda",
+                "destination_arn": config["LambdaFunctionArn"],
+                "events": config["Events"],
+                "filter_prefix": config.get("Filter", {}).get("Key", {}).get("FilterRules", [{}])[0].get("Value", "") if config.get("Filter") else "",
+                "filter_suffix": "",
+            })
+
+        for config in resp.get("QueueConfigurations", []):
+            configurations.append({
+                "id": config["Id"],
+                "destination_type": "SQS",
+                "destination_arn": config["QueueArn"],
+                "events": config["Events"],
+                "filter_prefix": config.get("Filter", {}).get("Key", {}).get("FilterRules", [{}])[0].get("Value", "") if config.get("Filter") else "",
+                "filter_suffix": "",
+            })
+
+        for config in resp.get("TopicConfigurations", []):
+            configurations.append({
+                "id": config["Id"],
+                "destination_type": "SNS",
+                "destination_arn": config["TopicArn"],
+                "events": config["Events"],
+                "filter_prefix": config.get("Filter", {}).get("Key", {}).get("FilterRules", [{}])[0].get("Value", "") if config.get("Filter") else "",
+                "filter_suffix": "",
+            })
+
+        return {"bucket": name, "configurations": configurations}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="Notifications not supported by this endpoint") from e
+        raise
+
+
+@router.put("/buckets/{name}/notifications")
+def put_bucket_notifications(
+    name: str,
+    body: PutNotificationsBody,
+    endpoint_url: str | None = Depends(get_endpoint_url),
+):
+    """Set bucket notification configuration."""
+    s3 = get_client("s3", endpoint_url)
+
+    lambda_configs = []
+    queue_configs = []
+    topic_configs = []
+
+    for config in body.configurations:
+        filter_rules = []
+        if config.filter_prefix:
+            filter_rules.append({"Name": "prefix", "Value": config.filter_prefix})
+        if config.filter_suffix:
+            filter_rules.append({"Name": "suffix", "Value": config.filter_suffix})
+
+        notification_config = {
+            "Id": config.id,
+            "Events": config.events,
+        }
+        if filter_rules:
+            notification_config["Filter"] = {"Key": {"FilterRules": filter_rules}}
+
+        if config.destination_type == "Lambda":
+            notification_config["LambdaFunctionArn"] = config.destination_arn
+            lambda_configs.append(notification_config)
+        elif config.destination_type == "SQS":
+            notification_config["QueueArn"] = config.destination_arn
+            queue_configs.append(notification_config)
+        elif config.destination_type == "SNS":
+            notification_config["TopicArn"] = config.destination_arn
+            topic_configs.append(notification_config)
+
+    notification_configuration = {}
+    if lambda_configs:
+        notification_configuration["LambdaFunctionConfigurations"] = lambda_configs
+    if queue_configs:
+        notification_configuration["QueueConfigurations"] = queue_configs
+    if topic_configs:
+        notification_configuration["TopicConfigurations"] = topic_configs
+
+    try:
+        s3.put_bucket_notification_configuration(
+            Bucket=name,
+            NotificationConfiguration=notification_configuration,
+        )
+        return {"bucket": name, "configurations_count": len(body.configurations)}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="Notifications not supported by this endpoint") from e
+        raise
+
+
+@router.get("/buckets/{name}/tags")
+def get_bucket_tags(name: str, endpoint_url: str | None = Depends(get_endpoint_url)):
+    """Get bucket tags."""
+    s3 = get_client("s3", endpoint_url)
+    try:
+        resp = s3.get_bucket_tagging(Bucket=name)
+        tags = {t["Key"]: t["Value"] for t in resp.get("TagSet", [])}
+        return {"bucket": name, "tags": tags}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NoSuchTagSet", "404"):
+            return {"bucket": name, "tags": {}}
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="Tags not supported by this endpoint") from e
+        raise
+
+
+@router.put("/buckets/{name}/tags")
+def put_bucket_tags(
+    name: str,
+    body: PutBucketTagsBody,
+    endpoint_url: str | None = Depends(get_endpoint_url),
+):
+    """Set bucket tags."""
+    s3 = get_client("s3", endpoint_url)
+    tag_set = [{"Key": k, "Value": v} for k, v in body.tags.items()]
+
+    try:
+        if tag_set:
+            s3.put_bucket_tagging(Bucket=name, Tagging={"TagSet": tag_set})
+        else:
+            s3.delete_bucket_tagging(Bucket=name)
+        return {"bucket": name, "tags": body.tags}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="Tags not supported by this endpoint") from e
+        raise
+
+
+@router.get("/buckets/{name}/cors")
+def get_bucket_cors(name: str, endpoint_url: str | None = Depends(get_endpoint_url)):
+    """Get bucket CORS configuration."""
+    s3 = get_client("s3", endpoint_url)
+    try:
+        resp = s3.get_bucket_cors(Bucket=name)
+        rules = []
+        for rule in resp.get("CORSRules", []):
+            rules.append({
+                "id": rule.get("ID"),
+                "allowed_origins": rule["AllowedOrigins"],
+                "allowed_methods": rule["AllowedMethods"],
+                "allowed_headers": rule.get("AllowedHeaders", []),
+                "expose_headers": rule.get("ExposeHeaders", []),
+                "max_age_seconds": rule.get("MaxAgeSeconds"),
+            })
+        return {"bucket": name, "rules": rules}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NoSuchCORSConfiguration", "404"):
+            return {"bucket": name, "rules": []}
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="CORS not supported by this endpoint") from e
+        raise
+
+
+@router.put("/buckets/{name}/cors")
+def put_bucket_cors(
+    name: str,
+    body: PutCORSBody,
+    endpoint_url: str | None = Depends(get_endpoint_url),
+):
+    """Set bucket CORS configuration."""
+    s3 = get_client("s3", endpoint_url)
+    rules = []
+    for rule in body.rules:
+        cors_rule: dict = {
+            "AllowedOrigins": rule.allowed_origins,
+            "AllowedMethods": rule.allowed_methods,
+        }
+        if rule.id:
+            cors_rule["ID"] = rule.id
+        if rule.allowed_headers:
+            cors_rule["AllowedHeaders"] = rule.allowed_headers
+        if rule.expose_headers:
+            cors_rule["ExposeHeaders"] = rule.expose_headers
+        if rule.max_age_seconds is not None:
+            cors_rule["MaxAgeSeconds"] = rule.max_age_seconds
+        rules.append(cors_rule)
+
+    try:
+        if rules:
+            s3.put_bucket_cors(Bucket=name, CORSConfiguration={"CORSRules": rules})
+        else:
+            s3.delete_bucket_cors(Bucket=name)
+        return {"bucket": name, "rules_count": len(rules)}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NotImplemented", "MethodNotAllowed"):
+            raise HTTPException(status_code=501, detail="CORS not supported by this endpoint") from e
+        raise

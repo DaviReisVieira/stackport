@@ -235,6 +235,106 @@ export async function createS3Folder(bucket: string, folderPrefix: string, endpo
   return res.json() as Promise<S3CreateFolderResponse>
 }
 
+export async function fetchS3Versioning(bucket: string, endpoint?: string | null) {
+  return fetchJSON<{ bucket: string; status: string; mfa_delete: string }>(
+    buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/versioning`, endpoint)
+  )
+}
+
+export async function putS3Versioning(bucket: string, status: string, endpoint?: string | null) {
+  const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/versioning`, endpoint)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json() as Promise<{ bucket: string; status: string }>
+}
+
+export async function fetchS3Lifecycle(bucket: string, endpoint?: string | null) {
+  return fetchJSON<{ bucket: string; rules: Array<{ id: string; prefix: string; expiration_days: number; enabled: boolean }> }>(
+    buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/lifecycle`, endpoint)
+  )
+}
+
+export async function putS3Lifecycle(bucket: string, rules: Array<{ id: string; prefix: string; expirationDays: number; enabled: boolean }>, endpoint?: string | null) {
+  const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/lifecycle`, endpoint)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rules }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json() as Promise<{ bucket: string; rules_count: number }>
+}
+
+export async function deleteS3Lifecycle(bucket: string, endpoint?: string | null) {
+  const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/lifecycle`, endpoint)
+  const res = await fetch(url, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json() as Promise<{ bucket: string; deleted: boolean }>
+}
+
+export async function fetchS3Notifications(bucket: string, endpoint?: string | null) {
+  return fetchJSON<{ bucket: string; configurations: Array<{ id: string; destination_type: string; destination_arn: string; events: string[]; filter_prefix: string; filter_suffix: string }> }>(
+    buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/notifications`, endpoint)
+  )
+}
+
+export async function putS3Notifications(
+  bucket: string,
+  configurations: Array<{ id: string; destinationType: string; destinationArn: string; events: string[]; filterPrefix: string; filterSuffix: string }>,
+  endpoint?: string | null
+) {
+  const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/notifications`, endpoint)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ configurations }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json() as Promise<{ bucket: string; configurations_count: number }>
+}
+
+export async function fetchS3BucketTags(bucket: string, endpoint?: string | null) {
+  return fetchJSON<{ bucket: string; tags: Record<string, string> }>(
+    buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/tags`, endpoint)
+  )
+}
+
+export async function putS3BucketTags(bucket: string, tags: Record<string, string>, endpoint?: string | null) {
+  const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/tags`, endpoint)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tags }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json() as Promise<{ bucket: string; tags: Record<string, string> }>
+}
+
+export async function fetchS3CORS(bucket: string, endpoint?: string | null) {
+  return fetchJSON<{ bucket: string; rules: Array<{ id: string | null; allowed_origins: string[]; allowed_methods: string[]; allowed_headers: string[]; expose_headers: string[]; max_age_seconds: number | null }> }>(
+    buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/cors`, endpoint)
+  )
+}
+
+export async function putS3CORS(
+  bucket: string,
+  rules: Array<{ id?: string; allowedOrigins: string[]; allowedMethods: string[]; allowedHeaders?: string[]; exposeHeaders?: string[]; maxAgeSeconds?: number }>,
+  endpoint?: string | null
+) {
+  const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/cors`, endpoint)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rules }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json() as Promise<{ bucket: string; rules_count: number }>
+}
+
 // --- DynamoDB ---
 
 export async function fetchDynamoDBTables(endpoint?: string | null): Promise<{ tables: DynamoDBTable[] }> {
