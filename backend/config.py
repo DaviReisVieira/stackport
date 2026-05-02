@@ -1,6 +1,7 @@
 import logging
 import os
 from collections.abc import Mapping
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,17 @@ def _parse_endpoints() -> dict[str, str | None]:
 
 ENDPOINTS: dict[str, str | None] = _parse_endpoints()
 DEFAULT_ENDPOINT: str | None = next(iter(ENDPOINTS.values()))
+
+# Data directory for persistent config (endpoints.json, etc.)
+STACKPORT_DATA_DIR: Path = Path(os.environ.get("STACKPORT_DATA_DIR", Path.home() / ".stackport"))
+
+# Initialize endpoint store
+from backend.endpoint_store import EndpointStore
+
+endpoint_store = EndpointStore(
+    json_path=STACKPORT_DATA_DIR / "endpoints.json",
+    env_endpoints=ENDPOINTS,
+)
 
 
 _UNSET = object()

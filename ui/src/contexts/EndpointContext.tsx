@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import type { ReactNode } from 'react'
 import type { Endpoint, EndpointsResponse } from '@/lib/types'
 import { fetchEndpoints } from '@/lib/api'
@@ -16,6 +16,7 @@ export function EndpointProvider({ children }: { children: ReactNode }) {
   })
   const [endpoints, setEndpoints] = useState<Endpoint[]>([])
   const [loading, setLoading] = useState(true)
+  const wsRef = useRef<WebSocket | null>(null)
 
   const load = useCallback(() => {
     fetchEndpoints()
@@ -34,6 +35,39 @@ export function EndpointProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     load()
+  }, [load])
+
+  // WebSocket connection to listen for endpoints_changed events
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
+    wsRef.current = ws
+
+    ws.onopen = () => {
+      // Subscribe to receive messages
+      ws.send(JSON.stringify({ type: 'subscribe', services: ['all'] }))
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        if (msg.type === 'endpoints_changed') {
+          // Refetch endpoints when they change
+          load()
+        }
+      } catch {
+        // Ignore malformed messages
+      }
+    }
+
+    ws.onerror = () => {
+      // Connection failed, but we can continue with HTTP-only mode
+      ws.close()
+    }
+
+    return () => {
+      ws.close()
+    }
   }, [load])
 
   const setActiveEndpoint = useCallback((name: string | null) => {

@@ -7,7 +7,7 @@ import time
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from backend.config import DEFAULT_ENDPOINT, ENDPOINTS, STACKPORT_SERVICES
+from backend.config import endpoint_store, STACKPORT_SERVICES
 from backend.routes.stats import _probe_service, _start_time
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class ConnectionManager:
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections[websocket] = DEFAULT_ENDPOINT
+        self.active_connections[websocket] = endpoint_store.get_default_url()
         logger.debug("WebSocket client connected (%d total)", len(self.active_connections))
 
     def disconnect(self, websocket: WebSocket):
@@ -44,6 +44,16 @@ class ConnectionManager:
                 except Exception:
                     logger.debug("Failed to send to client, removing", exc_info=True)
                     self.active_connections.pop(ws, None)
+
+    async def broadcast_to_all(self, message: dict):
+        """Broadcast a message to all connected clients."""
+        data = json.dumps(message)
+        for ws in list(self.active_connections.keys()):
+            try:
+                await ws.send_text(data)
+            except Exception:
+                logger.debug("Failed to send to client, removing", exc_info=True)
+                self.active_connections.pop(ws, None)
 
 
 manager = ConnectionManager()
@@ -91,11 +101,7 @@ async def probe_loop():
 
 
 def _resolve_endpoint(name_or_url: str | None) -> str | None:
-    if name_or_url is None:
-        return DEFAULT_ENDPOINT
-    if name_or_url in ENDPOINTS:
-        return ENDPOINTS[name_or_url]
-    return name_or_url
+    return endpoint_store.resolve(name_or_url)
 
 
 async def websocket_endpoint(websocket: WebSocket):
@@ -120,3 +126,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 pass
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+async def broadcast_endpoints_changed():
+    """Broadcast endpoints_changed event to all connected clients."""
+    await manager.broadcast_to_all({"type": "endpoints_changed"})
+
+
+def remove_endpoint_from_stats(endpoint_url: str | None):
+    """Remove an endpoint from the stats cache when it's deleted."""
+    _last_stats_by_endpoint.pop(endpoint_url, None)

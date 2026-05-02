@@ -16,6 +16,7 @@ export interface Endpoint {
   active: boolean
   connection_type: 'local' | 'aws'
   region: string
+  source: 'env' | 'user'
 }
 
 export interface EndpointsResponse {

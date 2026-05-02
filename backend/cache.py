@@ -29,5 +29,17 @@ class TTLCache:
         with self._lock:
             self._store.pop(key, None)
 
+    def delete_by_prefix(self, prefix: str) -> int:
+        """Delete all keys starting with the given prefix.
+
+        Returns:
+            Number of keys deleted
+        """
+        with self._lock:
+            to_delete = [k for k in self._store if k.startswith(prefix)]
+            for k in to_delete:
+                del self._store[k]
+            return len(to_delete)
+
 
 cache = TTLCache()

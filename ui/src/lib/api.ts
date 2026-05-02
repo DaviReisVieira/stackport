@@ -92,6 +92,51 @@ export async function fetchEndpoints(): Promise<EndpointsResponse> {
   return fetchJSON<EndpointsResponse>(`${API_BASE}/endpoints`)
 }
 
+export async function addEndpoint(name: string, url: string | null): Promise<{ name: string; url: string | null; source: string; region: string }> {
+  const res = await fetch(`${API_BASE}/endpoints`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, url }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function updateEndpoint(name: string, url: string | null): Promise<{ name: string; url: string | null; source: string; region: string }> {
+  const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function deleteEndpoint(name: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+}
+
+export async function setDefaultEndpoint(name: string): Promise<{ success: boolean; default: string; message: string }> {
+  const res = await fetch(`${API_BASE}/endpoints/default`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function checkEndpointHealth(name: string): Promise<{ name: string; url: string | null; health: string; error: string | null }> {
+  const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}/health`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
 // --- Health & Stats ---
 
 export async function fetchHealth(endpoint?: string | null): Promise<HealthResponse> {

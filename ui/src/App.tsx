@@ -4,6 +4,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import Dashboard from './pages/Dashboard'
 import ResourceBrowser from './pages/ResourceBrowser'
 import About from './pages/About'
+import Settings from './pages/Settings'
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/resources" element={<ResourceBrowser />} />
           <Route path="/resources/:service" element={<ResourceBrowser />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="/about" element={<About />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

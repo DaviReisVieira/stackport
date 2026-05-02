@@ -6,7 +6,7 @@ from backend.config import (
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
-    DEFAULT_ENDPOINT,
+    endpoint_store,
 )
 
 _UNSET = object()
@@ -19,12 +19,12 @@ def get_client(service_name: str, endpoint_url: str | None = _UNSET):
     Args:
         service_name: AWS service name (e.g., "s3", "dynamodb")
         endpoint_url: Endpoint URL. None means real AWS (no custom endpoint).
-                     Omitted (sentinel) means use DEFAULT_ENDPOINT.
+                     Omitted (sentinel) means use default endpoint.
 
     Returns:
         Configured boto3 client
     """
-    url = DEFAULT_ENDPOINT if endpoint_url is _UNSET else endpoint_url
+    url = endpoint_store.get_default_url() if endpoint_url is _UNSET else endpoint_url
 
     kwargs = {
         "service_name": service_name,

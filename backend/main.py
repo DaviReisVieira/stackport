@@ -75,8 +75,12 @@ class ReadOnlyMiddleware(BaseHTTPMiddleware):
         if request.method not in self.WRITE_METHODS:
             return await call_next(request)
 
-        # Allow read-only POST operations (query, invoke)
+        # Allow endpoint management (infra config, not AWS writes)
         path = request.url.path
+        if path.startswith("/api/endpoints"):
+            return await call_next(request)
+
+        # Allow read-only POST operations (query, invoke)
         if request.method == "POST" and self._is_read_only_post(path):
             return await call_next(request)
 
