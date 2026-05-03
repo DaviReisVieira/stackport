@@ -193,7 +193,11 @@ class TestAddEndpointWithRegion:
         assert data["region"] == "eu-west-1"
 
         # Verify store.add was called with region
-        mock_store.add.assert_called_once_with("eu-endpoint", "http://eu-endpoint:4566", region="eu-west-1")
+        mock_store.add.assert_called_once_with(
+            "eu-endpoint", "http://eu-endpoint:4566",
+            region="eu-west-1", auth_type="default", auth_profile=None,
+            auth_access_key_id=None, auth_secret_access_key=None,
+        )
 
 
 class TestUpdateEndpointRegionOnly:

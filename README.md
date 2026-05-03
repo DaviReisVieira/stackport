@@ -33,6 +33,7 @@
 - **8 dedicated service UIs** for S3, DynamoDB, Lambda, SQS, IAM, EC2, CloudWatch Logs, and Secrets Manager
 - **Write operations** — upload/delete S3 objects, query DynamoDB, invoke Lambda, send/receive SQS messages
 - **Real AWS support** — connect to real AWS accounts with read-only mode by default
+- **Per-endpoint authentication** — default credentials, AWS profiles (SSO/AssumeRole), or static keys per endpoint
 - **Tag management** — unified tagging across 21 resource types
 - **CLI** — `stackport status`, `list`, `describe`, `export` with JSON/CSV/table output
 - **Real-time dashboard** with WebSocket-powered live updates
@@ -65,6 +66,8 @@ AWS_ACCESS_KEY_ID=AKIA... AWS_SECRET_ACCESS_KEY=... AWS_REGION=us-west-2 stackpo
 # Disable write operations (read-only mode)
 STACKPORT_ALLOW_WRITES=false AWS_PROFILE=my-profile stackport
 ```
+
+You can also configure per-endpoint authentication from the Settings UI — select a profile, enter static credentials, or use the default credential chain per endpoint. See [Per-endpoint authentication](#per-endpoint-authentication) below.
 
 When connected to real AWS, StackPort shows a warning banner and operates in read-only mode unless writes are explicitly enabled.
 
@@ -123,6 +126,30 @@ docker compose -f docker-compose.multi-endpoint.yml up -d
 See [`examples/docker-compose.multi-endpoint.yml`](examples/docker-compose.multi-endpoint.yml) for a full example with MiniStack + real AWS via profile.
 
 The endpoint selector appears in the sidebar when more than one endpoint is configured. Each endpoint is health-checked independently, and all API requests, caches, and WebSocket subscriptions are scoped to the active endpoint.
+
+### Per-endpoint authentication
+
+Each endpoint can use its own AWS authentication method, configured from the Settings UI:
+
+| Auth Type | Description | Use Case |
+|-----------|-------------|----------|
+| **Default** | Uses `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars or instance role | Local emulators, EC2/ECS deployments |
+| **AWS Profile** | Uses a named profile from `~/.aws/config` | SSO, AssumeRole, multiple accounts |
+| **Static Credentials** | Per-endpoint access key and secret | Service accounts, cross-account access |
+
+**Profile auth** supports SSO, AssumeRole, and credential_process — anything `boto3.Session(profile_name=...)` handles. If your SSO token expires, StackPort returns a 401 with instructions to run `aws sso login --profile <name>`.
+
+**Docker users:** mount your AWS config to use profiles inside the container:
+
+```yaml
+services:
+  stackport:
+    image: davireis/stackport
+    volumes:
+      - ~/.aws:/root/.aws
+```
+
+You can test connections before saving using the "Test Connection" button in the add/edit endpoint dialog.
 
 ## Service Browsers
 
@@ -205,6 +232,7 @@ Press `?` anywhere to see all shortcuts.
 | `STACKPORT_CACHE_TTL` | `5` | Seconds to cache service stats |
 | `STACKPORT_PROBE_WORKERS` | `10` | Max concurrent workers for service probing |
 | `STACKPORT_ENDPOINTS` | *(unset)* | Multiple endpoints: `local=http://localhost:4566,staging=http://...` |
+| `STACKPORT_DATA_DIR` | `~/.stackport` | Directory for persistent config (endpoints.json) |
 | `LOG_LEVEL` | `INFO` | Python log level (`DEBUG` shows healthcheck logs) |
 
 ## Supported Services (35)
@@ -228,8 +256,8 @@ cd ui && npm install && npm run dev
 cd ui && npm run build
 
 # Run tests
-python -m pytest tests/ -x --tb=short    # backend (262 tests)
-cd ui && npx vitest run                   # frontend (163 tests)
+python -m pytest tests/ -x --tb=short    # backend (362 tests)
+cd ui && npx vitest run                   # frontend (176 tests)
 
 # Typecheck & lint
 cd ui && npx tsc -b
@@ -250,6 +278,7 @@ backend/
   routes/
     stats.py       Service discovery with concurrent probing
     resources.py   Generic list/detail for all services
+    endpoints.py   Endpoint CRUD, health checks, profile listing
     tags.py        Unified tag management (21 types)
     s3.py          S3 file browser with write ops
     dynamodb.py    DynamoDB query/scan

@@ -24,7 +24,7 @@ def _decode_policy_document(encoded_doc: str) -> dict:
 
 @router.get("/users")
 def list_users(ep: EndpointInfo = Depends(get_endpoint_info)):
-    iam = get_client("iam", ep.url, ep.region)
+    iam = get_client("iam", **ep.client_kwargs())
     response = iam.list_users()
     users = [
         {
@@ -41,7 +41,7 @@ def list_users(ep: EndpointInfo = Depends(get_endpoint_info)):
 
 @router.get("/users/{name}")
 def get_user_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    iam = get_client("iam", ep.url, ep.region)
+    iam = get_client("iam", **ep.client_kwargs())
 
     # Get user detail
     user_resp = iam.get_user(UserName=name)
@@ -101,7 +101,7 @@ def get_user_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
 
 @router.get("/roles")
 def list_roles(ep: EndpointInfo = Depends(get_endpoint_info)):
-    iam = get_client("iam", ep.url, ep.region)
+    iam = get_client("iam", **ep.client_kwargs())
     response = iam.list_roles()
     roles = [
         {
@@ -119,7 +119,7 @@ def list_roles(ep: EndpointInfo = Depends(get_endpoint_info)):
 
 @router.get("/roles/{name}")
 def get_role_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    iam = get_client("iam", ep.url, ep.region)
+    iam = get_client("iam", **ep.client_kwargs())
 
     # Get role detail (includes AssumeRolePolicyDocument)
     role_resp = iam.get_role(RoleName=name)
@@ -167,7 +167,7 @@ def get_role_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
 
 @router.get("/groups")
 def list_groups(ep: EndpointInfo = Depends(get_endpoint_info)):
-    iam = get_client("iam", ep.url, ep.region)
+    iam = get_client("iam", **ep.client_kwargs())
     response = iam.list_groups()
     groups = [
         {
@@ -184,7 +184,7 @@ def list_groups(ep: EndpointInfo = Depends(get_endpoint_info)):
 
 @router.get("/groups/{name}")
 def get_group_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    iam = get_client("iam", ep.url, ep.region)
+    iam = get_client("iam", **ep.client_kwargs())
 
     # Get group detail and members
     group_resp = iam.get_group(GroupName=name)
@@ -222,7 +222,7 @@ def get_group_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
 
 @router.get("/policies")
 def list_policies(scope: str = Query(default="Local", description="Policy scope: Local, AWS, or All"), ep: EndpointInfo = Depends(get_endpoint_info)):
-    iam = get_client("iam", ep.url, ep.region)
+    iam = get_client("iam", **ep.client_kwargs())
     params = {}
     if scope in ["Local", "AWS"]:
         params["Scope"] = scope
@@ -246,7 +246,7 @@ def list_policies(scope: str = Query(default="Local", description="Policy scope:
 
 @router.get("/policies/{arn:path}")
 def get_policy_detail(arn: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    iam = get_client("iam", ep.url, ep.region)
+    iam = get_client("iam", **ep.client_kwargs())
 
     # Get policy metadata
     policy_resp = iam.get_policy(PolicyArn=arn)

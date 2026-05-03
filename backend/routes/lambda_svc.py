@@ -17,7 +17,7 @@ router = APIRouter()
 def list_functions(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List all Lambda functions with metadata."""
     try:
-        client = get_client("lambda", ep.url, ep.region)
+        client = get_client("lambda", **ep.client_kwargs())
         paginator = client.get_paginator("list_functions")
 
         functions = []
@@ -33,7 +33,7 @@ def list_functions(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, A
 def get_function(function_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Get full function configuration, code location, and tags."""
     try:
-        client = get_client("lambda", ep.url, ep.region)
+        client = get_client("lambda", **ep.client_kwargs())
         response = client.get_function(FunctionName=function_name)
 
         return {
@@ -56,7 +56,7 @@ def download_code(function_name: str, ep: EndpointInfo = Depends(get_endpoint_in
     Only works for ZIP-based functions, not container images.
     """
     try:
-        client = get_client("lambda", ep.url, ep.region)
+        client = get_client("lambda", **ep.client_kwargs())
         response = client.get_function(FunctionName=function_name)
 
         config = response.get("Configuration", {})
@@ -93,7 +93,7 @@ def invoke_function(function_name: str, payload: dict[str, Any], ep: EndpointInf
     Returns: status, response payload, logs, error if any.
     """
     try:
-        client = get_client("lambda", ep.url, ep.region)
+        client = get_client("lambda", **ep.client_kwargs())
 
         # Extract the actual payload from the request body
         function_payload = payload.get("payload", {})
@@ -142,7 +142,7 @@ def invoke_function(function_name: str, payload: dict[str, Any], ep: EndpointInf
 def list_event_sources(function_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List event source mappings for a function."""
     try:
-        client = get_client("lambda", ep.url, ep.region)
+        client = get_client("lambda", **ep.client_kwargs())
         paginator = client.get_paginator("list_event_source_mappings")
 
         mappings = []
@@ -158,7 +158,7 @@ def list_event_sources(function_name: str, ep: EndpointInfo = Depends(get_endpoi
 def list_aliases(function_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List aliases for a function."""
     try:
-        client = get_client("lambda", ep.url, ep.region)
+        client = get_client("lambda", **ep.client_kwargs())
         paginator = client.get_paginator("list_aliases")
 
         aliases = []
@@ -174,7 +174,7 @@ def list_aliases(function_name: str, ep: EndpointInfo = Depends(get_endpoint_inf
 def list_versions(function_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List versions for a function."""
     try:
-        client = get_client("lambda", ep.url, ep.region)
+        client = get_client("lambda", **ep.client_kwargs())
         paginator = client.get_paginator("list_versions_by_function")
 
         versions = []

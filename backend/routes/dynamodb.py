@@ -93,7 +93,7 @@ def _get_table_item_count(table_name: str, endpoint_url: str | None) -> int:
 
 @router.get("/tables")
 def list_tables(ep: EndpointInfo = Depends(get_endpoint_info)):
-    dynamodb = get_client("dynamodb", ep.url, ep.region)
+    dynamodb = get_client("dynamodb", **ep.client_kwargs())
     paginator = dynamodb.get_paginator("list_tables")
     table_names = []
 
@@ -133,7 +133,7 @@ def list_tables(ep: EndpointInfo = Depends(get_endpoint_info)):
 
 @router.get("/tables/{name}")
 def get_table_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    dynamodb = get_client("dynamodb", ep.url, ep.region)
+    dynamodb = get_client("dynamodb", **ep.client_kwargs())
 
     try:
         resp = dynamodb.describe_table(TableName=name)
@@ -173,7 +173,7 @@ def scan_table(
     exclusive_start_key: str = Query(default=None, description="Base64 encoded last evaluated key for pagination"),
     ep: EndpointInfo = Depends(get_endpoint_info),
 ):
-    dynamodb = get_client("dynamodb", ep.url, ep.region)
+    dynamodb = get_client("dynamodb", **ep.client_kwargs())
 
     scan_params: dict[str, Any] = {
         "TableName": name,
@@ -211,7 +211,7 @@ def scan_table(
 
 @router.post("/tables/{name}/query")
 def query_table(name: str, request: QueryRequest, ep: EndpointInfo = Depends(get_endpoint_info)):
-    dynamodb = get_client("dynamodb", ep.url, ep.region)
+    dynamodb = get_client("dynamodb", **ep.client_kwargs())
 
     try:
         # Get table key schema
@@ -275,7 +275,7 @@ def put_table_item(
     ep: EndpointInfo = Depends(get_endpoint_info),
 ) -> dict[str, Any]:
     """Create or replace an item (DynamoDB PutItem)."""
-    dynamodb = get_client("dynamodb", ep.url, ep.region)
+    dynamodb = get_client("dynamodb", **ep.client_kwargs())
     try:
         partition_key, sort_key = _get_partition_sort_keys(dynamodb, name)
     except Exception as e:
@@ -302,7 +302,7 @@ def delete_table_item(
     request: DeleteItemRequest,
     ep: EndpointInfo = Depends(get_endpoint_info),
 ) -> dict[str, Any]:
-    dynamodb = get_client("dynamodb", ep.url, ep.region)
+    dynamodb = get_client("dynamodb", **ep.client_kwargs())
     try:
         partition_key, sort_key = _get_partition_sort_keys(dynamodb, name)
     except Exception as e:
@@ -327,7 +327,7 @@ def batch_write_items(
     request: BatchWriteRequest,
     ep: EndpointInfo = Depends(get_endpoint_info),
 ) -> dict[str, Any]:
-    dynamodb = get_client("dynamodb", ep.url, ep.region)
+    dynamodb = get_client("dynamodb", **ep.client_kwargs())
     try:
         partition_key, sort_key = _get_partition_sort_keys(dynamodb, name)
     except Exception as e:

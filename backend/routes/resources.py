@@ -182,7 +182,7 @@ def list_resources(service: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     resources: dict[str, list[dict]] = {}
     for resource_type, boto3_service, method_name, response_key in registry_entries:
         try:
-            client = get_client(boto3_service, ep.url, ep.region)
+            client = get_client(boto3_service, **ep.client_kwargs())
             method = getattr(client, method_name)
             kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
             resp = method(**kwargs)
@@ -211,7 +211,7 @@ def get_resource_detail(service: str, res_type: str, res_id: str, ep: EndpointIn
     # SES identities are plain strings — aggregate detail from multiple APIs
     if (service, res_type) == ("ses", "identities"):
         try:
-            client = get_client("ses", ep.url, ep.region)
+            client = get_client("ses", **ep.client_kwargs())
             verif = client.get_identity_verification_attributes(Identities=[res_id])
             attrs = verif.get("VerificationAttributes", {}).get(res_id, {})
             dkim = client.get_identity_dkim_attributes(Identities=[res_id])
@@ -234,7 +234,7 @@ def get_resource_detail(service: str, res_type: str, res_id: str, ep: EndpointIn
     # WAFv2 get_web_acl requires Name, Scope, AND Id — resolve Id from list first
     if (service, res_type) == ("wafv2", "web_acls"):
         try:
-            client = get_client("wafv2", ep.url, ep.region)
+            client = get_client("wafv2", **ep.client_kwargs())
             acls = client.list_web_acls(Scope="REGIONAL").get("WebACLs", [])
             match = next((a for a in acls if a.get("Name") == res_id), None)
             if not match:
@@ -267,7 +267,7 @@ def get_resource_detail(service: str, res_type: str, res_id: str, ep: EndpointIn
     }
 
     try:
-        client = get_client(boto3_service, ep.url, ep.region)
+        client = get_client(boto3_service, **ep.client_kwargs())
         method = getattr(client, method_name)
         if id_param in _LIST_PARAMS:
             resp = method(**{id_param: [res_id]})

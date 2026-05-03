@@ -92,15 +92,25 @@ export async function fetchEndpoints(): Promise<EndpointsResponse> {
   return fetchJSON<EndpointsResponse>(`${API_BASE}/endpoints`)
 }
 
+export async function fetchProfiles(): Promise<{ profiles: string[] }> {
+  return fetchJSON<{ profiles: string[] }>(`${API_BASE}/profiles`)
+}
+
 export async function addEndpoint(
   name: string,
   url: string | null,
   region?: string | null,
-): Promise<{ name: string; url: string | null; source: string; region: string }> {
+  auth?: { auth_type?: string; auth_profile?: string | null; auth_access_key_id?: string | null; auth_secret_access_key?: string | null },
+): Promise<{ name: string; url: string | null; source: string; region: string; auth_type: string }> {
   const res = await fetch(`${API_BASE}/endpoints`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, url, region: region ?? null }),
+    body: JSON.stringify({
+      name,
+      url,
+      region: region ?? null,
+      ...auth,
+    }),
   })
   if (!res.ok) {
     const data = await res.json().catch(() => null)
@@ -113,9 +123,11 @@ export async function updateEndpoint(
   name: string,
   url: string | null,
   region?: string | null,
-): Promise<{ name: string; url: string | null; source: string; region: string }> {
+  auth?: { auth_type?: string; auth_profile?: string | null; auth_access_key_id?: string | null; auth_secret_access_key?: string | null },
+): Promise<{ name: string; url: string | null; source: string; region: string; auth_type: string }> {
   const body: Record<string, unknown> = { url }
   if (region !== undefined) body.region = region
+  if (auth) Object.assign(body, auth)
   const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -148,6 +160,24 @@ export async function setDefaultEndpoint(name: string): Promise<{ success: boole
 export async function checkEndpointHealth(name: string): Promise<{ name: string; url: string | null; health: string; error: string | null }> {
   const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}/health`, {
     method: 'POST',
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+export async function testEndpointConnection(params: {
+  name: string
+  url: string | null
+  region: string | null
+  auth_type: string
+  auth_profile?: string | null
+  auth_access_key_id?: string | null
+  auth_secret_access_key?: string | null
+}): Promise<{ url: string | null; health: string; error: string | null }> {
+  const res = await fetch(`${API_BASE}/endpoints/test-connection`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
   })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
   return res.json()

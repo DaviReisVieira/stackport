@@ -9,6 +9,8 @@ export interface HealthResponse {
   writes_enabled: boolean
 }
 
+export type AuthType = 'default' | 'profile' | 'credentials'
+
 export interface Endpoint {
   name: string
   url: string | null
@@ -17,6 +19,7 @@ export interface Endpoint {
   connection_type: 'local' | 'aws'
   region: string
   source: 'env' | 'user'
+  auth_type: AuthType
 }
 
 export interface EndpointsResponse {

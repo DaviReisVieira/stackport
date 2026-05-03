@@ -25,7 +25,7 @@ def _format_date(dt) -> str | None:
 def list_secrets(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List all secrets with metadata."""
     try:
-        client = get_client("secretsmanager", ep.url, ep.region)
+        client = get_client("secretsmanager", **ep.client_kwargs())
         paginator = client.get_paginator("list_secrets")
 
         secrets = []
@@ -60,7 +60,7 @@ def list_secrets(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any
 def get_secret_detail(secret_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Get secret metadata and value."""
     try:
-        client = get_client("secretsmanager", ep.url, ep.region)
+        client = get_client("secretsmanager", **ep.client_kwargs())
 
         # Get metadata
         try:

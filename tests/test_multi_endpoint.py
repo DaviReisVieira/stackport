@@ -147,7 +147,7 @@ class TestS3EndpointParam:
         mock_s3.list_buckets.return_value = {"Buckets": []}
 
         client.get("/api/s3/buckets?endpoint=http://other:4566")
-        mock_get_client.assert_called_with("s3", "http://other:4566", None)
+        mock_get_client.assert_called_with("s3", endpoint_url="http://other:4566", region=None, auth_type="default", auth_profile=None, auth_access_key_id=None, auth_secret_access_key=None)
 
     @patch("backend.routes.s3.get_client")
     def test_list_objects_with_endpoint(self, mock_get_client, client):
@@ -158,7 +158,7 @@ class TestS3EndpointParam:
         paginator.paginate.return_value = [{"CommonPrefixes": [], "Contents": []}]
 
         client.get("/api/s3/buckets/test-bucket/objects?endpoint=http://other:4566")
-        mock_get_client.assert_called_with("s3", "http://other:4566", None)
+        mock_get_client.assert_called_with("s3", endpoint_url="http://other:4566", region=None, auth_type="default", auth_profile=None, auth_access_key_id=None, auth_secret_access_key=None)
 
 
 class TestDynamoDBEndpointParam:
@@ -171,7 +171,7 @@ class TestDynamoDBEndpointParam:
         mock_ddb.list_tables.return_value = {"TableNames": []}
 
         client.get("/api/dynamodb/tables?endpoint=http://other:4566")
-        mock_get_client.assert_called_with("dynamodb", "http://other:4566", None)
+        mock_get_client.assert_called_with("dynamodb", endpoint_url="http://other:4566", region=None, auth_type="default", auth_profile=None, auth_access_key_id=None, auth_secret_access_key=None)
 
 
 class TestSQSEndpointParam:
@@ -184,7 +184,7 @@ class TestSQSEndpointParam:
         mock_sqs.list_queues.return_value = {}
 
         client.get("/api/sqs/queues?endpoint=http://other:4566")
-        mock_get_client.assert_called_with("sqs", "http://other:4566", None)
+        mock_get_client.assert_called_with("sqs", endpoint_url="http://other:4566", region=None, auth_type="default", auth_profile=None, auth_access_key_id=None, auth_secret_access_key=None)
 
 
 class TestLambdaEndpointParam:
@@ -197,7 +197,7 @@ class TestLambdaEndpointParam:
         mock_lambda.list_functions.return_value = {"Functions": []}
 
         client.get("/api/lambda/functions?endpoint=http://other:4566")
-        mock_get_client.assert_called_with("lambda", "http://other:4566", None)
+        mock_get_client.assert_called_with("lambda", endpoint_url="http://other:4566", region=None, auth_type="default", auth_profile=None, auth_access_key_id=None, auth_secret_access_key=None)
 
 
 class TestIAMEndpointParam:
@@ -210,7 +210,7 @@ class TestIAMEndpointParam:
         mock_iam.list_roles.return_value = {"Roles": []}
 
         client.get("/api/iam/roles?endpoint=http://other:4566")
-        mock_get_client.assert_called_with("iam", "http://other:4566", None)
+        mock_get_client.assert_called_with("iam", endpoint_url="http://other:4566", region=None, auth_type="default", auth_profile=None, auth_access_key_id=None, auth_secret_access_key=None)
 
 
 class TestEC2EndpointParam:
@@ -223,7 +223,7 @@ class TestEC2EndpointParam:
         mock_ec2.describe_instances.return_value = {"Reservations": []}
 
         client.get("/api/ec2/instances?endpoint=http://other:4566")
-        mock_get_client.assert_called_with("ec2", "http://other:4566", None)
+        mock_get_client.assert_called_with("ec2", endpoint_url="http://other:4566", region=None, auth_type="default", auth_profile=None, auth_access_key_id=None, auth_secret_access_key=None)
 
 
 class TestLogsEndpointParam:
@@ -236,7 +236,7 @@ class TestLogsEndpointParam:
         mock_logs.describe_log_groups.return_value = {"logGroups": []}
 
         client.get("/api/logs/groups?endpoint=http://other:4566")
-        mock_get_client.assert_called_with("logs", "http://other:4566", None)
+        mock_get_client.assert_called_with("logs", endpoint_url="http://other:4566", region=None, auth_type="default", auth_profile=None, auth_access_key_id=None, auth_secret_access_key=None)
 
 
 class TestSecretsManagerEndpointParam:
@@ -249,7 +249,7 @@ class TestSecretsManagerEndpointParam:
         mock_sm.list_secrets.return_value = {"SecretList": []}
 
         client.get("/api/secretsmanager/secrets?endpoint=http://other:4566")
-        mock_get_client.assert_called_with("secretsmanager", "http://other:4566", None)
+        mock_get_client.assert_called_with("secretsmanager", endpoint_url="http://other:4566", region=None, auth_type="default", auth_profile=None, auth_access_key_id=None, auth_secret_access_key=None)
 
 
 class TestEndpointsRoute:

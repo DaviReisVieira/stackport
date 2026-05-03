@@ -38,7 +38,7 @@ class TestJSONPersistence:
         # Verify content
         with open(temp_json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        assert data["version"] == 1
+        assert data["version"] == 2
         assert "local" in data["endpoints"]
         assert "moto" in data["endpoints"]
         assert data["default"] == "local"

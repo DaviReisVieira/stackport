@@ -43,7 +43,7 @@ def _decode_user_data(encoded: str | None) -> str | None:
 def list_instances(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List all EC2 instances with enriched metadata."""
     try:
-        client = get_client("ec2", ep.url, ep.region)
+        client = get_client("ec2", **ep.client_kwargs())
         paginator = client.get_paginator("describe_instances")
 
         all_instances = []
@@ -78,7 +78,7 @@ def list_instances(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, A
 def get_instance_detail(instance_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Get detailed information for a specific instance including user data."""
     try:
-        client = get_client("ec2", ep.url, ep.region)
+        client = get_client("ec2", **ep.client_kwargs())
 
         # Get instance details
         response = client.describe_instances(InstanceIds=[instance_id])
@@ -138,7 +138,7 @@ def get_instance_detail(instance_id: str, ep: EndpointInfo = Depends(get_endpoin
 def start_instance(instance_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Start a stopped EC2 instance."""
     try:
-        client = get_client("ec2", ep.url, ep.region)
+        client = get_client("ec2", **ep.client_kwargs())
         response = client.start_instances(InstanceIds=[instance_id])
 
         starting_instances = response.get("StartingInstances", [])
@@ -165,7 +165,7 @@ def start_instance(instance_id: str, ep: EndpointInfo = Depends(get_endpoint_inf
 def stop_instance(instance_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Stop a running EC2 instance."""
     try:
-        client = get_client("ec2", ep.url, ep.region)
+        client = get_client("ec2", **ep.client_kwargs())
         response = client.stop_instances(InstanceIds=[instance_id])
 
         stopping_instances = response.get("StoppingInstances", [])
@@ -192,7 +192,7 @@ def stop_instance(instance_id: str, ep: EndpointInfo = Depends(get_endpoint_info
 def reboot_instance(instance_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Reboot an EC2 instance."""
     try:
-        client = get_client("ec2", ep.url, ep.region)
+        client = get_client("ec2", **ep.client_kwargs())
         client.reboot_instances(InstanceIds=[instance_id])
 
         return {"success": True, "message": f"Instance {instance_id} reboot initiated"}
@@ -209,7 +209,7 @@ def reboot_instance(instance_id: str, ep: EndpointInfo = Depends(get_endpoint_in
 def terminate_instance(instance_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Terminate an EC2 instance."""
     try:
-        client = get_client("ec2", ep.url, ep.region)
+        client = get_client("ec2", **ep.client_kwargs())
         response = client.terminate_instances(InstanceIds=[instance_id])
 
         terminating_instances = response.get("TerminatingInstances", [])
@@ -236,7 +236,7 @@ def terminate_instance(instance_id: str, ep: EndpointInfo = Depends(get_endpoint
 def list_security_groups(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List all security groups with rules."""
     try:
-        client = get_client("ec2", ep.url, ep.region)
+        client = get_client("ec2", **ep.client_kwargs())
         response = client.describe_security_groups()
 
         security_groups = []
@@ -262,7 +262,7 @@ def list_security_groups(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[
 def list_vpcs(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List all VPCs with their subnets."""
     try:
-        client = get_client("ec2", ep.url, ep.region)
+        client = get_client("ec2", **ep.client_kwargs())
         vpcs_response = client.describe_vpcs()
 
         vpcs = []
@@ -307,7 +307,7 @@ def list_vpcs(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
 def list_key_pairs(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List all key pairs."""
     try:
-        client = get_client("ec2", ep.url, ep.region)
+        client = get_client("ec2", **ep.client_kwargs())
         response = client.describe_key_pairs()
 
         key_pairs = []

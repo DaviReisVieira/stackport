@@ -489,7 +489,7 @@ def get_resource_tags(service: str, resource_type: str, resource_id: str, ep: En
 
     boto3_service, getter_fn = TAG_GETTER_REGISTRY[key]
     try:
-        client = get_client(boto3_service, ep.url, ep.region)
+        client = get_client(boto3_service, **ep.client_kwargs())
         tags = getter_fn(client, resource_id)
         return {"service": service, "type": resource_type, "id": resource_id, "tags": tags}
     except Exception as e:
@@ -505,7 +505,7 @@ def update_resource_tags(service: str, resource_type: str, resource_id: str, bod
 
     boto3_service, setter_fn = TAG_SETTER_REGISTRY[key]
     try:
-        client = get_client(boto3_service, ep.url, ep.region)
+        client = get_client(boto3_service, **ep.client_kwargs())
         setter_fn(client, resource_id, body.tags)
         return {"success": True, "service": service, "type": resource_type, "id": resource_id, "tags": body.tags}
     except Exception as e:
@@ -539,7 +539,7 @@ def bulk_tag(body: BulkTagRequest, ep: EndpointInfo = Depends(get_endpoint_info)
         boto3_svc_set, setter_fn = TAG_SETTER_REGISTRY[key]
 
         try:
-            client = get_client(boto3_svc_get, ep.url, ep.region)
+            client = get_client(boto3_svc_get, **ep.client_kwargs())
             existing = getter_fn(client, rid)
 
             if body.action == "add":
@@ -547,7 +547,7 @@ def bulk_tag(body: BulkTagRequest, ep: EndpointInfo = Depends(get_endpoint_info)
             else:
                 merged = {k: v for k, v in existing.items() if k not in body.tags}
 
-            set_client = get_client(boto3_svc_set, ep.url, ep.region)
+            set_client = get_client(boto3_svc_set, **ep.client_kwargs())
             setter_fn(set_client, rid, merged)
             results.append({"service": svc, "type": rtype, "id": rid, "success": True})
         except Exception as e:
@@ -577,7 +577,7 @@ def bulk_delete(body: BulkDeleteRequest, ep: EndpointInfo = Depends(get_endpoint
 
         boto3_svc, delete_fn = DELETE_REGISTRY[key]
         try:
-            client = get_client(boto3_svc, ep.url, ep.region)
+            client = get_client(boto3_svc, **ep.client_kwargs())
             delete_fn(client, rid)
             results.append({"service": svc, "type": rtype, "id": rid, "success": True})
         except Exception as e:

@@ -6,6 +6,11 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 AWS_ENDPOINT_URL: str | None = os.environ.get("AWS_ENDPOINT_URL")  # None = real AWS
+
+# Remove AWS_ENDPOINT_URL from the process environment so boto3's internal
+# credential resolution (SSO, AssumeRole) doesn't route to a local emulator.
+if "AWS_ENDPOINT_URL" in os.environ:
+    del os.environ["AWS_ENDPOINT_URL"]
 AWS_REGION: str = os.environ.get("AWS_REGION", "us-east-1")
 AWS_ACCESS_KEY_ID: str | None = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY: str | None = os.environ.get("AWS_SECRET_ACCESS_KEY")

@@ -85,12 +85,12 @@ export function EndpointManagement() {
     }
   }
 
-  const handleFormSubmit = async (name: string, url: string | null, region: string | null) => {
+  const handleFormSubmit = async (name: string, url: string | null, region: string | null, auth: { auth_type: string; auth_profile: string | null; auth_access_key_id: string | null; auth_secret_access_key: string | null }) => {
     if (formMode === 'add') {
-      await addEndpoint(name, url, region)
+      await addEndpoint(name, url, region, auth)
       toast.success(`Endpoint "${name}" added`)
     } else {
-      await updateEndpoint(name, url, region)
+      await updateEndpoint(name, url, region, auth)
       toast.success(`Endpoint "${name}" updated`)
     }
     refresh()
@@ -128,6 +128,7 @@ export function EndpointManagement() {
                   <TableHead>Name</TableHead>
                   <TableHead>URL / Type</TableHead>
                   <TableHead className="w-[120px]">Region</TableHead>
+                  <TableHead className="w-[100px]">Auth</TableHead>
                   <TableHead className="w-[100px]">Health</TableHead>
                   <TableHead className="w-[100px]">Source</TableHead>
                   <TableHead className="w-[120px]">Actions</TableHead>
@@ -174,6 +175,11 @@ export function EndpointManagement() {
                     </TableCell>
                     <TableCell>
                       <span className="text-sm text-muted-foreground">{endpoint.region}</span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {endpoint.auth_type === 'profile' ? 'Profile' : endpoint.auth_type === 'credentials' ? 'Keys' : 'Default'}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -238,6 +244,7 @@ export function EndpointManagement() {
         initialName={selectedEndpoint?.name}
         initialUrl={selectedEndpoint?.url}
         initialRegion={selectedEndpoint?.region}
+        initialAuthType={selectedEndpoint?.auth_type}
         source={selectedEndpoint?.source}
         onSubmit={handleFormSubmit}
       />

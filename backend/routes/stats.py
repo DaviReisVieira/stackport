@@ -134,7 +134,7 @@ def _count_items(resp, response_key: str) -> int:
     return 0
 
 
-def _probe_service(service: str, endpoint_url: str, region: str | None = None) -> tuple[str, dict]:
+def _probe_service(service: str, endpoint_url: str, region: str | None = None, **auth_kwargs) -> tuple[str, dict]:
     """Probe a single service and return (service_name, result_dict)."""
     registry_entries = SERVICE_REGISTRY.get(service)
     if not registry_entries:
@@ -143,7 +143,7 @@ def _probe_service(service: str, endpoint_url: str, region: str | None = None) -
     resources: dict[str, int] = {}
     try:
         for resource_type, boto3_service, method_name, response_key in registry_entries:
-            client = get_client(boto3_service, endpoint_url, region)
+            client = get_client(boto3_service, endpoint_url=endpoint_url, region=region, **auth_kwargs)
             method = getattr(client, method_name)
             kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
             try:
@@ -169,8 +169,14 @@ def get_stats(ep: EndpointInfo = Depends(get_endpoint_info)):
     services: dict = {}
     total_resources = 0
 
+    auth_kwargs = {
+        "auth_type": ep.auth_type,
+        "auth_profile": ep.auth_profile,
+        "auth_access_key_id": ep.auth_access_key_id,
+        "auth_secret_access_key": ep.auth_secret_access_key,
+    }
     with ThreadPoolExecutor(max_workers=min(len(enabled_services), STACKPORT_PROBE_WORKERS)) as executor:
-        futures = {executor.submit(_probe_service, svc, ep.url, ep.region): svc for svc in enabled_services}
+        futures = {executor.submit(_probe_service, svc, ep.url, ep.region, **auth_kwargs): svc for svc in enabled_services}
         for future in as_completed(futures):
             svc_name, result = future.result()
             services[svc_name] = result

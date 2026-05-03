@@ -1,6 +1,7 @@
 """WebSocket support for real-time resource updates."""
 
 import asyncio
+import functools
 import json
 import logging
 import time
@@ -60,6 +61,15 @@ manager = ConnectionManager()
 _last_stats_by_endpoint: dict[str | None, dict] = {}
 
 
+def _find_entry_for_url(url: str | None) -> dict | None:
+    """Find the endpoint entry matching a given URL."""
+    all_eps = endpoint_store.list_all()
+    for entry in all_eps.values():
+        if entry["url"] == url:
+            return entry
+    return None
+
+
 async def probe_loop():
     """Background task: probe services for each active endpoint and broadcast."""
     while True:
@@ -75,8 +85,15 @@ async def probe_loop():
                 loop = asyncio.get_event_loop()
                 enabled = [s.strip() for s in STACKPORT_SERVICES.split(",") if s.strip()]
 
-                region = endpoint_store.get_region_for_url(endpoint_url)
-                tasks = [loop.run_in_executor(None, _probe_service, svc, endpoint_url, region) for svc in enabled]
+                entry = _find_entry_for_url(endpoint_url)
+                region = entry.get("region") if entry else None
+                auth_kwargs = {
+                    "auth_type": entry.get("auth_type", "default") if entry else "default",
+                    "auth_profile": entry.get("auth_profile") if entry else None,
+                    "auth_access_key_id": entry.get("auth_access_key_id") if entry else None,
+                    "auth_secret_access_key": entry.get("auth_secret_access_key") if entry else None,
+                }
+                tasks = [loop.run_in_executor(None, functools.partial(_probe_service, svc, endpoint_url, region, **auth_kwargs)) for svc in enabled]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 services = {}

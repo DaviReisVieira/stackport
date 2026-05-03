@@ -32,7 +32,7 @@ def list_log_groups(
     if cached is not None:
         return cached
 
-    logs = get_client("logs", ep.url, ep.region)
+    logs = get_client("logs", **ep.client_kwargs())
     params: dict = {"limit": 50}
     if prefix:
         params["logGroupNamePrefix"] = prefix
@@ -83,7 +83,7 @@ def list_log_streams(
     if cached is not None:
         return cached
 
-    logs = get_client("logs", ep.url, ep.region)
+    logs = get_client("logs", **ep.client_kwargs())
     params: dict = {
         "logGroupName": name,
         "orderBy": order_by,
@@ -137,7 +137,7 @@ def get_log_events(
 ):
     """Get log events for a specific log stream with optional filtering."""
     # Events are NOT cached — tail mode needs fresh data
-    logs = get_client("logs", ep.url, ep.region)
+    logs = get_client("logs", **ep.client_kwargs())
 
     # Use filter_log_events (supports patterns) if filter_pattern is provided,
     # otherwise use get_log_events for simpler retrieval

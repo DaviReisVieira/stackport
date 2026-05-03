@@ -105,7 +105,7 @@ def _get_bucket_stats(bucket_name: str, endpoint_url: str | None) -> tuple[int, 
 
 @router.get("/buckets")
 def list_buckets(ep: EndpointInfo = Depends(get_endpoint_info)):
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     response = s3.list_buckets()
     buckets = []
     local = is_local_endpoint(ep.url)
@@ -160,7 +160,7 @@ def list_objects(
     delimiter: str = Query(default="/", description="Hierarchy delimiter"),
     ep: EndpointInfo = Depends(get_endpoint_info),
 ):
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     paginator = s3.get_paginator("list_objects_v2")
 
     folders: list[str] = []
@@ -207,7 +207,7 @@ def _validate_object_key(key: str) -> None:
 @router.post("/buckets/{name}/objects/delete-batch")
 def delete_objects_batch(name: str, body: DeleteBatchBody, ep: EndpointInfo = Depends(get_endpoint_info)):
     """Delete multiple objects by key list or all keys under a prefix."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
 
     keys_to_delete: list[str]
     if body.prefix:
@@ -249,7 +249,7 @@ def create_folder(name: str, body: CreateFolderBody, ep: EndpointInfo = Depends(
     """Create a folder marker (zero-byte object with trailing /)."""
     prefix = body.prefix
     _validate_prefix_path(prefix.rstrip("/"))
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     s3.put_object(Bucket=name, Key=prefix, Body=b"", ContentType="application/x-directory")
     _invalidate_bucket_stats(name, ep.url)
     return {"bucket": name, "prefix": prefix}
@@ -274,7 +274,7 @@ def upload_object(
 
     content_type = _resolve_upload_content_type(filename, file.content_type)
 
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     s3.put_object(
         Bucket=name,
         Key=object_key,
@@ -293,7 +293,7 @@ def upload_object(
 @router.delete("/buckets/{name}/objects/{key:path}")
 def delete_object(name: str, key: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     _validate_object_key(key)
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     s3.delete_object(Bucket=name, Key=key)
     _invalidate_bucket_stats(name, ep.url)
     return {"bucket": name, "deleted": True, "key": key}
@@ -306,7 +306,7 @@ def get_object_detail(
     download: int = Query(default=0, description="Set to 1 to download the object"),
     ep: EndpointInfo = Depends(get_endpoint_info),
 ):
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
 
     if download == 1:
         try:
@@ -354,7 +354,7 @@ def get_object_detail(
 @router.get("/buckets/{name}/versioning")
 def get_bucket_versioning(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     """Get bucket versioning status."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     try:
         resp = s3.get_bucket_versioning(Bucket=name)
         status = resp.get("Status", "Disabled")
@@ -374,7 +374,7 @@ def put_bucket_versioning(
     ep: EndpointInfo = Depends(get_endpoint_info),
 ):
     """Enable or suspend bucket versioning."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     try:
         s3.put_bucket_versioning(
             Bucket=name,
@@ -391,7 +391,7 @@ def put_bucket_versioning(
 @router.get("/buckets/{name}/lifecycle")
 def get_bucket_lifecycle(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     """Get bucket lifecycle configuration."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     try:
         resp = s3.get_bucket_lifecycle_configuration(Bucket=name)
         rules = []
@@ -419,7 +419,7 @@ def put_bucket_lifecycle(
     ep: EndpointInfo = Depends(get_endpoint_info),
 ):
     """Set bucket lifecycle configuration."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     rules = []
     for rule in body.rules:
         lifecycle_rule = {
@@ -446,7 +446,7 @@ def put_bucket_lifecycle(
 @router.delete("/buckets/{name}/lifecycle")
 def delete_bucket_lifecycle(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     """Delete bucket lifecycle configuration."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     try:
         s3.delete_bucket_lifecycle(Bucket=name)
         return {"bucket": name, "deleted": True}
@@ -462,7 +462,7 @@ def delete_bucket_lifecycle(name: str, ep: EndpointInfo = Depends(get_endpoint_i
 @router.get("/buckets/{name}/notifications")
 def get_bucket_notifications(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     """Get bucket notification configuration."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     try:
         resp = s3.get_bucket_notification_configuration(Bucket=name)
         configurations = []
@@ -512,7 +512,7 @@ def put_bucket_notifications(
     ep: EndpointInfo = Depends(get_endpoint_info),
 ):
     """Set bucket notification configuration."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
 
     lambda_configs = []
     queue_configs = []
@@ -566,7 +566,7 @@ def put_bucket_notifications(
 @router.get("/buckets/{name}/tags")
 def get_bucket_tags(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     """Get bucket tags."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     try:
         resp = s3.get_bucket_tagging(Bucket=name)
         tags = {t["Key"]: t["Value"] for t in resp.get("TagSet", [])}
@@ -587,7 +587,7 @@ def put_bucket_tags(
     ep: EndpointInfo = Depends(get_endpoint_info),
 ):
     """Set bucket tags."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     tag_set = [{"Key": k, "Value": v} for k, v in body.tags.items()]
 
     try:
@@ -606,7 +606,7 @@ def put_bucket_tags(
 @router.get("/buckets/{name}/cors")
 def get_bucket_cors(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     """Get bucket CORS configuration."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     try:
         resp = s3.get_bucket_cors(Bucket=name)
         rules = []
@@ -636,7 +636,7 @@ def put_bucket_cors(
     ep: EndpointInfo = Depends(get_endpoint_info),
 ):
     """Set bucket CORS configuration."""
-    s3 = get_client("s3", ep.url, ep.region)
+    s3 = get_client("s3", **ep.client_kwargs())
     rules = []
     for rule in body.rules:
         cors_rule: dict = {

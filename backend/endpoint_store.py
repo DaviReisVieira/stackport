@@ -22,6 +22,10 @@ class EndpointEntry(TypedDict):
     url: str | None  # None means real AWS
     source: str  # "env" or "user"
     region: str | None  # Optional per-endpoint region override
+    auth_type: str  # "default", "profile", or "credentials"
+    auth_profile: str | None  # AWS profile name (when auth_type="profile")
+    auth_access_key_id: str | None  # (when auth_type="credentials")
+    auth_secret_access_key: str | None  # (when auth_type="credentials")
 
 
 class EndpointsConfig(TypedDict):
@@ -69,11 +73,19 @@ class EndpointStore:
         """Create initial config from env vars."""
         endpoints: dict[str, EndpointEntry] = {}
         for name, url in self.env_endpoints.items():
-            endpoints[name] = {"url": url, "source": "env", "region": None}
+            endpoints[name] = {
+                "url": url,
+                "source": "env",
+                "region": None,
+                "auth_type": "default",
+                "auth_profile": None,
+                "auth_access_key_id": None,
+                "auth_secret_access_key": None,
+            }
 
         default_name = next(iter(self.env_endpoints.keys())) if self.env_endpoints else "default"
         self._config = {
-            "version": 1,
+            "version": 2,
             "default": default_name,
             "deleted_env_names": [],
             "endpoints": endpoints,
@@ -85,15 +97,37 @@ class EndpointStore:
         """Add env endpoints that aren't present and weren't deleted."""
         if not self._config:
             return
+        self._migrate_v1_to_v2()
         deleted = set(self._config["deleted_env_names"])
         added = []
         for name, url in self.env_endpoints.items():
             if name not in self._config["endpoints"] and name not in deleted:
-                self._config["endpoints"][name] = {"url": url, "source": "env", "region": None}
+                self._config["endpoints"][name] = {
+                    "url": url,
+                    "source": "env",
+                    "region": None,
+                    "auth_type": "default",
+                    "auth_profile": None,
+                    "auth_access_key_id": None,
+                    "auth_secret_access_key": None,
+                }
                 added.append(name)
         if added:
             self._save()
             logger.info("Seeded new env endpoints: %s", added)
+
+    def _migrate_v1_to_v2(self) -> None:
+        """Migrate v1 config (no auth fields) to v2."""
+        if not self._config or self._config.get("version", 1) >= 2:
+            return
+        for entry in self._config["endpoints"].values():
+            entry.setdefault("auth_type", "default")
+            entry.setdefault("auth_profile", None)
+            entry.setdefault("auth_access_key_id", None)
+            entry.setdefault("auth_secret_access_key", None)
+        self._config["version"] = 2
+        self._save()
+        logger.info("Migrated endpoints config from v1 to v2 (added auth fields)")
 
     def _save(self) -> None:
         """Atomically write config to disk."""
@@ -146,7 +180,16 @@ class EndpointStore:
                 return None
             return self._config["endpoints"].get(name)
 
-    def add(self, name: str, url: str | None, region: str | None = None) -> None:
+    def add(
+        self,
+        name: str,
+        url: str | None,
+        region: str | None = None,
+        auth_type: str = "default",
+        auth_profile: str | None = None,
+        auth_access_key_id: str | None = None,
+        auth_secret_access_key: str | None = None,
+    ) -> None:
         """Add a new endpoint.
 
         Raises:
@@ -162,20 +205,41 @@ class EndpointStore:
             if len(name) > 50:
                 raise ValueError(f"Endpoint name too long (max 50): '{name}'")
 
-            self._config["endpoints"][name] = {"url": url, "source": "user", "region": region}
+            self._config["endpoints"][name] = {
+                "url": url,
+                "source": "user",
+                "region": region,
+                "auth_type": auth_type,
+                "auth_profile": auth_profile,
+                "auth_access_key_id": auth_access_key_id,
+                "auth_secret_access_key": auth_secret_access_key,
+            }
             # If this is the first endpoint, make it default
             if len(self._config["endpoints"]) == 1:
                 self._config["default"] = name
             self._save()
             logger.info("Added endpoint: %s → %s", name, url)
 
-    def update(self, name: str, url: str | None | object = _UNSET, region: str | None | object = _UNSET) -> None:
+    def update(
+        self,
+        name: str,
+        url: str | None | object = _UNSET,
+        region: str | None | object = _UNSET,
+        auth_type: str | object = _UNSET,
+        auth_profile: str | None | object = _UNSET,
+        auth_access_key_id: str | None | object = _UNSET,
+        auth_secret_access_key: str | None | object = _UNSET,
+    ) -> None:
         """Update an existing endpoint.
 
         Args:
             name: Endpoint name
             url: New URL (None to use real AWS, unset to keep current)
             region: New region (None to clear, unset to keep current)
+            auth_type: Auth type ("default", "profile", "credentials")
+            auth_profile: AWS profile name
+            auth_access_key_id: Access key ID for credentials auth
+            auth_secret_access_key: Secret access key for credentials auth
 
         Raises:
             ValueError: If endpoint doesn't exist
@@ -191,6 +255,14 @@ class EndpointStore:
                 entry["url"] = url  # type: ignore
             if region is not _UNSET:
                 entry["region"] = region  # type: ignore
+            if auth_type is not _UNSET:
+                entry["auth_type"] = auth_type  # type: ignore
+            if auth_profile is not _UNSET:
+                entry["auth_profile"] = auth_profile  # type: ignore
+            if auth_access_key_id is not _UNSET:
+                entry["auth_access_key_id"] = auth_access_key_id  # type: ignore
+            if auth_secret_access_key is not _UNSET:
+                entry["auth_secret_access_key"] = auth_secret_access_key  # type: ignore
 
             self._save()
             logger.info("Updated endpoint: %s", name)
@@ -301,6 +373,30 @@ class EndpointStore:
             if default_entry:
                 return default_entry["url"], default_entry.get("region")
             return None, None
+
+    def resolve_full(self, endpoint_name_or_url: str | None) -> EndpointEntry | None:
+        """Resolve an endpoint to the full entry including auth info.
+
+        Returns:
+            Full EndpointEntry or None if not found.
+        """
+        with self._lock:
+            if not self._config:
+                return None
+
+            if endpoint_name_or_url is None:
+                default_name = self._config["default"]
+                return self._config["endpoints"].get(default_name)
+
+            if endpoint_name_or_url.startswith("http://") or endpoint_name_or_url.startswith("https://"):
+                return None
+
+            entry = self._config["endpoints"].get(endpoint_name_or_url)
+            if entry:
+                return entry
+
+            default_name = self._config["default"]
+            return self._config["endpoints"].get(default_name)
 
     def get_region_for_url(self, url: str | None) -> str | None:
         """Look up the per-endpoint region for a given URL."""

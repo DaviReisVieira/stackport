@@ -8,6 +8,9 @@ services:
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
+    # Uncomment to use AWS profiles/SSO from the container:
+    # volumes:
+    #   - ~/.aws:/root/.aws
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')" ]
       interval: 10s

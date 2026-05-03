@@ -25,9 +25,18 @@ def list_endpoints():
 
     for name, entry in all_endpoints.items():
         url = entry["url"]
+        auth_type = entry.get("auth_type", "default")
         health = "unknown"
         try:
-            s3 = get_client("s3", url)
+            s3 = get_client(
+                "s3",
+                endpoint_url=url,
+                region=entry.get("region"),
+                auth_type=auth_type,
+                auth_profile=entry.get("auth_profile"),
+                auth_access_key_id=entry.get("auth_access_key_id"),
+                auth_secret_access_key=entry.get("auth_secret_access_key"),
+            )
             s3.list_buckets()
             health = "healthy"
         except Exception:
@@ -42,6 +51,7 @@ def list_endpoints():
             "connection_type": "aws" if url is None or ".amazonaws.com" in url else "local",
             "region": entry.get("region") or AWS_REGION,
             "source": entry["source"],
+            "auth_type": auth_type,
         })
 
     return {"endpoints": results}
@@ -51,7 +61,15 @@ def list_endpoints():
 async def add_endpoint(body: AddEndpointBody):
     """Add a new endpoint."""
     try:
-        endpoint_store.add(body.name, body.url, region=body.region)
+        endpoint_store.add(
+            body.name,
+            body.url,
+            region=body.region,
+            auth_type=body.auth_type,
+            auth_profile=body.auth_profile,
+            auth_access_key_id=body.auth_access_key_id,
+            auth_secret_access_key=body.auth_secret_access_key,
+        )
         entry = endpoint_store.get(body.name)
         if not entry:
             raise HTTPException(status_code=500, detail="Failed to retrieve created endpoint")
@@ -65,6 +83,7 @@ async def add_endpoint(body: AddEndpointBody):
             "url": entry["url"],
             "source": entry["source"],
             "region": entry.get("region") or AWS_REGION,
+            "auth_type": entry.get("auth_type", "default"),
         }
     except ValueError as e:
         error_msg = str(e)
@@ -113,6 +132,14 @@ async def update_endpoint(name: str, body: UpdateEndpointBody):
             update_kwargs["url"] = body.url
         if "region" in body.model_fields_set:
             update_kwargs["region"] = body.region
+        if "auth_type" in body.model_fields_set:
+            update_kwargs["auth_type"] = body.auth_type
+        if "auth_profile" in body.model_fields_set:
+            update_kwargs["auth_profile"] = body.auth_profile
+        if "auth_access_key_id" in body.model_fields_set:
+            update_kwargs["auth_access_key_id"] = body.auth_access_key_id
+        if "auth_secret_access_key" in body.model_fields_set:
+            update_kwargs["auth_secret_access_key"] = body.auth_secret_access_key
         endpoint_store.update(name, **update_kwargs)
         entry = endpoint_store.get(name)
         if not entry:
@@ -135,6 +162,7 @@ async def update_endpoint(name: str, body: UpdateEndpointBody):
             "url": entry["url"],
             "source": entry["source"],
             "region": entry.get("region") or AWS_REGION,
+            "auth_type": entry.get("auth_type", "default"),
         }
     except ValueError as e:
         error_msg = str(e)
@@ -183,6 +211,50 @@ async def delete_endpoint(name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/profiles")
+def list_profiles():
+    """List available AWS profiles from ~/.aws/config."""
+    try:
+        session = __import__("boto3").Session()
+        profiles = session.available_profiles
+        return {"profiles": sorted(profiles)}
+    except Exception as e:
+        logger.warning("Failed to list AWS profiles: %s", e)
+        return {"profiles": []}
+
+
+@router.post("/endpoints/test-connection")
+def test_connection(body: AddEndpointBody):
+    """Test a connection with arbitrary params (no save required)."""
+    health = "unknown"
+    error_message = None
+
+    try:
+        # Clear cache to ensure fresh client with new auth
+        get_client.cache_clear()
+        s3 = get_client(
+            "s3",
+            endpoint_url=body.url,
+            region=body.region,
+            auth_type=body.auth_type,
+            auth_profile=body.auth_profile,
+            auth_access_key_id=body.auth_access_key_id,
+            auth_secret_access_key=body.auth_secret_access_key,
+        )
+        s3.list_buckets()
+        health = "healthy"
+    except Exception as e:
+        logger.debug("Test connection failed: %s", e, exc_info=True)
+        health = "unhealthy"
+        error_message = str(e)
+
+    return {
+        "url": body.url,
+        "health": health,
+        "error": error_message,
+    }
+
+
 @router.post("/endpoints/{name}/health")
 def check_endpoint_health(name: str):
     """Check health of a specific endpoint."""
@@ -196,7 +268,15 @@ def check_endpoint_health(name: str):
         error_message = None
 
         try:
-            s3 = get_client("s3", url)
+            s3 = get_client(
+                "s3",
+                endpoint_url=url,
+                region=entry.get("region"),
+                auth_type=entry.get("auth_type", "default"),
+                auth_profile=entry.get("auth_profile"),
+                auth_access_key_id=entry.get("auth_access_key_id"),
+                auth_secret_access_key=entry.get("auth_secret_access_key"),
+            )
             s3.list_buckets()
             health = "healthy"
         except Exception as e:
