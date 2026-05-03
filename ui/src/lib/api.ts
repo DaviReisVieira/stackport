@@ -784,6 +784,94 @@ export async function fetchSecretDetail(secretId: string, endpoint?: string | nu
   return fetchJSON<SecretDetail>(buildUrl(`/secretsmanager/secrets/${encodeURIComponent(secretId)}`, endpoint))
 }
 
+export async function createSecret(
+  data: {
+    name: string
+    description?: string
+    secretString?: string
+    secretBinary?: string
+    tags?: Record<string, string>
+  },
+  endpoint?: string | null
+): Promise<{ name: string; arn: string; versionId: string }> {
+  const url = buildUrl('/secretsmanager/secrets', endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function updateSecretValue(
+  secretId: string,
+  data: { secretString?: string; secretBinary?: string },
+  endpoint?: string | null
+): Promise<{ name: string; arn: string; versionId: string }> {
+  const url = buildUrl(`/secretsmanager/secrets/${encodeURIComponent(secretId)}/value`, endpoint)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function updateSecretMetadata(
+  secretId: string,
+  data: { description?: string; tags?: Record<string, string> },
+  endpoint?: string | null
+): Promise<{ success: boolean; message: string }> {
+  const url = buildUrl(`/secretsmanager/secrets/${encodeURIComponent(secretId)}/metadata`, endpoint)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function deleteSecret(
+  secretId: string,
+  force: boolean,
+  endpoint?: string | null
+): Promise<{ name: string; arn: string; deletionDate: string }> {
+  const params = new URLSearchParams()
+  if (force) params.set('force', 'true')
+  const url = buildUrl(`/secretsmanager/secrets/${encodeURIComponent(secretId)}`, endpoint, params)
+  const res = await fetch(url, { method: 'DELETE' })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function restoreSecret(
+  secretId: string,
+  endpoint?: string | null
+): Promise<{ name: string; arn: string }> {
+  const url = buildUrl(`/secretsmanager/secrets/${encodeURIComponent(secretId)}/restore`, endpoint)
+  const res = await fetch(url, { method: 'POST' })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
 // --- CloudWatch Logs ---
 
 export async function fetchLogGroups(prefix = '', nextToken = '', endpoint?: string | null): Promise<LogGroupsResponse> {

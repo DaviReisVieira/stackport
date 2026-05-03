@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
-import { fetchSecrets, fetchSecretDetail, updateResourceTags } from '@/lib/api'
+import {
+  fetchSecrets,
+  fetchSecretDetail,
+  updateResourceTags,
+  createSecret,
+  updateSecretValue,
+  updateSecretMetadata,
+  deleteSecret,
+  restoreSecret,
+} from '@/lib/api'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import type { Secret, SecretDetail } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,6 +21,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { EmptyState } from '@/components/EmptyState'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { getServiceIcon } from '@/lib/service-icons'
@@ -28,6 +41,12 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
+  Plus,
+  Edit,
+  Trash2,
+  FileText,
+  RotateCcw,
+  Files,
 } from 'lucide-react'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
@@ -51,6 +70,169 @@ function formatSecretValue(value: string): { formatted: string; isJson: boolean 
   } catch {
     return { formatted: value, isJson: false }
   }
+}
+
+function ValueEditor({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) {
+  const [mode, setMode] = useState<'text' | 'json'>('text')
+  const [error, setError] = useState<string | null>(null)
+
+  const handleChange = (newValue: string) => {
+    onChange(newValue)
+    if (mode === 'json') {
+      try {
+        JSON.parse(newValue)
+        setError(null)
+      } catch (e) {
+        setError('Invalid JSON')
+      }
+    } else {
+      setError(null)
+    }
+  }
+
+  const toggleMode = () => {
+    if (mode === 'text') {
+      try {
+        const parsed = JSON.parse(value)
+        onChange(JSON.stringify(parsed, null, 2))
+        setMode('json')
+        setError(null)
+      } catch {
+        setError('Cannot format as JSON - invalid syntax')
+      }
+    } else {
+      try {
+        const parsed = JSON.parse(value)
+        onChange(JSON.stringify(parsed))
+        setMode('text')
+        setError(null)
+      } catch {
+        setError('Invalid JSON - fix errors before switching to text mode')
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label>Secret Value</Label>
+        <Button variant="outline" size="sm" onClick={toggleMode}>
+          {mode === 'text' ? 'Format as JSON' : 'Plain Text'}
+        </Button>
+      </div>
+      <Textarea
+        value={value}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder="Enter secret value..."
+        className="font-mono text-xs min-h-[200px]"
+      />
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  )
+}
+
+function TagsEditor({
+  tags,
+  onChange,
+}: {
+  tags: Record<string, string>
+  onChange: (tags: Record<string, string>) => void
+}) {
+  const [newKey, setNewKey] = useState('')
+  const [newValue, setNewValue] = useState('')
+
+  const addTag = () => {
+    const key = newKey.trim()
+    if (!key) {
+      toast.error('Tag key is required')
+      return
+    }
+    onChange({ ...tags, [key]: newValue.trim() })
+    setNewKey('')
+    setNewValue('')
+  }
+
+  const removeTag = (key: string) => {
+    const updated = { ...tags }
+    delete updated[key]
+    onChange(updated)
+  }
+
+  const updateTag = (key: string, value: string) => {
+    onChange({ ...tags, [key]: value })
+  }
+
+  return (
+    <div className="space-y-3">
+      <Label>Tags</Label>
+      {Object.keys(tags).length > 0 && (
+        <div className="border rounded-md">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[40%]">Key</TableHead>
+                <TableHead>Value</TableHead>
+                <TableHead className="w-[60px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Object.entries(tags).map(([key, value]) => (
+                <TableRow key={key}>
+                  <TableCell className="font-mono text-xs">{key}</TableCell>
+                  <TableCell>
+                    <Input
+                      value={value}
+                      onChange={(e) => updateTag(key, e.target.value)}
+                      className="h-7 text-xs font-mono"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => removeTag(key)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Input
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+          placeholder="Key"
+          className="h-8 text-xs"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') addTag()
+          }}
+        />
+        <Input
+          value={newValue}
+          onChange={(e) => setNewValue(e.target.value)}
+          placeholder="Value"
+          className="h-8 text-xs"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') addTag()
+          }}
+        />
+        <Button size="sm" onClick={addTag} className="h-8">
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 function PaginationBar({
@@ -236,6 +418,24 @@ export function SecretsManagerBrowser() {
   const [pageSize, setPageSize] = useState(25)
   const [refreshing, setRefreshing] = useState(false)
 
+  // Dialog states
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [editValueDialogOpen, setEditValueDialogOpen] = useState(false)
+  const [editMetadataDialogOpen, setEditMetadataDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
+
+  // Form states
+  const [newSecretName, setNewSecretName] = useState('')
+  const [newSecretDescription, setNewSecretDescription] = useState('')
+  const [newSecretValue, setNewSecretValue] = useState('')
+  const [newSecretTags, setNewSecretTags] = useState<Record<string, string>>({})
+  const [editSecretValue, setEditSecretValue] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editTags, setEditTags] = useState<Record<string, string>>({})
+  const [forceDelete, setForceDelete] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
   const loadSecretDetail = useCallback((secretName: string | null) => {
     if (!secretName) {
       setSecretDetail(null)
@@ -257,6 +457,177 @@ export function SecretsManagerBrowser() {
 
   const refreshDetail = () => {
     loadSecretDetail(selectedSecret)
+  }
+
+  const handleCreateSecret = async () => {
+    if (!newSecretName.trim()) {
+      toast.error('Secret name is required')
+      return
+    }
+    if (!newSecretValue.trim()) {
+      toast.error('Secret value is required')
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      await createSecret(
+        {
+          name: newSecretName.trim(),
+          description: newSecretDescription.trim() || undefined,
+          secretString: newSecretValue,
+          tags: Object.keys(newSecretTags).length > 0 ? newSecretTags : undefined,
+        },
+        activeEndpoint
+      )
+      toast.success(`Secret created: ${newSecretName}`)
+      setCreateDialogOpen(false)
+      setNewSecretName('')
+      setNewSecretDescription('')
+      setNewSecretValue('')
+      setNewSecretTags({})
+      refreshSecrets()
+    } catch (error) {
+      toast.error(`Failed to create secret: ${error}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleUpdateValue = async () => {
+    if (!secretDetail) return
+    if (!editSecretValue.trim()) {
+      toast.error('Secret value is required')
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      await updateSecretValue(secretDetail.name, { secretString: editSecretValue }, activeEndpoint)
+      toast.success('Secret value updated')
+      setEditValueDialogOpen(false)
+      refreshDetail()
+      refreshSecrets()
+    } catch (error) {
+      toast.error(`Failed to update value: ${error}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleUpdateMetadata = async () => {
+    if (!secretDetail) return
+
+    try {
+      setSubmitting(true)
+      await updateSecretMetadata(
+        secretDetail.name,
+        {
+          description: editDescription,
+          tags: editTags,
+        },
+        activeEndpoint
+      )
+      toast.success('Metadata updated')
+      setEditMetadataDialogOpen(false)
+      refreshDetail()
+      refreshSecrets()
+    } catch (error) {
+      toast.error(`Failed to update metadata: ${error}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!secretDetail) return
+
+    try {
+      setSubmitting(true)
+      await deleteSecret(secretDetail.name, forceDelete, activeEndpoint)
+      toast.success(forceDelete ? 'Secret deleted immediately' : 'Secret scheduled for deletion')
+      setDeleteDialogOpen(false)
+      setForceDelete(false)
+      setSelectedSecret(null)
+      refreshSecrets()
+    } catch (error) {
+      toast.error(`Failed to delete secret: ${error}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleRestore = async () => {
+    if (!secretDetail) return
+
+    try {
+      setSubmitting(true)
+      await restoreSecret(secretDetail.name, activeEndpoint)
+      toast.success('Secret restored')
+      refreshDetail()
+      refreshSecrets()
+    } catch (error) {
+      toast.error(`Failed to restore secret: ${error}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDuplicate = async () => {
+    if (!newSecretName.trim()) {
+      toast.error('Secret name is required')
+      return
+    }
+    if (!newSecretValue.trim()) {
+      toast.error('Secret value is required')
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      await createSecret(
+        {
+          name: newSecretName.trim(),
+          description: newSecretDescription.trim() || undefined,
+          secretString: newSecretValue,
+          tags: Object.keys(newSecretTags).length > 0 ? newSecretTags : undefined,
+        },
+        activeEndpoint
+      )
+      toast.success(`Secret duplicated: ${newSecretName}`)
+      setDuplicateDialogOpen(false)
+      setNewSecretName('')
+      setNewSecretDescription('')
+      setNewSecretValue('')
+      setNewSecretTags({})
+      refreshSecrets()
+    } catch (error) {
+      toast.error(`Failed to duplicate secret: ${error}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const openEditValueDialog = () => {
+    if (!secretDetail) return
+    setEditSecretValue(secretDetail.secretValue || '')
+    setEditValueDialogOpen(true)
+  }
+
+  const openEditMetadataDialog = () => {
+    if (!secretDetail) return
+    setEditDescription(secretDetail.description || '')
+    setEditTags({ ...secretDetail.tags })
+    setEditMetadataDialogOpen(true)
+  }
+
+  const openDuplicateDialog = () => {
+    if (!secretDetail) return
+    setNewSecretName('')
+    setNewSecretDescription(secretDetail.description || '')
+    setNewSecretValue(secretDetail.secretValue || '')
+    setNewSecretTags({ ...secretDetail.tags })
+    setDuplicateDialogOpen(true)
   }
 
   const secrets = secretsData?.secrets ?? []
@@ -325,10 +696,37 @@ export function SecretsManagerBrowser() {
               <p className="text-sm text-muted-foreground mt-1">{secretDetail.description}</p>
             )}
           </div>
-          <Button variant="outline" size="sm" onClick={refreshDetail}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            {secretDetail.deletedDate ? (
+              <Button variant="default" size="sm" onClick={handleRestore} disabled={submitting}>
+                <RotateCcw className="h-4 w-4 mr-2" />
+                {submitting ? 'Restoring...' : 'Restore'}
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={openDuplicateDialog}>
+                  <Files className="h-4 w-4 mr-2" />
+                  Duplicate
+                </Button>
+                <Button variant="outline" size="sm" onClick={openEditValueDialog}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Value
+                </Button>
+                <Button variant="outline" size="sm" onClick={openEditMetadataDialog}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Edit Metadata
+                </Button>
+                <Button variant="destructive" size="sm" onClick={() => setDeleteDialogOpen(true)}>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+              </>
+            )}
+            <Button variant="outline" size="sm" onClick={refreshDetail}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -455,6 +853,10 @@ export function SecretsManagerBrowser() {
             className="pl-9"
           />
         </div>
+        <Button variant="default" size="sm" onClick={() => setCreateDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Create Secret
+        </Button>
         {filteredSecrets.length > 0 && (
           <ExportDropdown
             service="secretsmanager"
@@ -528,6 +930,176 @@ export function SecretsManagerBrowser() {
           }}
         />
       )}
+
+      {/* Create Secret Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create Secret</DialogTitle>
+            <DialogDescription>Create a new secret in Secrets Manager</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="create-name">Name *</Label>
+              <Input
+                id="create-name"
+                value={newSecretName}
+                onChange={(e) => setNewSecretName(e.target.value)}
+                placeholder="my-secret-name"
+                className="font-mono text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-description">Description</Label>
+              <Input
+                id="create-description"
+                value={newSecretDescription}
+                onChange={(e) => setNewSecretDescription(e.target.value)}
+                placeholder="Optional description"
+              />
+            </div>
+            <ValueEditor value={newSecretValue} onChange={setNewSecretValue} />
+            <TagsEditor tags={newSecretTags} onChange={setNewSecretTags} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateSecret} disabled={submitting}>
+              {submitting ? 'Creating...' : 'Create Secret'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Value Dialog */}
+      <Dialog open={editValueDialogOpen} onOpenChange={setEditValueDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Secret Value</DialogTitle>
+            <DialogDescription>Update the value of {secretDetail?.name}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <ValueEditor value={editSecretValue} onChange={setEditSecretValue} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditValueDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateValue} disabled={submitting}>
+              {submitting ? 'Updating...' : 'Update Value'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Metadata Dialog */}
+      <Dialog open={editMetadataDialogOpen} onOpenChange={setEditMetadataDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Metadata</DialogTitle>
+            <DialogDescription>Update description and tags for {secretDetail?.name}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Input
+                id="edit-description"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Optional description"
+              />
+            </div>
+            <TagsEditor tags={editTags} onChange={setEditTags} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditMetadataDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateMetadata} disabled={submitting}>
+              {submitting ? 'Updating...' : 'Update Metadata'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Secret</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {secretDetail?.name}?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="force-delete"
+                checked={forceDelete}
+                onCheckedChange={(checked) => setForceDelete(checked === true)}
+              />
+              <Label htmlFor="force-delete" className="text-sm cursor-pointer">
+                Force delete immediately (cannot be recovered)
+              </Label>
+            </div>
+            {!forceDelete && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Without force delete, the secret will be scheduled for deletion in 7 days and can be restored.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={submitting}>
+              {submitting ? 'Deleting...' : 'Delete Secret'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicate Dialog */}
+      <Dialog open={duplicateDialogOpen} onOpenChange={setDuplicateDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Duplicate Secret</DialogTitle>
+            <DialogDescription>Create a copy of {secretDetail?.name}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="duplicate-name">Name *</Label>
+              <Input
+                id="duplicate-name"
+                value={newSecretName}
+                onChange={(e) => setNewSecretName(e.target.value)}
+                placeholder="new-secret-name"
+                className="font-mono text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="duplicate-description">Description</Label>
+              <Input
+                id="duplicate-description"
+                value={newSecretDescription}
+                onChange={(e) => setNewSecretDescription(e.target.value)}
+                placeholder="Optional description"
+              />
+            </div>
+            <ValueEditor value={newSecretValue} onChange={setNewSecretValue} />
+            <TagsEditor tags={newSecretTags} onChange={setNewSecretTags} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDuplicateDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleDuplicate} disabled={submitting}>
+              {submitting ? 'Creating...' : 'Create Copy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

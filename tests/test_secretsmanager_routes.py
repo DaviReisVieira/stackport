@@ -279,3 +279,230 @@ class TestGetSecretDetail:
         assert resp.status_code == 200
         data = resp.json()
         assert data["secretValue"] == "sk-abc123def456"
+
+
+class TestCreateSecret:
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_create_secret_with_string(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+        mock_sm.create_secret.return_value = {
+            "Name": "test-secret",
+            "ARN": "arn:aws:secretsmanager:us-east-1:000:secret:test-secret-abc",
+            "VersionId": "v1",
+        }
+
+        resp = client.post(
+            "/api/secretsmanager/secrets",
+            json={
+                "name": "test-secret",
+                "description": "Test secret",
+                "secret_string": "my-secret-value",
+                "tags": {"env": "test"},
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "test-secret"
+        assert data["arn"] == "arn:aws:secretsmanager:us-east-1:000:secret:test-secret-abc"
+        assert data["versionId"] == "v1"
+
+        mock_sm.create_secret.assert_called_once()
+        call_kwargs = mock_sm.create_secret.call_args[1]
+        assert call_kwargs["Name"] == "test-secret"
+        assert call_kwargs["Description"] == "Test secret"
+        assert call_kwargs["SecretString"] == "my-secret-value"
+        assert call_kwargs["Tags"] == [{"Key": "env", "Value": "test"}]
+
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_create_secret_with_binary(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+        mock_sm.create_secret.return_value = {
+            "Name": "binary-secret",
+            "ARN": "arn:binary",
+            "VersionId": "v1",
+        }
+
+        import base64
+        binary_data = base64.b64encode(b"\x00\x01\x02").decode("utf-8")
+
+        resp = client.post(
+            "/api/secretsmanager/secrets",
+            json={"name": "binary-secret", "secret_binary": binary_data},
+        )
+        assert resp.status_code == 201
+
+        call_kwargs = mock_sm.create_secret.call_args[1]
+        assert call_kwargs["SecretBinary"] == b"\x00\x01\x02"
+
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_create_secret_duplicate_name(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+        mock_sm.exceptions.ResourceExistsException = type(
+            "ResourceExistsException", (Exception,), {}
+        )
+        mock_sm.create_secret.side_effect = mock_sm.exceptions.ResourceExistsException()
+
+        resp = client.post(
+            "/api/secretsmanager/secrets",
+            json={"name": "existing", "secret_string": "value"},
+        )
+        assert resp.status_code == 409
+        assert "already exists" in resp.json()["detail"]
+
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_create_secret_no_value(self, mock_get_client):
+        resp = client.post(
+            "/api/secretsmanager/secrets",
+            json={"name": "test"},
+        )
+        assert resp.status_code == 400
+        assert "secret_string or secret_binary" in resp.json()["detail"]
+
+
+class TestUpdateSecretValue:
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_update_secret_value(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+        mock_sm.put_secret_value.return_value = {
+            "ARN": "arn:test",
+            "Name": "test-secret",
+            "VersionId": "v2",
+            "VersionStages": ["AWSCURRENT"],
+        }
+
+        resp = client.put(
+            "/api/secretsmanager/secrets/test-secret/value",
+            json={"secret_string": "new-value"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "test-secret"
+        assert data["versionId"] == "v2"
+
+        mock_sm.put_secret_value.assert_called_once()
+        call_kwargs = mock_sm.put_secret_value.call_args[1]
+        assert call_kwargs["SecretId"] == "test-secret"
+        assert call_kwargs["SecretString"] == "new-value"
+
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_update_secret_value_not_found(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+        mock_sm.exceptions.ResourceNotFoundException = type(
+            "ResourceNotFoundException", (Exception,), {}
+        )
+        mock_sm.put_secret_value.side_effect = (
+            mock_sm.exceptions.ResourceNotFoundException()
+        )
+
+        resp = client.put(
+            "/api/secretsmanager/secrets/nonexistent/value",
+            json={"secret_string": "value"},
+        )
+        assert resp.status_code == 404
+
+
+class TestUpdateSecretMetadata:
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_update_description(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+
+        resp = client.put(
+            "/api/secretsmanager/secrets/test-secret/metadata",
+            json={"description": "New description"},
+        )
+        assert resp.status_code == 200
+        mock_sm.update_secret.assert_called_once_with(
+            SecretId="test-secret", Description="New description"
+        )
+
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_update_tags(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+        mock_sm.describe_secret.return_value = {
+            "ARN": "arn:test",
+            "Tags": [{"Key": "old", "Value": "tag"}],
+        }
+
+        resp = client.put(
+            "/api/secretsmanager/secrets/test-secret/metadata",
+            json={"tags": {"new": "tag"}},
+        )
+        assert resp.status_code == 200
+        mock_sm.untag_resource.assert_called_once()
+        mock_sm.tag_resource.assert_called_once()
+
+
+class TestDeleteSecret:
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_delete_secret_with_recovery(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+        mock_sm.delete_secret.return_value = {
+            "ARN": "arn:test",
+            "Name": "test-secret",
+            "DeletionDate": CHANGED,
+        }
+
+        resp = client.delete("/api/secretsmanager/secrets/test-secret")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "test-secret"
+        assert data["deletionDate"] == CHANGED.isoformat()
+
+        call_kwargs = mock_sm.delete_secret.call_args[1]
+        assert call_kwargs["RecoveryWindowInDays"] == 7
+        assert "ForceDeleteWithoutRecovery" not in call_kwargs
+
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_delete_secret_force(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+        mock_sm.delete_secret.return_value = {
+            "ARN": "arn:test",
+            "Name": "test-secret",
+            "DeletionDate": CHANGED,
+        }
+
+        resp = client.delete("/api/secretsmanager/secrets/test-secret?force=true")
+        assert resp.status_code == 200
+
+        call_kwargs = mock_sm.delete_secret.call_args[1]
+        assert call_kwargs["ForceDeleteWithoutRecovery"] is True
+        assert "RecoveryWindowInDays" not in call_kwargs
+
+
+class TestRestoreSecret:
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_restore_secret(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+        mock_sm.restore_secret.return_value = {
+            "ARN": "arn:test",
+            "Name": "test-secret",
+        }
+
+        resp = client.post("/api/secretsmanager/secrets/test-secret/restore")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "test-secret"
+
+    @patch("backend.routes.secretsmanager.get_client")
+    def test_restore_secret_not_deleted(self, mock_get_client):
+        mock_sm = MagicMock()
+        mock_get_client.return_value = mock_sm
+
+        error = Exception("Invalid request")
+        error.response = {
+            "Error": {"Code": "InvalidRequestException", "Message": "Secret not in deleted state"}
+        }
+        mock_sm.restore_secret.side_effect = error
+
+        resp = client.post("/api/secretsmanager/secrets/test-secret/restore")
+        assert resp.status_code == 400
