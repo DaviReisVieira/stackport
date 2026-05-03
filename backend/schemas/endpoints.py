@@ -8,12 +8,14 @@ class AddEndpointBody(BaseModel):
 
     name: str = Field(..., description="Unique endpoint name")
     url: str | None = Field(None, description="Endpoint URL (None for real AWS)")
+    region: str | None = Field(None, description="AWS region override (None uses global default)")
 
 
 class UpdateEndpointBody(BaseModel):
     """Request body for updating an endpoint."""
 
     url: str | None = Field(None, description="New endpoint URL (None for real AWS)")
+    region: str | None = Field(None, description="AWS region override (None uses global default)")
 
 
 class SetDefaultBody(BaseModel):

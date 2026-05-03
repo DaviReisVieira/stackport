@@ -51,7 +51,7 @@ def list_endpoints():
 async def add_endpoint(body: AddEndpointBody):
     """Add a new endpoint."""
     try:
-        endpoint_store.add(body.name, body.url)
+        endpoint_store.add(body.name, body.url, region=body.region)
         entry = endpoint_store.get(body.name)
         if not entry:
             raise HTTPException(status_code=500, detail="Failed to retrieve created endpoint")
@@ -108,7 +108,12 @@ async def update_endpoint(name: str, body: UpdateEndpointBody):
         old_entry = endpoint_store.get(name)
         old_url = old_entry["url"] if old_entry else None
 
-        endpoint_store.update(name, url=body.url)
+        update_kwargs: dict = {}
+        if "url" in body.model_fields_set:
+            update_kwargs["url"] = body.url
+        if "region" in body.model_fields_set:
+            update_kwargs["region"] = body.region
+        endpoint_store.update(name, **update_kwargs)
         entry = endpoint_store.get(name)
         if not entry:
             raise HTTPException(status_code=404, detail=f"Endpoint '{name}' not found")

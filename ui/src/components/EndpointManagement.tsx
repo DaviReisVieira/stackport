@@ -85,12 +85,12 @@ export function EndpointManagement() {
     }
   }
 
-  const handleFormSubmit = async (name: string, url: string | null) => {
+  const handleFormSubmit = async (name: string, url: string | null, region: string | null) => {
     if (formMode === 'add') {
-      await addEndpoint(name, url)
+      await addEndpoint(name, url, region)
       toast.success(`Endpoint "${name}" added`)
     } else {
-      await updateEndpoint(name, url)
+      await updateEndpoint(name, url, region)
       toast.success(`Endpoint "${name}" updated`)
     }
     refresh()
@@ -127,6 +127,7 @@ export function EndpointManagement() {
                   <TableHead className="w-[50px]"></TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>URL / Type</TableHead>
+                  <TableHead className="w-[120px]">Region</TableHead>
                   <TableHead className="w-[100px]">Health</TableHead>
                   <TableHead className="w-[100px]">Source</TableHead>
                   <TableHead className="w-[120px]">Actions</TableHead>
@@ -172,6 +173,9 @@ export function EndpointManagement() {
                       )}
                     </TableCell>
                     <TableCell>
+                      <span className="text-sm text-muted-foreground">{endpoint.region}</span>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center gap-2">
                         <HealthDot health={endpoint.health} />
                         <span className="text-sm capitalize">{endpoint.health}</span>
@@ -190,15 +194,12 @@ export function EndpointManagement() {
                               variant="ghost"
                               size="sm"
                               onClick={() => handleEdit(endpoint)}
-                              disabled={endpoint.source === 'env'}
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            {endpoint.source === 'env'
-                              ? 'Cannot edit environment endpoint'
-                              : 'Edit endpoint'}
+                            Edit endpoint
                           </TooltipContent>
                         </Tooltip>
                         <Tooltip>
@@ -236,6 +237,8 @@ export function EndpointManagement() {
         mode={formMode}
         initialName={selectedEndpoint?.name}
         initialUrl={selectedEndpoint?.url}
+        initialRegion={selectedEndpoint?.region}
+        source={selectedEndpoint?.source}
         onSubmit={handleFormSubmit}
       />
 

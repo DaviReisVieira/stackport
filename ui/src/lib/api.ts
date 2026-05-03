@@ -92,23 +92,39 @@ export async function fetchEndpoints(): Promise<EndpointsResponse> {
   return fetchJSON<EndpointsResponse>(`${API_BASE}/endpoints`)
 }
 
-export async function addEndpoint(name: string, url: string | null): Promise<{ name: string; url: string | null; source: string; region: string }> {
+export async function addEndpoint(
+  name: string,
+  url: string | null,
+  region?: string | null,
+): Promise<{ name: string; url: string | null; source: string; region: string }> {
   const res = await fetch(`${API_BASE}/endpoints`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, url }),
+    body: JSON.stringify({ name, url, region: region ?? null }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
   return res.json()
 }
 
-export async function updateEndpoint(name: string, url: string | null): Promise<{ name: string; url: string | null; source: string; region: string }> {
+export async function updateEndpoint(
+  name: string,
+  url: string | null,
+  region?: string | null,
+): Promise<{ name: string; url: string | null; source: string; region: string }> {
+  const body: Record<string, unknown> = { url }
+  if (region !== undefined) body.region = region
   const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
   return res.json()
 }
 

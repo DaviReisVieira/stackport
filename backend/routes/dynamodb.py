@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.aws_client import get_client
 from backend.cache import cache
-from backend.routes.common import get_endpoint_url
+from backend.routes.common import EndpointInfo, get_endpoint_info
 from backend.schemas.dynamodb import BatchWriteRequest, DeleteItemRequest, PutItemRequest, QueryRequest
 
 logger = logging.getLogger(__name__)
@@ -92,8 +92,8 @@ def _get_table_item_count(table_name: str, endpoint_url: str | None) -> int:
 
 
 @router.get("/tables")
-def list_tables(endpoint_url: str | None = Depends(get_endpoint_url)):
-    dynamodb = get_client("dynamodb", endpoint_url)
+def list_tables(ep: EndpointInfo = Depends(get_endpoint_info)):
+    dynamodb = get_client("dynamodb", ep.url, ep.region)
     paginator = dynamodb.get_paginator("list_tables")
     table_names = []
 
@@ -132,8 +132,8 @@ def list_tables(endpoint_url: str | None = Depends(get_endpoint_url)):
 
 
 @router.get("/tables/{name}")
-def get_table_detail(name: str, endpoint_url: str | None = Depends(get_endpoint_url)):
-    dynamodb = get_client("dynamodb", endpoint_url)
+def get_table_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
+    dynamodb = get_client("dynamodb", ep.url, ep.region)
 
     try:
         resp = dynamodb.describe_table(TableName=name)
@@ -171,9 +171,9 @@ def scan_table(
     name: str,
     limit: int = Query(default=25, ge=1, le=100, description="Max items per page"),
     exclusive_start_key: str = Query(default=None, description="Base64 encoded last evaluated key for pagination"),
-    endpoint_url: str | None = Depends(get_endpoint_url),
+    ep: EndpointInfo = Depends(get_endpoint_info),
 ):
-    dynamodb = get_client("dynamodb", endpoint_url)
+    dynamodb = get_client("dynamodb", ep.url, ep.region)
 
     scan_params: dict[str, Any] = {
         "TableName": name,
@@ -210,8 +210,8 @@ def scan_table(
 
 
 @router.post("/tables/{name}/query")
-def query_table(name: str, request: QueryRequest, endpoint_url: str | None = Depends(get_endpoint_url)):
-    dynamodb = get_client("dynamodb", endpoint_url)
+def query_table(name: str, request: QueryRequest, ep: EndpointInfo = Depends(get_endpoint_info)):
+    dynamodb = get_client("dynamodb", ep.url, ep.region)
 
     try:
         # Get table key schema
@@ -272,10 +272,10 @@ def query_table(name: str, request: QueryRequest, endpoint_url: str | None = Dep
 def put_table_item(
     name: str,
     request: PutItemRequest,
-    endpoint_url: str | None = Depends(get_endpoint_url),
+    ep: EndpointInfo = Depends(get_endpoint_info),
 ) -> dict[str, Any]:
     """Create or replace an item (DynamoDB PutItem)."""
-    dynamodb = get_client("dynamodb", endpoint_url)
+    dynamodb = get_client("dynamodb", ep.url, ep.region)
     try:
         partition_key, sort_key = _get_partition_sort_keys(dynamodb, name)
     except Exception as e:
@@ -292,7 +292,7 @@ def put_table_item(
         logger.error("put_item %s: %s", name, e, exc_info=True)
         raise HTTPException(status_code=400, detail=msg) from e
 
-    _invalidate_table_item_count(name, endpoint_url)
+    _invalidate_table_item_count(name, ep.url)
     return {"ok": True, "table": name}
 
 
@@ -300,9 +300,9 @@ def put_table_item(
 def delete_table_item(
     name: str,
     request: DeleteItemRequest,
-    endpoint_url: str | None = Depends(get_endpoint_url),
+    ep: EndpointInfo = Depends(get_endpoint_info),
 ) -> dict[str, Any]:
-    dynamodb = get_client("dynamodb", endpoint_url)
+    dynamodb = get_client("dynamodb", ep.url, ep.region)
     try:
         partition_key, sort_key = _get_partition_sort_keys(dynamodb, name)
     except Exception as e:
@@ -317,7 +317,7 @@ def delete_table_item(
         msg = _client_error_message(e)
         raise HTTPException(status_code=400, detail=msg) from e
 
-    _invalidate_table_item_count(name, endpoint_url)
+    _invalidate_table_item_count(name, ep.url)
     return {"ok": True, "table": name}
 
 
@@ -325,9 +325,9 @@ def delete_table_item(
 def batch_write_items(
     name: str,
     request: BatchWriteRequest,
-    endpoint_url: str | None = Depends(get_endpoint_url),
+    ep: EndpointInfo = Depends(get_endpoint_info),
 ) -> dict[str, Any]:
-    dynamodb = get_client("dynamodb", endpoint_url)
+    dynamodb = get_client("dynamodb", ep.url, ep.region)
     try:
         partition_key, sort_key = _get_partition_sort_keys(dynamodb, name)
     except Exception as e:
@@ -350,7 +350,7 @@ def batch_write_items(
         msg = _client_error_message(e)
         raise HTTPException(status_code=400, detail=msg) from e
 
-    _invalidate_table_item_count(name, endpoint_url)
+    _invalidate_table_item_count(name, ep.url)
 
     uproc = resp.get("UnprocessedItems", {})
     if uproc:

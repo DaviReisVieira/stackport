@@ -17,7 +17,7 @@ from backend.config import (
     STACKPORT_SERVICES,
     is_local_endpoint,
 )
-from backend.routes.common import get_endpoint_url
+from backend.routes.common import EndpointInfo, get_endpoint_info
 
 router = APIRouter()
 
@@ -94,21 +94,21 @@ _start_time = time.time()
 
 
 @router.get("/health")
-def health(endpoint_url: str | None = Depends(get_endpoint_url)):
+def health(ep: EndpointInfo = Depends(get_endpoint_info)):
     try:
         version = importlib.metadata.version("stackport")
     except importlib.metadata.PackageNotFoundError:
         version = "dev"
     enabled = [s.strip() for s in STACKPORT_SERVICES.split(",") if s.strip()]
 
-    connection_type = "local" if is_local_endpoint(endpoint_url) else "aws"
+    connection_type = "local" if is_local_endpoint(ep.url) else "aws"
 
     return {
         "status": "ok",
         "version": version,
         "uptime_seconds": round(time.time() - _start_time, 1),
-        "endpoint_url": endpoint_url,
-        "region": AWS_REGION,
+        "endpoint_url": ep.url,
+        "region": ep.region or AWS_REGION,
         "services_count": len(enabled),
         "connection_type": connection_type,
         "writes_enabled": STACKPORT_ALLOW_WRITES,
@@ -134,7 +134,7 @@ def _count_items(resp, response_key: str) -> int:
     return 0
 
 
-def _probe_service(service: str, endpoint_url: str) -> tuple[str, dict]:
+def _probe_service(service: str, endpoint_url: str, region: str | None = None) -> tuple[str, dict]:
     """Probe a single service and return (service_name, result_dict)."""
     registry_entries = SERVICE_REGISTRY.get(service)
     if not registry_entries:
@@ -143,7 +143,7 @@ def _probe_service(service: str, endpoint_url: str) -> tuple[str, dict]:
     resources: dict[str, int] = {}
     try:
         for resource_type, boto3_service, method_name, response_key in registry_entries:
-            client = get_client(boto3_service, endpoint_url)
+            client = get_client(boto3_service, endpoint_url, region)
             method = getattr(client, method_name)
             kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
             try:
@@ -159,8 +159,8 @@ def _probe_service(service: str, endpoint_url: str) -> tuple[str, dict]:
 
 
 @router.get("/stats")
-def get_stats(endpoint_url: str = Depends(get_endpoint_url)):
-    cache_key = f"{endpoint_url}:stats"
+def get_stats(ep: EndpointInfo = Depends(get_endpoint_info)):
+    cache_key = f"{ep.url}:stats"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -170,7 +170,7 @@ def get_stats(endpoint_url: str = Depends(get_endpoint_url)):
     total_resources = 0
 
     with ThreadPoolExecutor(max_workers=min(len(enabled_services), STACKPORT_PROBE_WORKERS)) as executor:
-        futures = {executor.submit(_probe_service, svc, endpoint_url): svc for svc in enabled_services}
+        futures = {executor.submit(_probe_service, svc, ep.url, ep.region): svc for svc in enabled_services}
         for future in as_completed(futures):
             svc_name, result = future.result()
             services[svc_name] = result

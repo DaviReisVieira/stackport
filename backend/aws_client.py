@@ -13,22 +13,24 @@ _UNSET = object()
 
 
 @functools.lru_cache(maxsize=256)
-def get_client(service_name: str, endpoint_url: str | None = _UNSET):
+def get_client(service_name: str, endpoint_url: str | None = _UNSET, region: str | None = None):
     """Return a boto3 client for the given service and endpoint.
 
     Args:
         service_name: AWS service name (e.g., "s3", "dynamodb")
         endpoint_url: Endpoint URL. None means real AWS (no custom endpoint).
                      Omitted (sentinel) means use default endpoint.
+        region: Per-endpoint region override. None means use global AWS_REGION.
 
     Returns:
         Configured boto3 client
     """
     url = endpoint_store.get_default_url() if endpoint_url is _UNSET else endpoint_url
+    resolved_region = region or AWS_REGION
 
     kwargs = {
         "service_name": service_name,
-        "region_name": AWS_REGION,
+        "region_name": resolved_region,
     }
 
     if url is not None:

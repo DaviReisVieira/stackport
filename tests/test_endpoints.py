@@ -168,6 +168,62 @@ class TestAddEndpoint:
         assert resp.status_code == 422
 
 
+class TestAddEndpointWithRegion:
+    """Test POST /api/endpoints with region."""
+
+    @patch("backend.routes.endpoints.endpoint_store")
+    @patch("backend.websocket.broadcast_endpoints_changed")
+    def test_add_endpoint_with_region(self, mock_broadcast, mock_store, client):
+        """Test creating endpoint with region returns region in response."""
+        mock_store.add.return_value = None
+        mock_store.get.return_value = {
+            "url": "http://eu-endpoint:4566",
+            "source": "user",
+            "region": "eu-west-1",
+        }
+
+        resp = client.post(
+            "/api/endpoints",
+            json={"name": "eu-endpoint", "url": "http://eu-endpoint:4566", "region": "eu-west-1"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "eu-endpoint"
+        assert data["url"] == "http://eu-endpoint:4566"
+        assert data["region"] == "eu-west-1"
+
+        # Verify store.add was called with region
+        mock_store.add.assert_called_once_with("eu-endpoint", "http://eu-endpoint:4566", region="eu-west-1")
+
+
+class TestUpdateEndpointRegionOnly:
+    """Test PUT /api/endpoints/{name} with only region."""
+
+    @patch("backend.routes.endpoints.endpoint_store")
+    @patch("backend.aws_client.get_client")
+    @patch("backend.routes.endpoints.cache")
+    @patch("backend.websocket.broadcast_endpoints_changed")
+    def test_update_endpoint_region_only(self, mock_broadcast, mock_cache, mock_get_client, mock_store, client):
+        """Test updating only region preserves URL."""
+        mock_store.get.side_effect = [
+            {"url": "http://test:4566", "source": "user", "region": None},
+            {"url": "http://test:4566", "source": "user", "region": "eu-west-1"},
+        ]
+        mock_store.update.return_value = None
+
+        resp = client.put(
+            "/api/endpoints/test-endpoint",
+            json={"region": "eu-west-1"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["url"] == "http://test:4566"
+        assert data["region"] == "eu-west-1"
+
+        # Verify store.update was called with only region, NOT url
+        mock_store.update.assert_called_once_with("test-endpoint", region="eu-west-1")
+
+
 class TestUpdateEndpoint:
     """Test PUT /api/endpoints/{name}."""
 

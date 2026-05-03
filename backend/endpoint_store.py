@@ -13,6 +13,8 @@ from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
+_UNSET = object()
+
 
 class EndpointEntry(TypedDict):
     """Single endpoint configuration."""
@@ -167,7 +169,7 @@ class EndpointStore:
             self._save()
             logger.info("Added endpoint: %s → %s", name, url)
 
-    def update(self, name: str, url: str | None | object = None, region: str | None | object = None) -> None:
+    def update(self, name: str, url: str | None | object = _UNSET, region: str | None | object = _UNSET) -> None:
         """Update an existing endpoint.
 
         Args:
@@ -178,7 +180,6 @@ class EndpointStore:
         Raises:
             ValueError: If endpoint doesn't exist
         """
-        _UNSET = object()
         with self._lock:
             if not self._config:
                 raise RuntimeError("Config not initialized")
@@ -267,3 +268,46 @@ class EndpointStore:
 
             # Fallback to default
             return self.get_default_url()
+
+    def resolve_with_region(self, endpoint_name_or_url: str | None) -> tuple[str | None, str | None]:
+        """Resolve an endpoint to both URL and region.
+
+        Unlike resolve(), this preserves the endpoint name → region mapping,
+        avoiding ambiguity when multiple endpoints share the same URL.
+
+        Returns:
+            Tuple of (url, region). Region is None if not set.
+        """
+        with self._lock:
+            if not self._config:
+                return None, None
+
+            if endpoint_name_or_url is None:
+                default_name = self._config["default"]
+                entry = self._config["endpoints"].get(default_name)
+                if entry:
+                    return entry["url"], entry.get("region")
+                return None, None
+
+            if endpoint_name_or_url.startswith("http://") or endpoint_name_or_url.startswith("https://"):
+                return endpoint_name_or_url, None
+
+            entry = self._config["endpoints"].get(endpoint_name_or_url)
+            if entry:
+                return entry["url"], entry.get("region")
+
+            default_name = self._config["default"]
+            default_entry = self._config["endpoints"].get(default_name)
+            if default_entry:
+                return default_entry["url"], default_entry.get("region")
+            return None, None
+
+    def get_region_for_url(self, url: str | None) -> str | None:
+        """Look up the per-endpoint region for a given URL."""
+        with self._lock:
+            if not self._config:
+                return None
+            for entry in self._config["endpoints"].values():
+                if entry["url"] == url:
+                    return entry.get("region")
+            return None

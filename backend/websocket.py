@@ -75,7 +75,8 @@ async def probe_loop():
                 loop = asyncio.get_event_loop()
                 enabled = [s.strip() for s in STACKPORT_SERVICES.split(",") if s.strip()]
 
-                tasks = [loop.run_in_executor(None, _probe_service, svc, endpoint_url) for svc in enabled]
+                region = endpoint_store.get_region_for_url(endpoint_url)
+                tasks = [loop.run_in_executor(None, _probe_service, svc, endpoint_url, region) for svc in enabled]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 services = {}

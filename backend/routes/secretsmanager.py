@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.aws_client import get_client
-from backend.routes.common import get_endpoint_url
+from backend.routes.common import EndpointInfo, get_endpoint_info
 
 router = APIRouter()
 
@@ -22,10 +22,10 @@ def _format_date(dt) -> str | None:
 
 
 @router.get("/secrets")
-def list_secrets(endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
+def list_secrets(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List all secrets with metadata."""
     try:
-        client = get_client("secretsmanager", endpoint_url)
+        client = get_client("secretsmanager", ep.url, ep.region)
         paginator = client.get_paginator("list_secrets")
 
         secrets = []
@@ -57,10 +57,10 @@ def list_secrets(endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[s
 
 
 @router.get("/secrets/{secret_id:path}")
-def get_secret_detail(secret_id: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
+def get_secret_detail(secret_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Get secret metadata and value."""
     try:
-        client = get_client("secretsmanager", endpoint_url)
+        client = get_client("secretsmanager", ep.url, ep.region)
 
         # Get metadata
         try:

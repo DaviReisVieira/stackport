@@ -64,7 +64,7 @@ export function EndpointSelector({ compact }: EndpointSelectorProps) {
               <HealthDot health={ep.health} />
               <span>{ep.name}</span>
               <span className="text-muted-foreground text-[10px] ml-1">
-                {ep.connection_type === 'aws' ? 'AWS' : ep.url ?? 'local'}
+                {ep.region}
               </span>
             </div>
           </SelectItem>

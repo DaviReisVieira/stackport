@@ -374,6 +374,63 @@ class TestThreadSafety:
         assert len(endpoints) >= 1  # At least one must remain
 
 
+class TestGetRegionForUrl:
+    """Test reverse-lookup of per-endpoint region by URL."""
+
+    def test_returns_region_when_set(self, temp_json_path):
+        """Test that get_region_for_url returns the region for a matching URL."""
+        store = EndpointStore(temp_json_path, {"local": "http://localhost:4566"})
+        store.add("eu-endpoint", "http://eu.test:4566", region="eu-west-1")
+
+        assert store.get_region_for_url("http://eu.test:4566") == "eu-west-1"
+
+    def test_returns_none_when_no_region(self, temp_json_path, env_endpoints):
+        """Test that get_region_for_url returns None when endpoint has no region."""
+        store = EndpointStore(temp_json_path, env_endpoints)
+
+        assert store.get_region_for_url("http://localhost:4566") is None
+
+    def test_returns_none_for_unknown_url(self, temp_json_path, env_endpoints):
+        """Test that get_region_for_url returns None for a URL not in the store."""
+        store = EndpointStore(temp_json_path, env_endpoints)
+
+        assert store.get_region_for_url("http://unknown:9999") is None
+
+    def test_returns_none_when_config_empty(self, temp_json_path):
+        """Test that get_region_for_url returns None when config is empty."""
+        store = EndpointStore(temp_json_path, {})
+        # Force _config to None to test the guard
+        store._config = None
+
+        assert store.get_region_for_url("http://localhost:4566") is None
+
+
+class TestSentinelFix:
+    """Test that the _UNSET sentinel works correctly for partial updates."""
+
+    def test_update_region_only_preserves_url(self, temp_json_path, env_endpoints):
+        """Calling update with only region should NOT reset the URL."""
+        store = EndpointStore(temp_json_path, env_endpoints)
+
+        original_url = store.get("local")["url"]
+        store.update("local", region="eu-west-1")
+
+        endpoint = store.get("local")
+        assert endpoint["url"] == original_url
+        assert endpoint["region"] == "eu-west-1"
+
+    def test_update_url_only_preserves_region(self, temp_json_path, env_endpoints):
+        """Calling update with only url should NOT reset the region."""
+        store = EndpointStore(temp_json_path, env_endpoints)
+
+        store.update("local", region="ap-southeast-1")
+        store.update("local", url="http://new:4566")
+
+        endpoint = store.get("local")
+        assert endpoint["url"] == "http://new:4566"
+        assert endpoint["region"] == "ap-southeast-1"
+
+
 class TestResolve:
     """Test endpoint resolution.
 

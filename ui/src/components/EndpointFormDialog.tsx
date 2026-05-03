@@ -14,7 +14,9 @@ interface EndpointFormDialogProps {
   mode: 'add' | 'edit'
   initialName?: string
   initialUrl?: string | null
-  onSubmit: (name: string, url: string | null) => Promise<void>
+  initialRegion?: string | null
+  source?: 'env' | 'user'
+  onSubmit: (name: string, url: string | null, region: string | null) => Promise<void>
 }
 
 export function EndpointFormDialog({
@@ -23,10 +25,13 @@ export function EndpointFormDialog({
   mode,
   initialName = '',
   initialUrl = '',
+  initialRegion = '',
+  source,
   onSubmit,
 }: EndpointFormDialogProps) {
   const [name, setName] = useState(initialName)
   const [url, setUrl] = useState(initialUrl || '')
+  const [region, setRegion] = useState(initialRegion || '')
   const [isRealAWS, setIsRealAWS] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -36,10 +41,11 @@ export function EndpointFormDialog({
     if (open) {
       setName(initialName)
       setUrl(initialUrl || '')
+      setRegion(initialRegion || '')
       setIsRealAWS(initialUrl === null || initialUrl === '')
       setTestResult(null)
     }
-  }, [open, initialName, initialUrl])
+  }, [open, initialName, initialUrl, initialRegion])
 
   const handleTestConnection = async () => {
     if (mode === 'edit' && initialName) {
@@ -70,14 +76,16 @@ export function EndpointFormDialog({
       return
     }
 
-    if (!isRealAWS && !url.trim()) {
+    const isEnvEdit = mode === 'edit' && source === 'env'
+    if (!isEnvEdit && !isRealAWS && !url.trim()) {
       toast.error('URL is required for local endpoints')
       return
     }
 
     setSubmitting(true)
     try {
-      await onSubmit(name.trim(), isRealAWS ? null : url.trim())
+      const submitUrl = isEnvEdit ? (initialUrl ?? null) : (isRealAWS ? null : url.trim())
+      await onSubmit(name.trim(), submitUrl, region.trim() || null)
       onOpenChange(false)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -113,35 +121,57 @@ export function EndpointFormDialog({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="url">Endpoint URL</Label>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isRealAWS}
-                    onChange={(e) => setIsRealAWS(e.target.checked)}
-                    disabled={submitting}
-                    className="rounded border-input"
-                  />
-                  <span>Real AWS</span>
-                </label>
-              </div>
-              {!isRealAWS && (
-                <Input
-                  id="url"
-                  type="url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="http://localhost:4566"
-                  disabled={submitting}
-                  required={!isRealAWS}
-                />
-              )}
-              {isRealAWS && (
+              {mode === 'edit' && source === 'env' ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted p-3 rounded-md">
-                  <Badge variant="outline" className="text-orange-500 border-orange-500">AWS</Badge>
-                  <span>Will use default AWS credentials and endpoints</span>
+                  <Badge variant="secondary">ENV</Badge>
+                  <span>URL is set by environment variable</span>
                 </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isRealAWS}
+                        onChange={(e) => setIsRealAWS(e.target.checked)}
+                        disabled={submitting}
+                        className="rounded border-input"
+                      />
+                      <span>Real AWS</span>
+                    </label>
+                  </div>
+                  {!isRealAWS && (
+                    <Input
+                      id="url"
+                      type="url"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      placeholder="http://localhost:4566"
+                      disabled={submitting}
+                      required={!isRealAWS}
+                    />
+                  )}
+                  {isRealAWS && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted p-3 rounded-md">
+                      <Badge variant="outline" className="text-orange-500 border-orange-500">AWS</Badge>
+                      <span>Will use default AWS credentials and endpoints</span>
+                    </div>
+                  )}
+                </>
               )}
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="region">Region</Label>
+              <Input
+                id="region"
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                placeholder="e.g., us-east-1 (defaults to global)"
+                disabled={submitting}
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave empty to use the global region setting
+              </p>
             </div>
             {mode === 'edit' && (
               <div className="flex items-center gap-2">

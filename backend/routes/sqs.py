@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from backend.aws_client import get_client
-from backend.routes.common import get_endpoint_url
+from backend.routes.common import EndpointInfo, get_endpoint_info
 from backend.schemas.sqs import (
     BatchDeleteRequest,
     BatchSendRequest,
@@ -37,13 +37,13 @@ def _parse_redrive_policy(redrive_policy_json: str | None) -> dict[str, Any] | N
 
 
 @router.get("/queues")
-def list_queues(endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
+def list_queues(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List all SQS queues with enriched attributes.
 
     Returns queue name, URL, message counts, type, and key attributes.
     """
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
         response = client.list_queues()
         queue_urls = response.get("QueueUrls", [])
 
@@ -101,10 +101,10 @@ def list_queues(endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[st
 
 
 @router.post("/queues")
-def create_queue(body: CreateQueueRequest, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
+def create_queue(body: CreateQueueRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Create a new SQS queue."""
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         queue_name = body.queue_name
         is_fifo = body.queue_type == "FIFO"
@@ -216,10 +216,10 @@ def create_queue(body: CreateQueueRequest, endpoint_url: str | None = Depends(ge
 
 
 @router.get("/queues/{queue_name}")
-def get_queue_detail(queue_name: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
+def get_queue_detail(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Get detailed attributes and tags for a specific queue."""
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         # Get queue URL from name
         url_response = client.get_queue_url(QueueName=queue_name)
@@ -269,10 +269,10 @@ def get_queue_detail(queue_name: str, endpoint_url: str | None = Depends(get_end
 
 
 @router.post("/queues/{queue_name}/messages")
-def send_message(queue_name: str, body: SendMessageRequest, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
+def send_message(queue_name: str, body: SendMessageRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Send a message to the queue."""
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
@@ -317,7 +317,7 @@ def receive_messages(
     queue_name: str,
     max_messages: int = Query(10, ge=1, le=10),
     visibility_timeout: int = Query(0, ge=0, le=43200),
-    endpoint_url: str | None = Depends(get_endpoint_url),
+    ep: EndpointInfo = Depends(get_endpoint_info),
 ) -> dict[str, Any]:
     """Receive messages from the queue.
 
@@ -325,7 +325,7 @@ def receive_messages(
     Use visibility_timeout > 0 to prevent redelivery during inspection.
     """
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         # Get queue URL from name
         url_response = client.get_queue_url(QueueName=queue_name)
@@ -363,10 +363,10 @@ def receive_messages(
 
 
 @router.delete("/queues/{queue_name}/messages")
-def delete_message(queue_name: str, receipt_handle: str = Query(...), endpoint_url: str | None = Depends(get_endpoint_url)) -> Response:
+def delete_message(queue_name: str, receipt_handle: str = Query(...), ep: EndpointInfo = Depends(get_endpoint_info)) -> Response:
     """Delete a message from the queue using its receipt handle."""
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         # Get queue URL from name
         url_response = client.get_queue_url(QueueName=queue_name)
@@ -387,13 +387,13 @@ def delete_message(queue_name: str, receipt_handle: str = Query(...), endpoint_u
 
 
 @router.post("/queues/{queue_name}/purge")
-def purge_queue(queue_name: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
+def purge_queue(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Purge all messages from the queue.
 
     Note: Can only be called once every 60 seconds.
     """
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         # Get queue URL from name
         url_response = client.get_queue_url(QueueName=queue_name)
@@ -414,13 +414,13 @@ def purge_queue(queue_name: str, endpoint_url: str | None = Depends(get_endpoint
 
 
 @router.delete("/queues/{queue_name}")
-def delete_queue(queue_name: str, endpoint_url: str | None = Depends(get_endpoint_url)) -> Response:
+def delete_queue(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> Response:
     """Delete an SQS queue.
 
     Permanently deletes the queue and all its messages.
     """
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         # Get queue URL from name
         url_response = client.get_queue_url(QueueName=queue_name)
@@ -436,10 +436,10 @@ def delete_queue(queue_name: str, endpoint_url: str | None = Depends(get_endpoin
 
 
 @router.put("/queues/{queue_name}/attributes")
-def update_queue_attributes(queue_name: str, body: UpdateAttributesRequest, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
+def update_queue_attributes(queue_name: str, body: UpdateAttributesRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Update queue attributes."""
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
@@ -475,10 +475,10 @@ def update_queue_attributes(queue_name: str, body: UpdateAttributesRequest, endp
 
 
 @router.post("/queues/{queue_name}/messages/batch")
-def send_messages_batch(queue_name: str, body: BatchSendRequest, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
+def send_messages_batch(queue_name: str, body: BatchSendRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Send multiple messages to the queue in one operation (max 10)."""
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
@@ -524,10 +524,10 @@ def send_messages_batch(queue_name: str, body: BatchSendRequest, endpoint_url: s
 
 
 @router.delete("/queues/{queue_name}/messages/batch")
-def delete_messages_batch(queue_name: str, body: BatchDeleteRequest, endpoint_url: str | None = Depends(get_endpoint_url)) -> Response:
+def delete_messages_batch(queue_name: str, body: BatchDeleteRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> Response:
     """Delete multiple messages from the queue in one operation (max 10)."""
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
@@ -549,10 +549,10 @@ def delete_messages_batch(queue_name: str, body: BatchDeleteRequest, endpoint_ur
 
 
 @router.put("/queues/{queue_name}/redrive-policy")
-def update_redrive_policy(queue_name: str, body: UpdateRedrivePolicyRequest, endpoint_url: str | None = Depends(get_endpoint_url)) -> dict[str, Any]:
+def update_redrive_policy(queue_name: str, body: UpdateRedrivePolicyRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Update the dead-letter queue redrive policy."""
     try:
-        client = get_client("sqs", endpoint_url)
+        client = get_client("sqs", ep.url, ep.region)
 
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]

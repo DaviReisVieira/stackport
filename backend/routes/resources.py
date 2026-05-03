@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from backend.aws_client import get_client
 from backend.cache import cache
-from backend.routes.common import get_endpoint_url
-from backend.routes.stats import SERVICE_REGISTRY, _METHOD_KWARGS, _count_items
+from backend.routes.common import EndpointInfo, get_endpoint_info
+from backend.routes.stats import SERVICE_REGISTRY, _METHOD_KWARGS
 
 logger = logging.getLogger(__name__)
 
@@ -169,8 +169,8 @@ def _summarize_item(item, preferred_field: str | None = None) -> dict:
 
 
 @router.get("/resources/{service}")
-def list_resources(service: str, endpoint_url: str = Depends(get_endpoint_url)):
-    cache_key = f"{endpoint_url}:resources:{service}"
+def list_resources(service: str, ep: EndpointInfo = Depends(get_endpoint_info)):
+    cache_key = f"{ep.url}:resources:{service}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -182,7 +182,7 @@ def list_resources(service: str, endpoint_url: str = Depends(get_endpoint_url)):
     resources: dict[str, list[dict]] = {}
     for resource_type, boto3_service, method_name, response_key in registry_entries:
         try:
-            client = get_client(boto3_service, endpoint_url)
+            client = get_client(boto3_service, ep.url, ep.region)
             method = getattr(client, method_name)
             kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
             resp = method(**kwargs)
@@ -202,8 +202,8 @@ def list_resources(service: str, endpoint_url: str = Depends(get_endpoint_url)):
 
 
 @router.get("/resources/{service}/{res_type}/{res_id:path}")
-def get_resource_detail(service: str, res_type: str, res_id: str, endpoint_url: str = Depends(get_endpoint_url)):
-    cache_key = f"{endpoint_url}:detail:{service}:{res_type}:{res_id}"
+def get_resource_detail(service: str, res_type: str, res_id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
+    cache_key = f"{ep.url}:detail:{service}:{res_type}:{res_id}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -211,7 +211,7 @@ def get_resource_detail(service: str, res_type: str, res_id: str, endpoint_url: 
     # SES identities are plain strings — aggregate detail from multiple APIs
     if (service, res_type) == ("ses", "identities"):
         try:
-            client = get_client("ses", endpoint_url)
+            client = get_client("ses", ep.url, ep.region)
             verif = client.get_identity_verification_attributes(Identities=[res_id])
             attrs = verif.get("VerificationAttributes", {}).get(res_id, {})
             dkim = client.get_identity_dkim_attributes(Identities=[res_id])
@@ -234,7 +234,7 @@ def get_resource_detail(service: str, res_type: str, res_id: str, endpoint_url: 
     # WAFv2 get_web_acl requires Name, Scope, AND Id — resolve Id from list first
     if (service, res_type) == ("wafv2", "web_acls"):
         try:
-            client = get_client("wafv2", endpoint_url)
+            client = get_client("wafv2", ep.url, ep.region)
             acls = client.list_web_acls(Scope="REGIONAL").get("WebACLs", [])
             match = next((a for a in acls if a.get("Name") == res_id), None)
             if not match:
@@ -267,7 +267,7 @@ def get_resource_detail(service: str, res_type: str, res_id: str, endpoint_url: 
     }
 
     try:
-        client = get_client(boto3_service, endpoint_url)
+        client = get_client(boto3_service, ep.url, ep.region)
         method = getattr(client, method_name)
         if id_param in _LIST_PARAMS:
             resp = method(**{id_param: [res_id]})
