@@ -88,7 +88,7 @@ function ValueEditor({
       try {
         JSON.parse(newValue)
         setError(null)
-      } catch (e) {
+      } catch {
         setError('Invalid JSON')
       }
     } else {
@@ -658,7 +658,7 @@ export function SecretsManagerBrowser() {
     )
   }
 
-  if (selectedSecret && (secretDetail || detailLoading)) {
+  const renderDetailView = () => {
     if (detailLoading) {
       return (
         <div className="space-y-4">
@@ -832,7 +832,7 @@ export function SecretsManagerBrowser() {
     )
   }
 
-  return (
+  const renderListView = () => (
     <div className="space-y-4">
       <Breadcrumb
         segments={[
@@ -930,6 +930,14 @@ export function SecretsManagerBrowser() {
           }}
         />
       )}
+    </div>
+  )
+
+  return (
+    <>
+      {selectedSecret && (secretDetail || detailLoading)
+        ? renderDetailView()
+        : renderListView()}
 
       {/* Create Secret Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
@@ -1100,6 +1108,6 @@ export function SecretsManagerBrowser() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }
