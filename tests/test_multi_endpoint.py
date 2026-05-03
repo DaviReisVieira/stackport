@@ -18,45 +18,47 @@ class TestGetEndpointUrlDependency:
     """Test the get_endpoint_url FastAPI dependency."""
 
     def test_returns_default_when_no_param(self):
-        with patch("backend.routes.common.DEFAULT_ENDPOINT", "http://localhost:4566"):
+        with patch("backend.routes.common.endpoint_store") as mock_store:
+            mock_store.resolve.return_value = "http://localhost:4566"
             result = get_endpoint_url(endpoint=None)
             assert result == "http://localhost:4566"
+            mock_store.resolve.assert_called_once_with(None)
 
     def test_resolves_known_endpoint_name(self):
-        endpoints = {"local": "http://localhost:4566", "staging": "http://staging:4566"}
-        with patch("backend.routes.common.ENDPOINTS", endpoints):
+        with patch("backend.routes.common.endpoint_store") as mock_store:
+            mock_store.resolve.return_value = "http://localhost:4566"
             result = get_endpoint_url(endpoint="local")
             assert result == "http://localhost:4566"
+            mock_store.resolve.assert_called_once_with("local")
 
     def test_resolves_second_endpoint_name(self):
-        endpoints = {"local": "http://localhost:4566", "staging": "http://staging:4566"}
-        with patch("backend.routes.common.ENDPOINTS", endpoints):
+        with patch("backend.routes.common.endpoint_store") as mock_store:
+            mock_store.resolve.return_value = "http://staging:4566"
             result = get_endpoint_url(endpoint="staging")
             assert result == "http://staging:4566"
+            mock_store.resolve.assert_called_once_with("staging")
 
     def test_passes_through_direct_url(self):
-        endpoints = {"local": "http://localhost:4566"}
-        with patch("backend.routes.common.ENDPOINTS", endpoints):
+        with patch("backend.routes.common.endpoint_store") as mock_store:
+            mock_store.resolve.return_value = "http://custom:9999"
             result = get_endpoint_url(endpoint="http://custom:9999")
             assert result == "http://custom:9999"
 
     def test_passes_through_https_url(self):
-        endpoints = {"local": "http://localhost:4566"}
-        with patch("backend.routes.common.ENDPOINTS", endpoints):
+        with patch("backend.routes.common.endpoint_store") as mock_store:
+            mock_store.resolve.return_value = "https://s3.amazonaws.com"
             result = get_endpoint_url(endpoint="https://s3.amazonaws.com")
             assert result == "https://s3.amazonaws.com"
 
     def test_falls_back_to_default_for_invalid_name(self):
-        endpoints = {"local": "http://localhost:4566"}
-        with patch("backend.routes.common.ENDPOINTS", endpoints), \
-             patch("backend.routes.common.DEFAULT_ENDPOINT", "http://localhost:4566"):
+        with patch("backend.routes.common.endpoint_store") as mock_store:
+            mock_store.resolve.return_value = "http://localhost:4566"
             result = get_endpoint_url(endpoint="aws")
             assert result == "http://localhost:4566"
 
     def test_falls_back_to_default_for_garbage_string(self):
-        endpoints = {"local": "http://localhost:4566"}
-        with patch("backend.routes.common.ENDPOINTS", endpoints), \
-             patch("backend.routes.common.DEFAULT_ENDPOINT", "http://localhost:4566"):
+        with patch("backend.routes.common.endpoint_store") as mock_store:
+            mock_store.resolve.return_value = "http://localhost:4566"
             result = get_endpoint_url(endpoint="not-a-url")
             assert result == "http://localhost:4566"
 

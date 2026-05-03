@@ -43,7 +43,7 @@ class EndpointStore:
         """
         self.json_path = json_path
         self.env_endpoints = env_endpoints
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._config: EndpointsConfig | None = None
         self._load_or_initialize()
 
