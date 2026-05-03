@@ -281,7 +281,7 @@ export function LogsBrowser() {
   const filteredStreams = streamsData?.log_streams || []
 
   return (
-    <div className="space-y-4 h-full flex flex-col">
+    <div className="space-y-6 p-6 h-full flex flex-col">
       <Breadcrumb segments={[createHomeSegment(), { label: 'CloudWatch Logs', icon: getServiceIcon('logs') }]} />
       <Tabs defaultValue="logs" className="flex-1 flex flex-col min-h-0">
         <TabsList className="w-fit">

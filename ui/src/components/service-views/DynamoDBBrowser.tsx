@@ -660,7 +660,7 @@ export function DynamoDBBrowser() {
   }
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden p-4 text-card-foreground">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-hidden p-6 text-card-foreground">
       <div className="flex shrink-0 items-center gap-2">
         <Breadcrumb segments={[
           createHomeSegment(),

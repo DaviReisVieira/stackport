@@ -394,7 +394,7 @@ export function SQSBrowser() {
 
   if (queuesLoading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6 p-6">
         <Skeleton className="h-10 w-full" />
         <div className="grid gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -407,7 +407,7 @@ export function SQSBrowser() {
 
   if (!queuesData || queues.length === 0) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6 p-6">
         <Breadcrumb segments={[createHomeSegment(), { label: 'SQS', icon: getServiceIcon('sqs') }]} />
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
@@ -460,7 +460,7 @@ export function SQSBrowser() {
       queueDetail.approximateNumberOfMessagesDelayed
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-6 p-6">
         <Breadcrumb segments={[
           createHomeSegment(),
           { label: 'SQS', href: '/resources/sqs', icon: getServiceIcon('sqs') },
@@ -941,7 +941,7 @@ export function SQSBrowser() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 p-6">
       <Breadcrumb segments={[createHomeSegment(), { label: 'SQS', icon: getServiceIcon('sqs') }]} />
       <div className="flex items-center gap-2">
         <div className="relative flex-1">

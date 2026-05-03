@@ -540,7 +540,7 @@ export function S3Browser() {
   if (!selectedBucket) {
     if (bucketsLoading) {
       return (
-        <div className="space-y-4">
+        <div className="space-y-6 p-6">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-24 w-full" />
           ))}
@@ -559,7 +559,7 @@ export function S3Browser() {
     }
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-6 p-6">
         <Breadcrumb segments={[createHomeSegment(), { label: 'S3', icon: getServiceIcon('s3') }]} />
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -674,7 +674,7 @@ export function S3Browser() {
 
   // Object browser view — fill ResourceBrowser pane (flex chain from Layout main)
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-6 p-6">
       {/* Breadcrumb navigation */}
       <div className="flex shrink-0 items-center gap-3">
         <Button variant="ghost" size="sm" onClick={() => setSelectedBucket(null)} className="h-8">

@@ -641,7 +641,7 @@ export function SecretsManagerBrowser() {
 
   if (secretsLoading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6 p-6">
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -650,18 +650,20 @@ export function SecretsManagerBrowser() {
 
   if (!secretsData || secrets.length === 0) {
     return (
-      <EmptyState
-        icon={KeyRound}
-        title="No Secrets"
-        description="No secrets found in Secrets Manager."
-      />
+      <div className="p-6">
+        <EmptyState
+          icon={KeyRound}
+          title="No Secrets"
+          description="No secrets found in Secrets Manager."
+        />
+      </div>
     )
   }
 
   const renderDetailView = () => {
     if (detailLoading) {
       return (
-        <div className="space-y-4">
+        <div className="space-y-6 p-6">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-64 w-full" />
         </div>
@@ -673,7 +675,7 @@ export function SecretsManagerBrowser() {
     const tags = secretDetail.tags || {}
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-6 p-6">
         <Breadcrumb
           segments={[
             createHomeSegment(),
@@ -833,7 +835,7 @@ export function SecretsManagerBrowser() {
   }
 
   const renderListView = () => (
-    <div className="space-y-4">
+    <div className="space-y-6 p-6">
       <Breadcrumb
         segments={[
           createHomeSegment(),

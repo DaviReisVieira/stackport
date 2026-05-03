@@ -408,7 +408,7 @@ export function LambdaBrowser() {
 
   if (functionsLoading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6 p-6">
         <Skeleton className="h-10 w-full" />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -437,7 +437,7 @@ export function LambdaBrowser() {
     const tags = functionDetail.tags || {}
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-6 p-6">
         <Breadcrumb segments={[
           createHomeSegment(),
           { label: 'Lambda', href: '/resources/lambda', icon: getServiceIcon('lambda') },
@@ -732,7 +732,7 @@ export function LambdaBrowser() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 p-6">
       <Breadcrumb segments={[createHomeSegment(), { label: 'Lambda', icon: getServiceIcon('lambda') }]} />
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
