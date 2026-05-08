@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse
 
 from backend.aws_client import get_client
 from backend.routes.common import EndpointInfo, get_endpoint_info
+from backend.schemas.lambda_svc import UpdateFunctionConfigRequest
 
 router = APIRouter()
 
@@ -182,5 +183,56 @@ def list_versions(function_name: str, ep: EndpointInfo = Depends(get_endpoint_in
             versions.extend(page.get("Versions", []))
 
         return {"versions": versions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/functions/{function_name}/configuration")
+def update_function_configuration(
+    function_name: str,
+    body: UpdateFunctionConfigRequest,
+    ep: EndpointInfo = Depends(get_endpoint_info)
+) -> dict[str, Any]:
+    """Update Lambda function configuration (partial updates supported).
+
+    All body fields are optional — only specified fields will be updated.
+    Returns the updated function configuration.
+    """
+    try:
+        client = get_client("lambda", **ep.client_kwargs())
+
+        # Build boto3 kwargs from request body, skipping None values
+        update_kwargs: dict[str, Any] = {"FunctionName": function_name}
+
+        if body.description is not None:
+            update_kwargs["Description"] = body.description
+
+        if body.handler is not None:
+            update_kwargs["Handler"] = body.handler
+
+        if body.runtime is not None:
+            update_kwargs["Runtime"] = body.runtime
+
+        if body.memory_size is not None:
+            update_kwargs["MemorySize"] = body.memory_size
+
+        if body.timeout is not None:
+            update_kwargs["Timeout"] = body.timeout
+
+        if body.environment is not None:
+            update_kwargs["Environment"] = {"Variables": body.environment}
+
+        if body.layers is not None:
+            update_kwargs["Layers"] = body.layers
+
+        # Call update_function_configuration
+        response = client.update_function_configuration(**update_kwargs)
+
+        return {"configuration": response}
+
+    except client.exceptions.ResourceNotFoundException:
+        raise HTTPException(status_code=404, detail=f"Function {function_name} not found")
+    except client.exceptions.InvalidParameterValueException as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

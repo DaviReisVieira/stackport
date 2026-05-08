@@ -269,3 +269,184 @@ class TestListVersions:
         data = resp.json()
         assert len(data["versions"]) == 2
         assert data["versions"][0]["Version"] == "$LATEST"
+
+
+class TestUpdateFunctionConfiguration:
+    @patch("backend.routes.lambda_svc.get_client")
+    def test_update_environment_variables(self, mock_get_client):
+        mock_lambda = MagicMock()
+        mock_get_client.return_value = mock_lambda
+        mock_lambda.update_function_configuration.return_value = {
+            "FunctionName": "my-func",
+            "Runtime": "python3.12",
+            "Handler": "handler.main",
+            "MemorySize": 256,
+            "Timeout": 30,
+            "Environment": {
+                "Variables": {
+                    "KEY1": "value1",
+                    "KEY2": "value2",
+                }
+            },
+        }
+
+        resp = client.patch(
+            "/api/lambda/functions/my-func/configuration",
+            json={
+                "environment": {
+                    "KEY1": "value1",
+                    "KEY2": "value2",
+                }
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["configuration"]["Environment"]["Variables"]["KEY1"] == "value1"
+        mock_lambda.update_function_configuration.assert_called_once()
+        call_args = mock_lambda.update_function_configuration.call_args[1]
+        assert call_args["FunctionName"] == "my-func"
+        assert call_args["Environment"]["Variables"] == {"KEY1": "value1", "KEY2": "value2"}
+
+    @patch("backend.routes.lambda_svc.get_client")
+    def test_update_memory_and_timeout(self, mock_get_client):
+        mock_lambda = MagicMock()
+        mock_get_client.return_value = mock_lambda
+        mock_lambda.update_function_configuration.return_value = {
+            "FunctionName": "my-func",
+            "MemorySize": 512,
+            "Timeout": 60,
+        }
+
+        resp = client.patch(
+            "/api/lambda/functions/my-func/configuration",
+            json={"memorySize": 512, "timeout": 60},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["configuration"]["MemorySize"] == 512
+        assert data["configuration"]["Timeout"] == 60
+        mock_lambda.update_function_configuration.assert_called_once_with(
+            FunctionName="my-func",
+            MemorySize=512,
+            Timeout=60,
+        )
+
+    @patch("backend.routes.lambda_svc.get_client")
+    def test_update_handler_and_runtime(self, mock_get_client):
+        mock_lambda = MagicMock()
+        mock_get_client.return_value = mock_lambda
+        mock_lambda.update_function_configuration.return_value = {
+            "FunctionName": "my-func",
+            "Handler": "new_handler.handler",
+            "Runtime": "python3.13",
+        }
+
+        resp = client.patch(
+            "/api/lambda/functions/my-func/configuration",
+            json={"handler": "new_handler.handler", "runtime": "python3.13"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["configuration"]["Handler"] == "new_handler.handler"
+        assert data["configuration"]["Runtime"] == "python3.13"
+
+    @patch("backend.routes.lambda_svc.get_client")
+    def test_update_description(self, mock_get_client):
+        mock_lambda = MagicMock()
+        mock_get_client.return_value = mock_lambda
+        mock_lambda.update_function_configuration.return_value = {
+            "FunctionName": "my-func",
+            "Description": "Updated description",
+        }
+
+        resp = client.patch(
+            "/api/lambda/functions/my-func/configuration",
+            json={"description": "Updated description"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["configuration"]["Description"] == "Updated description"
+
+    @patch("backend.routes.lambda_svc.get_client")
+    def test_update_partial(self, mock_get_client):
+        """Test that only specified fields are included in the update call."""
+        mock_lambda = MagicMock()
+        mock_get_client.return_value = mock_lambda
+        mock_lambda.update_function_configuration.return_value = {
+            "FunctionName": "my-func",
+            "Timeout": 120,
+        }
+
+        resp = client.patch(
+            "/api/lambda/functions/my-func/configuration",
+            json={"timeout": 120},
+        )
+        assert resp.status_code == 200
+        # Verify only Timeout and FunctionName were passed
+        mock_lambda.update_function_configuration.assert_called_once()
+        call_args = mock_lambda.update_function_configuration.call_args[1]
+        assert set(call_args.keys()) == {"FunctionName", "Timeout"}
+        assert call_args["Timeout"] == 120
+
+    @patch("backend.routes.lambda_svc.get_client")
+    def test_update_function_not_found(self, mock_get_client):
+        mock_lambda = MagicMock()
+        mock_get_client.return_value = mock_lambda
+        # Set up both exception types
+        mock_lambda.exceptions.ResourceNotFoundException = type("ResourceNotFoundException", (Exception,), {})
+        mock_lambda.exceptions.InvalidParameterValueException = type("InvalidParameterValueException", (Exception,), {})
+        mock_lambda.update_function_configuration.side_effect = mock_lambda.exceptions.ResourceNotFoundException()
+
+        resp = client.patch(
+            "/api/lambda/functions/nonexistent/configuration",
+            json={"timeout": 60},
+        )
+        assert resp.status_code == 404
+
+    @patch("backend.routes.lambda_svc.get_client")
+    def test_update_invalid_parameter_boto3(self, mock_get_client):
+        """Test AWS InvalidParameterValueException returns 400."""
+        mock_lambda = MagicMock()
+        mock_get_client.return_value = mock_lambda
+        # Set up both exception types
+        mock_lambda.exceptions.ResourceNotFoundException = type("ResourceNotFoundException", (Exception,), {})
+        mock_lambda.exceptions.InvalidParameterValueException = type("InvalidParameterValueException", (Exception,), {})
+        mock_lambda.update_function_configuration.side_effect = mock_lambda.exceptions.InvalidParameterValueException("Invalid runtime")
+
+        resp = client.patch(
+            "/api/lambda/functions/my-func/configuration",
+            json={"runtime": "invalid_runtime"},
+        )
+        assert resp.status_code == 400
+
+    def test_update_validation_memory_too_low(self):
+        """Test Pydantic validation rejects memory < 128."""
+        resp = client.patch(
+            "/api/lambda/functions/my-func/configuration",
+            json={"memorySize": 64},
+        )
+        assert resp.status_code == 422
+
+    def test_update_validation_memory_too_high(self):
+        """Test Pydantic validation rejects memory > 10240."""
+        resp = client.patch(
+            "/api/lambda/functions/my-func/configuration",
+            json={"memorySize": 20480},
+        )
+        assert resp.status_code == 422
+
+    def test_update_validation_timeout_too_low(self):
+        """Test Pydantic validation rejects timeout < 1."""
+        resp = client.patch(
+            "/api/lambda/functions/my-func/configuration",
+            json={"timeout": 0},
+        )
+        assert resp.status_code == 422
+
+    def test_update_validation_timeout_too_high(self):
+        """Test Pydantic validation rejects timeout > 900."""
+        resp = client.patch(
+            "/api/lambda/functions/my-func/configuration",
+            json={"timeout": 1000},
+        )
+        assert resp.status_code == 422

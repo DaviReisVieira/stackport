@@ -10,6 +10,7 @@ import {
   fetchLambdaAliases,
   fetchLambdaVersions,
   updateResourceTags,
+  updateLambdaConfiguration,
 } from '@/lib/api'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import type {
@@ -51,7 +52,10 @@ import {
   Link as LinkIcon,
   GitBranch,
   RefreshCw,
+  Settings,
 } from 'lucide-react'
+import { ConfigurationEditor } from './lambda/ConfigurationEditor'
+import type { LambdaUpdateConfigRequest } from '@/lib/types'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
 
@@ -370,15 +374,10 @@ export function LambdaBrowser() {
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(25)
   const [invokeSheetOpen, setInvokeSheetOpen] = useState(false)
+  const [editConfigOpen, setEditConfigOpen] = useState(false)
 
-  useEffect(() => {
-    if (!selectedFunction) {
-      setFunctionDetail(null)
-      setEventSources([])
-      setAliases([])
-      setVersions([])
-      return
-    }
+  const refreshFunctionDetail = useCallback(() => {
+    if (!selectedFunction) return
     Promise.all([
       fetchLambdaFunction(selectedFunction, activeEndpoint),
       fetchLambdaEventSources(selectedFunction, activeEndpoint).catch(() => ({ eventSourceMappings: [] })),
@@ -398,6 +397,32 @@ export function LambdaBrowser() {
         setVersions([])
       })
   }, [selectedFunction, activeEndpoint])
+
+  useEffect(() => {
+    if (!selectedFunction) {
+      // Reset state when no function selected
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFunctionDetail(null)
+      setEventSources([])
+      setAliases([])
+      setVersions([])
+      return
+    }
+    refreshFunctionDetail()
+  }, [selectedFunction, refreshFunctionDetail])
+
+  const handleSaveConfig = async (updates: LambdaUpdateConfigRequest) => {
+    if (!selectedFunction) return
+    try {
+      await updateLambdaConfiguration(selectedFunction, updates, activeEndpoint)
+      toast.success('Configuration updated successfully')
+      setEditConfigOpen(false)
+      refreshFunctionDetail()
+    } catch (error) {
+      toast.error(`Failed to update configuration: ${error}`)
+      throw error
+    }
+  }
 
   const functions = functionsData?.functions ?? []
   const filteredFunctions = functions.filter((f) =>
@@ -452,10 +477,16 @@ export function LambdaBrowser() {
             </h2>
             {config.Description && <p className="text-sm text-muted-foreground mt-1">{config.Description}</p>}
           </div>
-          <Button onClick={() => setInvokeSheetOpen(true)}>
-            <Play className="h-4 w-4 mr-2" />
-            Invoke
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setEditConfigOpen(true)}>
+              <Settings className="h-3.5 w-3.5 mr-1.5" />
+              Edit Configuration
+            </Button>
+            <Button size="sm" onClick={() => setInvokeSheetOpen(true)}>
+              <Play className="h-3.5 w-3.5 mr-1.5" />
+              Invoke
+            </Button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -727,6 +758,16 @@ export function LambdaBrowser() {
         </Tabs>
 
         <InvokeSheet functionName={config.FunctionName} open={invokeSheetOpen} onOpenChange={setInvokeSheetOpen} />
+
+        <Sheet open={editConfigOpen} onOpenChange={setEditConfigOpen}>
+          <SheetContent className="sm:max-w-2xl overflow-y-auto">
+            <ConfigurationEditor
+              config={config}
+              onSave={handleSaveConfig}
+              onCancel={() => setEditConfigOpen(false)}
+            />
+          </SheetContent>
+        </Sheet>
       </div>
     )
   }

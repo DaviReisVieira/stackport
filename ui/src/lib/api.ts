@@ -30,6 +30,7 @@ import type {
   LambdaFunctionDetail,
   LambdaInvokeRequest,
   LambdaInvokeResponse,
+  LambdaUpdateConfigRequest,
   LambdaEventSourceMapping,
   LambdaAlias,
   LambdaVersion,
@@ -567,6 +568,17 @@ export async function fetchLambdaAliases(functionName: string, endpoint?: string
 
 export async function fetchLambdaVersions(functionName: string, endpoint?: string | null): Promise<{ versions: LambdaVersion[] }> {
   return fetchJSON<{ versions: LambdaVersion[] }>(buildUrl(`/lambda/functions/${encodeURIComponent(functionName)}/versions`, endpoint))
+}
+
+export async function updateLambdaConfiguration(functionName: string, config: LambdaUpdateConfigRequest, endpoint?: string | null): Promise<{ configuration: LambdaFunction }> {
+  const url = buildUrl(`/lambda/functions/${encodeURIComponent(functionName)}/configuration`, endpoint)
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
 }
 
 // --- SQS ---

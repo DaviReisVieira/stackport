@@ -282,6 +282,16 @@ export interface LambdaInvokeResponse {
   logs?: string
 }
 
+export interface LambdaUpdateConfigRequest {
+  description?: string
+  handler?: string
+  runtime?: string
+  memorySize?: number
+  timeout?: number
+  environment?: Record<string, string>
+  layers?: string[]
+}
+
 export interface LambdaEventSourceMapping {
   UUID: string
   EventSourceArn: string
