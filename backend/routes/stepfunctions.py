@@ -24,7 +24,7 @@ def list_state_machines(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[s
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/state-machines/{arn:path}")
+@router.get("/state-machines/{arn}")
 def get_state_machine_detail(
     arn: str,
     ep: EndpointInfo = Depends(get_endpoint_info),
@@ -49,7 +49,7 @@ def get_state_machine_detail(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/state-machines/{arn:path}/executions")
+@router.get("/state-machines/{arn}/executions")
 def list_executions(
     arn: str,
     status_filter: str | None = Query(None, alias="status_filter"),
@@ -73,7 +73,7 @@ def list_executions(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/state-machines/{arn:path}/executions")
+@router.post("/state-machines/{arn}/executions")
 def start_execution(
     arn: str,
     request: StartExecutionRequest,
@@ -99,7 +99,7 @@ def start_execution(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/executions/{arn:path}")
+@router.get("/executions/{arn}")
 def get_execution_detail(
     arn: str,
     ep: EndpointInfo = Depends(get_endpoint_info),
@@ -130,7 +130,7 @@ def get_execution_detail(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/executions/{arn:path}/history")
+@router.get("/executions/{arn}/history")
 def get_execution_history(
     arn: str,
     max_results: int = Query(100, alias="max_results", ge=1, le=1000),
@@ -158,7 +158,7 @@ def get_execution_history(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/executions/{arn:path}/stop")
+@router.post("/executions/{arn}/stop")
 def stop_execution(
     arn: str,
     request: StopExecutionRequest,
