@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 interface StateMachineGraphProps {
   definition: Record<string, unknown> | string
   trace?: ExecutionTrace
+  onNodeClick?: (stateName: string) => void
 }
 
 interface LayoutResult {
@@ -56,7 +57,7 @@ function computeLayout(graph: AslGraph): LayoutResult {
   return { graph, nodePositions, edgePoints, width, height }
 }
 
-export default function StateMachineGraph({ definition, trace }: StateMachineGraphProps) {
+export default function StateMachineGraph({ definition, trace, onNodeClick }: StateMachineGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
@@ -104,7 +105,7 @@ export default function StateMachineGraph({ definition, trace }: StateMachineGra
   const hasTrace = trace && trace.visitedStates.size > 0
 
   return (
-    <div className="relative w-full h-[600px] border rounded-md bg-background/50 overflow-hidden select-none">
+    <div className="relative w-full h-full min-h-[400px] border rounded-md bg-background/50 overflow-hidden select-none">
       <svg
         ref={svgRef}
         className="w-full h-full cursor-grab active:cursor-grabbing"
@@ -136,14 +137,15 @@ export default function StateMachineGraph({ definition, trace }: StateMachineGra
             const pos = layout.nodePositions.get(node.id)
             if (!pos) return null
             return (
-              <StateNode
-                key={node.id}
-                node={node}
-                x={pos.x}
-                y={pos.y}
-                isStart={node.id === layout.graph.startAt}
-                traceStatus={hasTrace ? trace.visitedStates.get(node.id) : undefined}
-              />
+              <g key={node.id} onClick={() => onNodeClick?.(node.id)} className={onNodeClick ? 'cursor-pointer' : ''}>
+                <StateNode
+                  node={node}
+                  x={pos.x}
+                  y={pos.y}
+                  isStart={node.id === layout.graph.startAt}
+                  traceStatus={hasTrace ? trace.visitedStates.get(node.id) : undefined}
+                />
+              </g>
             )
           })}
         </g>

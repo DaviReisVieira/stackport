@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, lazy, Suspense } from 'react'
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import {
@@ -39,6 +39,10 @@ import {
   Play,
   StopCircle,
   RefreshCw,
+  PanelLeftClose,
+  PanelRightClose,
+  Copy,
+  Check,
 } from 'lucide-react'
 import {
   StatusBadge,
@@ -462,25 +466,8 @@ export function StepFunctionsBrowser() {
           </TabsContent>
 
           {/* Definition Tab — Side by Side */}
-          <TabsContent value="definition" className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Card>
-                <CardHeader><CardTitle className="text-lg">Diagram</CardTitle></CardHeader>
-                <CardContent>
-                  <Suspense fallback={<Skeleton className="h-[400px] w-full" />}>
-                    <StateMachineGraph definition={machineDetail.definition} />
-                  </Suspense>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader><CardTitle className="text-lg">JSON</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="rounded-md border p-3 bg-muted/50 h-[600px] overflow-auto">
-                    <JsonViewer data={machineDetail.definition} />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+          <TabsContent value="definition">
+            <DefinitionPanel definition={machineDetail.definition} />
           </TabsContent>
 
           {/* Details Tab */}
@@ -608,6 +595,134 @@ export function StepFunctionsBrowser() {
           onPageSizeChange={(size) => { setPageSize(size); setPage(0) }}
         />
       )}
+    </div>
+  )
+}
+
+// --- Definition Panel (Diagram + JSON side-by-side with collapsible panels and click-to-scroll) ---
+
+function DefinitionPanel({ definition: rawDefinition }: { definition: Record<string, unknown> | string }) {
+  const definition: Record<string, unknown> = typeof rawDefinition === 'string' ? JSON.parse(rawDefinition) : rawDefinition
+  const [diagramVisible, setDiagramVisible] = useState(true)
+  const [jsonVisible, setJsonVisible] = useState(true)
+  const [highlightedState, setHighlightedState] = useState<string | null>(null)
+  const jsonContainerRef = useRef<HTMLDivElement>(null)
+
+  const handleNodeClick = useCallback((stateName: string) => {
+    setHighlightedState(stateName)
+    if (!jsonVisible) setJsonVisible(true)
+    setTimeout(() => {
+      const el = jsonContainerRef.current?.querySelector(`[data-state="${stateName}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setTimeout(() => setHighlightedState(null), 2000)
+      }
+    }, 50)
+  }, [jsonVisible])
+
+  return (
+    <div className="flex flex-col" style={{ height: 'calc(100vh - 320px)', minHeight: '500px' }}>
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 mb-2">
+        <Button
+          variant={diagramVisible ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs gap-1"
+          onClick={() => setDiagramVisible(!diagramVisible)}
+        >
+          <PanelLeftClose className="h-3.5 w-3.5" />
+          Diagram
+        </Button>
+        <Button
+          variant={jsonVisible ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs gap-1"
+          onClick={() => setJsonVisible(!jsonVisible)}
+        >
+          <PanelRightClose className="h-3.5 w-3.5" />
+          JSON
+        </Button>
+      </div>
+
+      {/* Panels */}
+      <div className="flex-1 flex gap-3 min-h-0">
+        {diagramVisible && (
+          <div className={`flex-1 min-w-0 ${!jsonVisible ? 'w-full' : ''}`}>
+            <Card className="h-full flex flex-col">
+              <CardContent className="flex-1 p-3 min-h-0">
+                <Suspense fallback={<Skeleton className="h-full w-full" />}>
+                  <StateMachineGraph definition={definition} onNodeClick={handleNodeClick} />
+                </Suspense>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {jsonVisible && (
+          <div className={`flex-1 min-w-0 ${!diagramVisible ? 'w-full' : ''}`}>
+            <Card className="h-full flex flex-col">
+              <CardContent className="flex-1 p-0 min-h-0 overflow-hidden">
+                <div ref={jsonContainerRef} className="h-full overflow-auto p-3">
+                  <AslJsonViewer definition={definition} highlightedState={highlightedState} />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AslJsonViewer({ definition, highlightedState }: { definition: Record<string, unknown>; highlightedState: string | null }) {
+  const [copied, setCopied] = useState(false)
+  const json = JSON.stringify(definition, null, 2)
+  const states = (definition as { States?: Record<string, unknown> }).States || {}
+  const stateNames = Object.keys(states)
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(json)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const lines = json.split('\n')
+  const stateLineMap = new Map<string, number>()
+  for (let i = 0; i < lines.length; i++) {
+    for (const name of stateNames) {
+      if (lines[i].includes(`"${name}"`) && lines[i].trim().startsWith(`"${name}"`)) {
+        stateLineMap.set(name, i)
+        break
+      }
+    }
+  }
+
+  return (
+    <div className="relative group">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute top-1 right-1 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+        onClick={handleCopy}
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      </Button>
+      <pre className="text-xs font-mono leading-relaxed text-muted-foreground whitespace-pre">
+        {lines.map((line, i) => {
+          const stateName = [...stateLineMap.entries()].find(([, lineIdx]) => lineIdx === i)?.[0]
+          const isHighlighted = stateName === highlightedState
+          return (
+            <span
+              key={i}
+              data-state={stateName || undefined}
+              className={isHighlighted ? 'bg-blue-500/20 block -mx-3 px-3 rounded transition-colors duration-300' : undefined}
+            >
+              {line}
+              {'\n'}
+            </span>
+          )
+        })}
+      </pre>
     </div>
   )
 }
