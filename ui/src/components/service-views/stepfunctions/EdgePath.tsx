@@ -51,24 +51,25 @@ export function EdgePath({ edge, points, highlighted }: EdgePathProps) {
       {edge.label && labelPos && (
         <g>
           <rect
-            x={labelPos.x - (Math.min(edge.label.length, 20) * 3.2 + 6)}
+            x={labelPos.x - (edge.label.length * 3 + 12)}
             y={labelPos.y - 18}
-            width={Math.min(edge.label.length, 20) * 6.4 + 12}
-            height={16}
-            rx={3}
+            width={edge.label.length * 6 + 24}
+            height={18}
+            rx={4}
             fill="#18181b"
-            fillOpacity={0.9}
-            stroke="#3f3f46"
-            strokeWidth={0.5}
+            fillOpacity={0.92}
+            stroke={edge.type === 'catch' ? '#f8717140' : edge.type === 'choice' ? '#fbbf2440' : '#3f3f46'}
+            strokeWidth={0.75}
           />
           <text
             x={labelPos.x}
-            y={labelPos.y - 7}
+            y={labelPos.y - 6}
             textAnchor="middle"
-            fontSize={10}
+            fontSize={11}
+            fontFamily="monospace"
             fill={edge.type === 'catch' ? '#f87171' : edge.type === 'choice' ? '#fbbf24' : '#a1a1aa'}
           >
-            {edge.label.length > 20 ? edge.label.slice(0, 20) + '…' : edge.label}
+            {edge.label}
           </text>
         </g>
       )}

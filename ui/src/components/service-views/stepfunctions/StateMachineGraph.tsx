@@ -22,7 +22,7 @@ interface LayoutResult {
 
 function computeLayout(graph: AslGraph): LayoutResult {
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 80, marginx: 40, marginy: 40 })
+  g.setGraph({ rankdir: 'TB', nodesep: 80, ranksep: 90, marginx: 40, marginy: 40 })
   g.setDefaultEdgeLabel(() => ({}))
 
   for (const node of graph.nodes) {
