@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, lazy, Suspense } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
 import {
@@ -25,7 +25,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
@@ -40,117 +39,18 @@ import {
   Play,
   StopCircle,
   RefreshCw,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Loader2,
 } from 'lucide-react'
+import {
+  StatusBadge,
+  TypeBadge,
+  PaginationBar,
+  formatDate,
+  calculateDuration,
+  buildExecutionTrace,
+} from './stepfunctions'
+import { ExecutionTimeline } from './stepfunctions/ExecutionTimeline'
 
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
-
-function formatDate(iso: string): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
-function calculateDuration(startDate: string, stopDate?: string): string {
-  const start = new Date(startDate).getTime()
-  const end = stopDate ? new Date(stopDate).getTime() : Date.now()
-  const ms = end - start
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  if (hours > 0) return `${hours}h ${minutes % 60}m ${seconds % 60}s`
-  if (minutes > 0) return `${minutes}m ${seconds % 60}s`
-  return `${seconds}s`
-}
-
-function StatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case 'RUNNING':
-      return (
-        <Badge variant="secondary" className="bg-blue-500 text-white">
-          <Loader2 className="h-3 w-3 mr-1 animate-spin" />Running
-        </Badge>
-      )
-    case 'SUCCEEDED':
-      return (
-        <Badge variant="secondary" className="bg-green-500 text-white">
-          <CheckCircle2 className="h-3 w-3 mr-1" />Succeeded
-        </Badge>
-      )
-    case 'FAILED':
-      return (
-        <Badge variant="destructive">
-          <XCircle className="h-3 w-3 mr-1" />Failed
-        </Badge>
-      )
-    case 'TIMED_OUT':
-      return (
-        <Badge variant="secondary" className="bg-yellow-500 text-white">
-          <Clock className="h-3 w-3 mr-1" />Timed Out
-        </Badge>
-      )
-    case 'ABORTED':
-      return (
-        <Badge variant="outline">
-          <AlertCircle className="h-3 w-3 mr-1" />Aborted
-        </Badge>
-      )
-    default:
-      return <Badge variant="outline">{status}</Badge>
-  }
-}
-
-function TypeBadge({ type }: { type: string }) {
-  return (
-    <Badge variant={type === 'EXPRESS' ? 'secondary' : 'outline'} className={type === 'EXPRESS' ? 'bg-purple-500 text-white' : ''}>
-      {type}
-    </Badge>
-  )
-}
-
-function PaginationBar({
-  page, totalPages, totalItems, pageSize, onPageChange, onPageSizeChange,
-}: {
-  page: number; totalPages: number; totalItems: number; pageSize: number
-  onPageChange: (page: number) => void; onPageSizeChange: (size: number) => void
-}) {
-  const start = page * pageSize + 1
-  const end = Math.min((page + 1) * pageSize, totalItems)
-  return (
-    <div className="flex items-center justify-between px-4 py-2.5">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span>{start}–{end} of {totalItems}</span>
-        <Separator orientation="vertical" className="h-4" />
-        <span>Rows:</span>
-        <Select value={String(pageSize)} onValueChange={(v) => onPageSizeChange(Number(v))}>
-          <SelectTrigger className="h-7 w-[70px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PAGE_SIZE_OPTIONS.map((size) => (
-              <SelectItem key={size} value={String(size)} className="text-xs">{size}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex items-center gap-1">
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={page === 0} onClick={() => onPageChange(page - 1)}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <span className="text-xs text-muted-foreground px-2">{page + 1} / {totalPages}</span>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={page >= totalPages - 1} onClick={() => onPageChange(page + 1)}>
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  )
-}
+const StateMachineGraph = lazy(() => import('./stepfunctions/StateMachineGraph'))
 
 // --- Start Execution Sheet ---
 
@@ -174,7 +74,6 @@ function StartExecutionSheet({
       setError('Input must be valid JSON')
       return
     }
-
     setStarting(true)
     try {
       await startStepFunctionsExecution(stateMachineArn, { name: name || undefined, input: parsedInput }, activeEndpoint)
@@ -201,11 +100,7 @@ function StartExecutionSheet({
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Execution Name (optional)</label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Auto-generated if empty"
-            />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Auto-generated if empty" />
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Input (JSON)</label>
@@ -230,9 +125,10 @@ function StartExecutionSheet({
 // --- Execution Detail Sheet ---
 
 function ExecutionDetailSheet({
-  executionArn, open, onOpenChange, onStopped,
+  executionArn, open, onOpenChange, onStopped, definition,
 }: {
-  executionArn: string; open: boolean; onOpenChange: (open: boolean) => void; onStopped: () => void
+  executionArn: string; open: boolean; onOpenChange: (open: boolean) => void
+  onStopped: () => void; definition?: Record<string, unknown> | string
 }) {
   const { activeEndpoint } = useEndpoint()
   const [execution, setExecution] = useState<StepFunctionsExecutionDetail | null>(null)
@@ -269,6 +165,8 @@ function ExecutionDetailSheet({
     }
   }
 
+  const trace = history.length > 0 ? buildExecutionTrace(history) : undefined
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="sm:max-w-3xl overflow-y-auto">
@@ -289,14 +187,15 @@ function ExecutionDetailSheet({
             <Tabs defaultValue="overview">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="history">History ({history.length})</TabsTrigger>
+                <TabsTrigger value="timeline">Timeline</TabsTrigger>
                 <TabsTrigger value="raw">Raw</TabsTrigger>
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4 mt-4">
+                {/* Status + Stop button */}
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
-                    <CardTitle className="text-sm">Execution Info</CardTitle>
+                    <CardTitle className="text-sm">Execution</CardTitle>
                     {execution.status === 'RUNNING' && (
                       <Button variant="destructive" size="sm" onClick={handleStop} disabled={stopping}>
                         <StopCircle className="h-3.5 w-3.5 mr-1.5" />
@@ -304,7 +203,7 @@ function ExecutionDetailSheet({
                       </Button>
                     )}
                   </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
+                  <CardContent className="text-sm space-y-2">
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                       <div className="text-muted-foreground">Status</div>
                       <div><StatusBadge status={execution.status} /></div>
@@ -324,76 +223,47 @@ function ExecutionDetailSheet({
                           <div className="text-destructive font-mono text-xs">{execution.error}</div>
                         </>
                       )}
-                      {execution.cause && (
-                        <>
-                          <div className="text-muted-foreground">Cause</div>
-                          <div className="text-destructive text-xs">{execution.cause}</div>
-                        </>
-                      )}
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Input</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="rounded-md border p-3 bg-muted/50">
-                      <JsonViewer data={execution.input} />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {execution.output && (
+                {/* Mini graph with trace */}
+                {definition && (
                   <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Output</CardTitle>
-                    </CardHeader>
+                    <CardHeader><CardTitle className="text-sm">Execution Path</CardTitle></CardHeader>
                     <CardContent>
-                      <div className="rounded-md border p-3 bg-muted/50">
-                        <JsonViewer data={execution.output} />
-                      </div>
+                      <Suspense fallback={<Skeleton className="h-[250px]" />}>
+                        <StateMachineGraph definition={definition} trace={trace} />
+                      </Suspense>
                     </CardContent>
                   </Card>
                 )}
+
+                {/* Input/Output */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Card>
+                    <CardHeader><CardTitle className="text-sm">Input</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="rounded-md border p-2 bg-muted/50 max-h-[200px] overflow-auto">
+                        <JsonViewer data={execution.input} />
+                      </div>
+                    </CardContent>
+                  </Card>
+                  {execution.output && (
+                    <Card>
+                      <CardHeader><CardTitle className="text-sm">Output</CardTitle></CardHeader>
+                      <CardContent>
+                        <div className="rounded-md border p-2 bg-muted/50 max-h-[200px] overflow-auto">
+                          <JsonViewer data={execution.output} />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
               </TabsContent>
 
-              <TabsContent value="history" className="mt-4">
-                {history.length === 0 ? (
-                  <EmptyState icon={Clock} title="No History Events" description="No events recorded for this execution." />
-                ) : (
-                  <div className="space-y-2">
-                    {history.map((event) => {
-                      const detailKeys = Object.keys(event).filter(
-                        (k) => !['id', 'type', 'timestamp', 'previousEventId'].includes(k)
-                      )
-                      return (
-                        <div key={event.id} className="flex gap-3 text-sm border-b last:border-0 py-2">
-                          <div className="flex-shrink-0 w-8 text-xs text-muted-foreground font-mono text-right">
-                            #{event.id}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-medium truncate">{event.type}</span>
-                              <span className="text-xs text-muted-foreground flex-shrink-0">{formatDate(event.timestamp)}</span>
-                            </div>
-                            {detailKeys.length > 0 && (
-                              <div className="mt-1 rounded border p-2 bg-muted/50">
-                                <pre className="text-xs font-mono overflow-auto whitespace-pre-wrap text-muted-foreground">
-                                  {JSON.stringify(
-                                    Object.fromEntries(detailKeys.map((k) => [k, event[k]])),
-                                    null, 2
-                                  )}
-                                </pre>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+              <TabsContent value="timeline" className="mt-4">
+                <ExecutionTimeline events={history} executionStartTime={execution.startDate} />
               </TabsContent>
 
               <TabsContent value="raw" className="mt-4">
@@ -422,11 +292,8 @@ export function StepFunctionsBrowser() {
 
   const selectedMachineArn = searchParams.get('machine')
   const setSelectedMachine = (arn: string | null) => {
-    if (arn === null) {
-      setSearchParams({})
-    } else {
-      setSearchParams({ machine: arn })
-    }
+    if (arn === null) setSearchParams({})
+    else setSearchParams({ machine: arn })
   }
 
   const [machineDetail, setMachineDetail] = useState<StepFunctionsStateMachineDetail | null>(null)
@@ -488,9 +355,7 @@ export function StepFunctionsBrowser() {
       <div className="space-y-6 p-6">
         <Skeleton className="h-10 w-full" />
         <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full" />
-          ))}
+          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
         </div>
       </div>
     )
@@ -498,13 +363,7 @@ export function StepFunctionsBrowser() {
 
   // --- Empty state ---
   if (!machinesData || machines.length === 0) {
-    return (
-      <EmptyState
-        icon={Workflow}
-        title="No State Machines"
-        description="No Step Functions state machines found in this environment."
-      />
-    )
+    return <EmptyState icon={Workflow} title="No State Machines" description="No Step Functions state machines found in this environment." />
   }
 
   // --- Detail View ---
@@ -545,6 +404,7 @@ export function StepFunctionsBrowser() {
             <TabsTrigger value="details">Details</TabsTrigger>
           </TabsList>
 
+          {/* Executions Tab */}
           <TabsContent value="executions" className="space-y-4">
             <div className="flex items-center gap-2">
               <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0) }}>
@@ -562,23 +422,13 @@ export function StepFunctionsBrowser() {
               </Select>
               <Badge variant="outline">{executions.length}</Badge>
               <div className="flex-1" />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={refreshExecutions}
-                title="Refresh executions"
-              >
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={refreshExecutions} title="Refresh">
                 <RefreshCw className={`h-3.5 w-3.5 ${executionsLoading ? 'animate-spin' : ''}`} />
               </Button>
             </div>
 
             {executions.length === 0 ? (
-              <EmptyState
-                icon={Play}
-                title="No Executions"
-                description={statusFilter === 'ALL' ? 'Start a new execution to see it here.' : `No executions with status "${statusFilter}".`}
-              />
+              <EmptyState icon={Play} title="No Executions" description={statusFilter === 'ALL' ? 'Start a new execution to see it here.' : `No executions with status "${statusFilter}".`} />
             ) : (
               <Card>
                 <CardContent className="p-0">
@@ -601,9 +451,7 @@ export function StepFunctionsBrowser() {
                           <TableCell className="font-mono text-xs">{exec.name}</TableCell>
                           <TableCell><StatusBadge status={exec.status} /></TableCell>
                           <TableCell className="text-xs text-muted-foreground">{formatDate(exec.startDate)}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {calculateDuration(exec.startDate, exec.stopDate)}
-                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{calculateDuration(exec.startDate, exec.stopDate)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -613,24 +461,32 @@ export function StepFunctionsBrowser() {
             )}
           </TabsContent>
 
+          {/* Definition Tab — Side by Side */}
           <TabsContent value="definition" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Amazon States Language (ASL)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-md border p-3 bg-muted/50">
-                  <JsonViewer data={machineDetail.definition} />
-                </div>
-              </CardContent>
-            </Card>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader><CardTitle className="text-lg">Diagram</CardTitle></CardHeader>
+                <CardContent>
+                  <Suspense fallback={<Skeleton className="h-[400px] w-full" />}>
+                    <StateMachineGraph definition={machineDetail.definition} />
+                  </Suspense>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-lg">JSON</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="rounded-md border p-3 bg-muted/50 h-[600px] overflow-auto">
+                    <JsonViewer data={machineDetail.definition} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
+          {/* Details Tab */}
           <TabsContent value="details" className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Configuration</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle className="text-lg">Configuration</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                   <div className="text-muted-foreground">ARN</div>
@@ -649,13 +505,11 @@ export function StepFunctionsBrowser() {
 
             {machineDetail.loggingConfiguration && machineDetail.loggingConfiguration.level !== 'OFF' && (
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Logging</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle className="text-lg">Logging</CardTitle></CardHeader>
                 <CardContent className="text-sm">
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <div className="text-muted-foreground">Level</div>
-                    <div>{machineDetail.loggingConfiguration.level || 'OFF'}</div>
+                    <div>{machineDetail.loggingConfiguration.level}</div>
                     <div className="text-muted-foreground">Include Execution Data</div>
                     <div>{machineDetail.loggingConfiguration.includeExecutionData ? 'Yes' : 'No'}</div>
                   </div>
@@ -678,6 +532,7 @@ export function StepFunctionsBrowser() {
             open={true}
             onOpenChange={() => setSelectedExecution(null)}
             onStopped={refreshExecutions}
+            definition={machineDetail.definition}
           />
         )}
       </div>

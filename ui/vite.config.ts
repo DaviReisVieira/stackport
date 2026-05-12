@@ -13,6 +13,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'stepfunctions-graph': ['@dagrejs/dagre'],
+        },
+      },
+    },
   },
   server: {
     proxy: {
