@@ -772,3 +772,75 @@ export interface BulkOperationResponse {
   succeeded: number
   failed: number
 }
+
+export interface StepFunctionsStateMachine {
+  name: string
+  stateMachineArn: string
+  type: 'STANDARD' | 'EXPRESS'
+  status: string
+  creationDate: string
+}
+
+export interface StepFunctionsStateMachineDetail {
+  stateMachineArn: string
+  name: string
+  status: string
+  definition: Record<string, unknown> | string
+  roleArn: string
+  type: 'STANDARD' | 'EXPRESS'
+  creationDate: string
+  loggingConfiguration?: {
+    level?: string
+    includeExecutionData?: boolean
+    destinations?: Array<{ cloudWatchLogsLogGroup?: { logGroupArn: string } }>
+  }
+}
+
+export interface StepFunctionsExecution {
+  executionArn: string
+  stateMachineArn: string
+  name: string
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT' | 'ABORTED'
+  startDate: string
+  stopDate?: string
+}
+
+export interface StepFunctionsExecutionDetail {
+  executionArn: string
+  stateMachineArn: string
+  name: string
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT' | 'ABORTED'
+  startDate: string
+  stopDate?: string
+  input: Record<string, unknown> | string
+  output?: Record<string, unknown> | string
+  error?: string
+  cause?: string
+}
+
+export interface StepFunctionsHistoryEvent {
+  timestamp: string
+  type: string
+  id: number
+  previousEventId?: number
+  [key: string]: unknown
+}
+
+export interface StartExecutionRequest {
+  name?: string
+  input?: Record<string, unknown>
+}
+
+export interface StartExecutionResponse {
+  executionArn: string
+  startDate: string
+}
+
+export interface StopExecutionRequest {
+  error?: string
+  cause?: string
+}
+
+export interface StopExecutionResponse {
+  stopDate: string
+}

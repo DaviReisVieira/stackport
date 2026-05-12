@@ -65,6 +65,15 @@ import type {
   LogGroupsResponse,
   LogStreamsResponse,
   LogEventsResponse,
+  StepFunctionsStateMachine,
+  StepFunctionsStateMachineDetail,
+  StepFunctionsExecution,
+  StepFunctionsExecutionDetail,
+  StepFunctionsHistoryEvent,
+  StartExecutionRequest,
+  StartExecutionResponse,
+  StopExecutionRequest,
+  StopExecutionResponse,
 } from './types'
 
 const API_BASE = '/api'
@@ -989,5 +998,97 @@ export async function bulkDelete(request: BulkDeleteRequest, endpoint?: string |
     body: JSON.stringify(request),
   })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+// --- Step Functions ---
+
+export async function fetchStepFunctionsStateMachines(
+  endpoint?: string | null
+): Promise<{ stateMachines: StepFunctionsStateMachine[] }> {
+  return fetchJSON<{ stateMachines: StepFunctionsStateMachine[] }>(
+    buildUrl('/stepfunctions/state-machines', endpoint)
+  )
+}
+
+export async function fetchStepFunctionsStateMachineDetail(
+  arn: string,
+  endpoint?: string | null
+): Promise<StepFunctionsStateMachineDetail> {
+  return fetchJSON<StepFunctionsStateMachineDetail>(
+    buildUrl(`/stepfunctions/state-machines/${encodeURIComponent(arn)}`, endpoint)
+  )
+}
+
+export async function fetchStepFunctionsExecutions(
+  stateMachineArn: string,
+  statusFilter?: string,
+  maxResults = 50,
+  endpoint?: string | null
+): Promise<{ executions: StepFunctionsExecution[] }> {
+  const params = new URLSearchParams({ max_results: String(maxResults) })
+  if (statusFilter) params.set('status_filter', statusFilter)
+  return fetchJSON<{ executions: StepFunctionsExecution[] }>(
+    buildUrl(`/stepfunctions/state-machines/${encodeURIComponent(stateMachineArn)}/executions`, endpoint, params)
+  )
+}
+
+export async function startStepFunctionsExecution(
+  stateMachineArn: string,
+  request: StartExecutionRequest,
+  endpoint?: string | null
+): Promise<StartExecutionResponse> {
+  const url = buildUrl(`/stepfunctions/state-machines/${encodeURIComponent(stateMachineArn)}/executions`, endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function fetchStepFunctionsExecutionDetail(
+  arn: string,
+  endpoint?: string | null
+): Promise<StepFunctionsExecutionDetail> {
+  return fetchJSON<StepFunctionsExecutionDetail>(
+    buildUrl(`/stepfunctions/executions/${encodeURIComponent(arn)}`, endpoint)
+  )
+}
+
+export async function fetchStepFunctionsExecutionHistory(
+  arn: string,
+  maxResults = 100,
+  reverseOrder = false,
+  endpoint?: string | null
+): Promise<{ events: StepFunctionsHistoryEvent[] }> {
+  const params = new URLSearchParams({
+    max_results: String(maxResults),
+    reverse_order: String(reverseOrder),
+  })
+  return fetchJSON<{ events: StepFunctionsHistoryEvent[] }>(
+    buildUrl(`/stepfunctions/executions/${encodeURIComponent(arn)}/history`, endpoint, params)
+  )
+}
+
+export async function stopStepFunctionsExecution(
+  arn: string,
+  request: StopExecutionRequest,
+  endpoint?: string | null
+): Promise<StopExecutionResponse> {
+  const url = buildUrl(`/stepfunctions/executions/${encodeURIComponent(arn)}/stop`, endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
   return res.json()
 }

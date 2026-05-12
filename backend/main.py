@@ -17,7 +17,7 @@ from botocore.exceptions import (
 )
 
 from backend.config import LOG_LEVEL, STACKPORT_ALLOW_WRITES, STACKPORT_PORT
-from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, resources, s3, secretsmanager, sqs, stats, tags
+from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, resources, s3, secretsmanager, sqs, stats, stepfunctions, tags
 from backend.websocket import probe_loop, websocket_endpoint
 
 
@@ -71,6 +71,7 @@ class ReadOnlyMiddleware(BaseHTTPMiddleware):
             return True
         if path.startswith("/api/lambda/functions/") and path.endswith("/invoke"):
             return True
+        # Step Functions start/stop execution are writes, not reads
         return False
 
     async def dispatch(self, request: Request, call_next):
@@ -103,7 +104,7 @@ app.add_middleware(ReadOnlyMiddleware)
 @app.exception_handler(SSOTokenLoadError)
 @app.exception_handler(UnauthorizedSSOTokenError)
 @app.exception_handler(SSOError)
-async def sso_error_handler(request: Request, exc: Exception):
+async def sso_error_handler(_request: Request, exc: Exception):
     """Handle expired/missing SSO tokens with actionable guidance."""
     return JSONResponse(
         status_code=401,
@@ -122,6 +123,7 @@ app.include_router(iam.router, prefix="/api/iam", tags=["iam"])
 app.include_router(ec2.router, prefix="/api/ec2", tags=["ec2"])
 app.include_router(logs.router, prefix="/api/logs", tags=["logs"])
 app.include_router(secretsmanager.router, prefix="/api/secretsmanager", tags=["secretsmanager"])
+app.include_router(stepfunctions.router, prefix="/api/stepfunctions", tags=["stepfunctions"])
 app.include_router(tags.router, prefix="/api", tags=["tags"])
 app.include_router(resources.router, prefix="/api")
 

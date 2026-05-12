@@ -17,6 +17,7 @@ import { IAMBrowser } from './IAMBrowser'
 import { EC2Browser } from './EC2Browser'
 import { LogsBrowser } from './LogsBrowser'
 import { SecretsManagerBrowser } from './SecretsManagerBrowser'
+import { StepFunctionsBrowser } from './StepFunctionsBrowser'
 
 export const SERVICE_VIEWS: Record<string, ComponentType> = {
   s3: S3Browser,
@@ -27,4 +28,5 @@ export const SERVICE_VIEWS: Record<string, ComponentType> = {
   ec2: EC2Browser,
   logs: LogsBrowser,
   secretsmanager: SecretsManagerBrowser,
+  stepfunctions: StepFunctionsBrowser,
 }
