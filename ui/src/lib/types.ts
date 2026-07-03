@@ -628,26 +628,31 @@ export interface EC2SecurityGroup {
   tags: Array<{ Key: string; Value: string }>
 }
 
+export interface EC2ASGInstance {
+  instanceId: string
+  instanceType?: string
+  lifecycleState: string
+  healthStatus: string
+  availabilityZone: string
+}
+
 export interface EC2AutoScalingGroup {
-  autoScalingGroupARN: string;
-  autoScalingGroupName: string;
-  createdTime: string;
-  desiredCapacity: number;
-  maxSize: number;
-  minSize: number;
-  availabilityZones: string[];
-  deletionProtection: boolean;
-  healthCheckGracePeriod: number;
-  instanceCount: number;
-  instances: EC2Instance[];
-  loadBalancerNames: string[];
-  tags: Array<{key: string, value: string}>[];
+  autoScalingGroupARN: string
+  autoScalingGroupName: string
+  createdTime: string
+  desiredCapacity: number
+  maxSize: number
+  minSize: number
+  availabilityZones: string[]
+  healthCheckGracePeriod: number
+  instanceCount: number
+  instances: EC2ASGInstance[]
+  loadBalancerNames: string[]
+  tags: Array<{ Key: string; Value: string }>
 }
-export interface EC2SingleASGResponse {
-  auto_scaling_group: EC2AutoScalingGroup;
-}
+
 export interface EC2ListASGsResponse {
-  auto_scaling_groups: EC2AutoScalingGroup[];
+  auto_scaling_groups: EC2AutoScalingGroup[]
 }
 
 export interface EC2VPC {

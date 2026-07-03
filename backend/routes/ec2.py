@@ -38,8 +38,20 @@ def _decode_user_data(encoded: str | None) -> str | None:
     except Exception:
         return None
 
+def _map_asg_instance(inst: dict) -> dict:
+    """Map an Auto Scaling Group instance to a camelCase shape."""
+    return {
+        "instanceId": inst.get("InstanceId"),
+        "instanceType": inst.get("InstanceType"),
+        "lifecycleState": inst.get("LifecycleState"),
+        "healthStatus": inst.get("HealthStatus"),
+        "availabilityZone": inst.get("AvailabilityZone"),
+    }
+
+
 @router.get("/asgs")
 def list_autoscaling_groups(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
+    """List all Auto Scaling Groups with their instances."""
     try:
         client = get_client("autoscaling", **ep.client_kwargs())
         paginator = client.get_paginator("describe_auto_scaling_groups")
@@ -47,60 +59,25 @@ def list_autoscaling_groups(ep: EndpointInfo = Depends(get_endpoint_info)) -> di
         all_groups = []
         for page in paginator.paginate():
             for group in page.get("AutoScalingGroups", []):
+                created_time = group.get("CreatedTime")
+                instances = group.get("Instances", [])
                 all_groups.append(
                     {
-                        "autoScalingGroupARN" : group["AutoScalingGroupARN"],
-                        "autoScalingGroupName" : group["AutoScalingGroupName"],
-                        "createdTime" :group["CreatedTime"],
-                        "desiredCapacity" : group["DesiredCapacity"],
-                        "maxSize" : group["MaxSize"],
-                        "minSize" : group["MinSize"],
-                        "availabilityZones" : group.get("AvailabilityZones", []),
-                        "deletionProtection" : group.get("DeletionProtection", False),
-                        "healthCheckGracePeriod" : group.get("HealthCheckGracePeriod", 0),
-                        "instanceCount" : len(group.get("Instances", [])),
-                        "instances" : group.get("Instances", []),
-                        "loadBalancersCount" : len(group.get("LoadBalancerNames", [])),
-                        "loadBalancerNames" : group.get("LoadBalancerNames", []),
-                        "tags" : group.get("Tags", []),
+                        "autoScalingGroupARN": group["AutoScalingGroupARN"],
+                        "autoScalingGroupName": group["AutoScalingGroupName"],
+                        "createdTime": created_time.isoformat() if created_time else None,
+                        "desiredCapacity": group["DesiredCapacity"],
+                        "maxSize": group["MaxSize"],
+                        "minSize": group["MinSize"],
+                        "availabilityZones": group.get("AvailabilityZones", []),
+                        "healthCheckGracePeriod": group.get("HealthCheckGracePeriod", 0),
+                        "instanceCount": len(instances),
+                        "instances": [_map_asg_instance(i) for i in instances],
+                        "loadBalancerNames": group.get("LoadBalancerNames", []),
+                        "tags": group.get("Tags", []),
                     }
                 )
         return {"auto_scaling_groups": all_groups}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/asgs/{asg_name}")
-def get_autoscaling_group_detail(asg_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
-    try:
-        client = get_client("autoscaling", **ep.client_kwargs())
-
-        response = client.describe_auto_scaling_groups(AutoScalingGroupNames=[asg_name])
-        groups = response.get("AutoScalingGroups", [])
-
-        if not groups:
-            raise HTTPException(status_code=404, detail=f"Auto Scaling Group '{asg_name}' not found.")
-
-        group = groups[0]
-        return {
-            "auto_scaling_group": {
-                "AutoScalingGroupARN": group["AutoScalingGroupARN"],
-                "AutoScalingGroupName": group["AutoScalingGroupName"],
-                "CreatedTime": group["CreatedTime"],
-                "DesiredCapacity": group["DesiredCapacity"],
-                "MaxSize": group["MaxSize"],
-                "MinSize": group["MinSize"],
-                "AvailabilityZones": group.get("AvailabilityZones", []),
-                "DeletionProtection": group.get("DeletionProtection", False),
-                "HealthCheckGracePeriod": group.get("HealthCheckGracePeriod", 0),
-                "InstanceCount": len(group.get("Instances", [])),
-                "Instances": group.get("Instances", []),
-                "LoadBalancersCount": len(group.get("LoadBalancerNames", [])),
-                "LoadBalancerNames": group.get("LoadBalancerNames", []),
-                "Tags": group.get("Tags", []),
-            }
-        }
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

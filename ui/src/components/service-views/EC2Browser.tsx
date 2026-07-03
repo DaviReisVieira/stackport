@@ -358,10 +358,6 @@ function ASGDetailSheet({
                           <span className="text-muted-foreground">Health Check Grace</span>
                           <span className="text-xs">{asg.healthCheckGracePeriod}s</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Deletion Protection</span>
-                          <span className="text-xs">{asg.deletionProtection ? 'Enabled' : 'Disabled'}</span>
-                        </div>
                         <div className="flex justify-between gap-3">
                           <span className="text-muted-foreground">Availability Zones</span>
                           <span className="text-xs text-right">{asg.availabilityZones.join(', ') || '—'}</span>
@@ -720,6 +716,13 @@ export function EC2Browser() {
                             {asg.instances.map((instance) => (
                               <TableRow key={instance.instanceId}>
                                 <TableCell className="font-mono text-xs">{instance.instanceId}</TableCell>
+                                <TableCell className="text-xs">
+                                  <Badge variant={instance.lifecycleState === 'InService' ? 'default' : 'outline'}>
+                                    {instance.lifecycleState}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-xs">{instance.healthStatus}</TableCell>
+                                <TableCell className="text-xs">{instance.availabilityZone}</TableCell>
                               </TableRow>
                             ))}
                           </TableBody>

@@ -296,3 +296,69 @@ class TestListKeyPairs:
         data = resp.json()
         assert len(data["keyPairs"]) == 1
         assert data["keyPairs"][0]["keyName"] == "my-keypair"
+
+
+class TestListAutoscalingGroups:
+    @patch("backend.routes.ec2.get_client")
+    def test_list_asgs_empty(self, mock_get_client):
+        mock_asg = MagicMock()
+        mock_get_client.return_value = mock_asg
+        paginator = MagicMock()
+        mock_asg.get_paginator.return_value = paginator
+        paginator.paginate.return_value = [{"AutoScalingGroups": []}]
+
+        resp = client.get("/api/ec2/asgs")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["auto_scaling_groups"] == []
+
+    @patch("backend.routes.ec2.get_client")
+    def test_list_asgs_with_data(self, mock_get_client):
+        mock_asg = MagicMock()
+        mock_get_client.return_value = mock_asg
+        paginator = MagicMock()
+        mock_asg.get_paginator.return_value = paginator
+        paginator.paginate.return_value = [
+            {
+                "AutoScalingGroups": [
+                    {
+                        "AutoScalingGroupARN": "arn:aws:autoscaling:us-east-1:000000000000:autoScalingGroup:uuid:autoScalingGroupName/asg-test",
+                        "AutoScalingGroupName": "asg-test",
+                        "CreatedTime": NOW,
+                        "DesiredCapacity": 2,
+                        "MaxSize": 3,
+                        "MinSize": 1,
+                        "AvailabilityZones": ["us-east-1a"],
+                        "HealthCheckGracePeriod": 300,
+                        "LoadBalancerNames": ["lb-1"],
+                        "Tags": [{"Key": "env", "Value": "dev"}],
+                        "Instances": [
+                            {
+                                "InstanceId": "i-abc123",
+                                "InstanceType": "t2.micro",
+                                "LifecycleState": "InService",
+                                "HealthStatus": "Healthy",
+                                "AvailabilityZone": "us-east-1a",
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+
+        resp = client.get("/api/ec2/asgs")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["auto_scaling_groups"]) == 1
+        asg = data["auto_scaling_groups"][0]
+        assert asg["autoScalingGroupName"] == "asg-test"
+        assert asg["desiredCapacity"] == 2
+        assert asg["createdTime"] == NOW.isoformat()
+        assert asg["instanceCount"] == 1
+        assert asg["loadBalancerNames"] == ["lb-1"]
+        assert "deletionProtection" not in asg
+        instance = asg["instances"][0]
+        assert instance["instanceId"] == "i-abc123"
+        assert instance["lifecycleState"] == "InService"
+        assert instance["healthStatus"] == "Healthy"
+        assert instance["availabilityZone"] == "us-east-1a"

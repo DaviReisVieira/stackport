@@ -74,7 +74,7 @@ import type {
   StartExecutionResponse,
   StopExecutionRequest,
   StopExecutionResponse,
-  EC2AutoScalingGroup, EC2ListASGsResponse, EC2SingleASGResponse,
+  EC2AutoScalingGroup, EC2ListASGsResponse,
 } from './types'
 
 const API_BASE = '/api'
@@ -759,11 +759,6 @@ export async function fetchEC2InstanceDetail(instanceId: string, endpoint?: stri
 export async function fetchEC2AutoscalingGroups(endpoint?: string | null): Promise<EC2AutoScalingGroup[]> {
   const asg_list = await fetchJSON<EC2ListASGsResponse>(buildUrl(`/ec2/asgs`, endpoint))
   return asg_list.auto_scaling_groups
-}
-
-export async function fetchEC2AutoscalingGroupByName(group_name: string, endpoint?: string | null): Promise<EC2AutoScalingGroup> {
-  const asg_list = await fetchJSON<EC2SingleASGResponse>(buildUrl(`/ec2/asgs/${group_name}`, endpoint))
-  return asg_list.auto_scaling_group
 }
 
 export async function startEC2Instance(instanceId: string, endpoint?: string | null): Promise<EC2ActionResponse> {
