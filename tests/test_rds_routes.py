@@ -14,236 +14,257 @@ def mock_rds_client(mocker):
     """Mock RDS client for testing."""
     mock_client = mocker.Mock()
 
-    # Mock describe_db_instances
-    mock_client.describe_db_instances.return_value = {
-        "DBInstances": [
-            {
-                "DBInstanceIdentifier": "test-db-instance-1",
-                "DBInstanceClass": "db.t3.micro",
-                "Engine": "mysql",
-                "EngineVersion": "8.0.32",
-                "DBInstanceStatus": "available",
-                "MasterUsername": "admin",
-                "Endpoint": {
-                    "Address": "test-db-instance-1.cxyz123.us-east-1.rds.amazonaws.com",
-                    "Port": 3306,
-                },
-                "MultiAZ": True,
-                "AvailabilityZone": "us-east-1a",
-                "StorageType": "gp3",
-                "AllocatedStorage": 100,
-                "StorageEncrypted": True,
-                "PubliclyAccessible": False,
-                "VpcSecurityGroups": [
-                    {"VpcSecurityGroupId": "sg-12345678", "Status": "active"}
-                ],
-                "DBSubnetGroup": {
-                    "DBSubnetGroupName": "default-vpc-123",
-                    "VpcId": "vpc-12345678",
-                },
-                "DBParameterGroups": [
-                    {"DBParameterGroupName": "default.mysql8.0", "ParameterApplyStatus": "in-sync"}
-                ],
-                "TagList": [
-                    {"Key": "Environment", "Value": "test"},
-                    {"Key": "Team", "Value": "backend"},
-                ],
-                "InstanceCreateTime": "2024-01-15T10:00:00Z",
-                "BackupRetentionPeriod": 7,
-                "PreferredBackupWindow": "03:00-04:00",
-                "PreferredMaintenanceWindow": "sun:04:00-sun:05:00",
-                "LatestRestorableTime": "2024-01-20T10:00:00Z",
-                "EarliestRestorableTime": "2024-01-15T11:00:00Z",
-            },
-            {
-                "DBInstanceIdentifier": "test-db-instance-2",
-                "DBInstanceClass": "db.t3.small",
-                "Engine": "postgres",
-                "EngineVersion": "15.4",
-                "DBInstanceStatus": "available",
-                "MasterUsername": "postgres",
-                "Endpoint": {
-                    "Address": "test-db-instance-2.cxyz456.us-east-1.rds.amazonaws.com",
-                    "Port": 5432,
-                },
-                "MultiAZ": False,
-                "AvailabilityZone": "us-east-1b",
-                "StorageType": "gp2",
-                "AllocatedStorage": 50,
-                "StorageEncrypted": False,
-                "PubliclyAccessible": False,
-                "VpcSecurityGroups": [],
-                "DBSubnetGroup": {},
-                "DBParameterGroups": [],
-                "TagList": [],
-                "InstanceCreateTime": "2024-02-01T08:00:00Z",
-                "BackupRetentionPeriod": 14,
-                "PreferredBackupWindow": "02:00-03:00",
-                "PreferredMaintenanceWindow": "mon:03:00-mon:04:00",
-                "LatestRestorableTime": "2024-02-10T08:00:00Z",
-                "EarliestRestorableTime": "2024-02-01T09:00:00Z",
-            },
-        ]
-    }
-
-    # Mock describe_db_clusters
-    mock_client.describe_db_clusters.return_value = {
-        "DBClusters": [
-            {
-                "DBClusterIdentifier": "test-cluster-1",
-                "Engine": "aurora-mysql",
-                "EngineVersion": "8.0.mysql_aurora.3.04.0",
-                "Status": "available",
-                "MasterUsername": "clusteradmin",
-                "Endpoint": "test-cluster-1.cluster-cxyz.us-east-1.rds.amazonaws.com",
-                "ReaderEndpoint": "test-cluster-1.reader-cxyz.us-east-1.rds.amazonaws.com",
+    # Create reusable mock data
+    instances_data = [
+        {
+            "DBInstanceIdentifier": "test-db-instance-1",
+            "DBInstanceClass": "db.t3.micro",
+            "Engine": "mysql",
+            "EngineVersion": "8.0.32",
+            "DBInstanceStatus": "available",
+            "MasterUsername": "admin",
+            "Endpoint": {
+                "Address": "test-db-instance-1.cxyz123.us-east-1.rds.amazonaws.com",
                 "Port": 3306,
-                "MultiAZ": True,
-                "StorageType": "aurora",
-                "AllocatedStorage": 100,
-                "StorageEncrypted": True,
-                "VpcSecurityGroups": [
-                    {"VpcSecurityGroupId": "sg-cluster-123", "Status": "active"}
-                ],
-                "DBSubnetGroup": "default-vpc-123",
-                "DBClusterParameterGroup": "default.aurora-mysql8.0",
-                "TagList": [
-                    {"Key": "Environment", "Value": "prod"},
-                ],
-                "ClusterCreateTime": "2024-01-10T12:00:00Z",
-                "EarliestRestorableTime": "2024-01-10T13:00:00Z",
-                "LatestRestorableTime": "2024-01-20T12:00:00Z",
-                "BackupRetentionPeriod": 14,
-                "PreferredBackupWindow": "04:00-05:00",
-                "PreferredMaintenanceWindow": "sun:05:00-sun:06:00",
-                "ReadReplicaDBClusterIdentifiers": [],
-                "DBClusterMembers": [
-                    {
-                        "DBInstanceIdentifier": "test-cluster-1-instance-1",
-                        "IsClusterWriter": True,
-                        "DBClusterParameterGroupStatus": "in-sync",
-                        "PromotionTier": 1,
-                    },
-                    {
-                        "DBInstanceIdentifier": "test-cluster-1-instance-2",
-                        "IsClusterWriter": False,
-                        "DBClusterParameterGroupStatus": "in-sync",
-                        "PromotionTier": 2,
-                    },
-                ],
-            }
-        ]
-    }
-
-    # Mock describe_db_snapshots
-    mock_client.describe_db_snapshots.return_value = {
-        "DBSnapshots": [
-            {
-                "DBSnapshotIdentifier": "test-snapshot-1",
-                "DBInstanceIdentifier": "test-db-instance-1",
-                "SnapshotType": "automated",
-                "Status": "available",
-                "Engine": "mysql",
-                "EngineVersion": "8.0.32",
-                "AllocatedStorage": 100,
-                "SnapshotCreateTime": "2024-01-19T03:00:00Z",
-                "SnapshotSize": 52428800,
-                "Encrypted": True,
-                "TagList": [],
-            }
-        ]
-    }
-
-    # Mock describe_db_cluster_snapshots
-    mock_client.describe_db_cluster_snapshots.return_value = {
-        "DBClusterSnapshots": [
-            {
-                "DBClusterSnapshotIdentifier": "test-cluster-snapshot-1",
-                "DBClusterIdentifier": "test-cluster-1",
-                "SnapshotType": "manual",
-                "Status": "available",
-                "Engine": "aurora-mysql",
-                "EngineVersion": "8.0.mysql_aurora.3.04.0",
-                "AllocatedStorage": 100,
-                "SnapshotCreateTime": "2024-01-18T04:00:00Z",
-                "SnapshotSize": 104857600,
-                "Encrypted": True,
-                "TagList": [],
-            }
-        ]
-    }
-
-    # Mock describe_db_parameter_groups
-    mock_client.describe_db_parameter_groups.return_value = {
-        "DBParameterGroups": [
-            {
-                "DBParameterGroupName": "default.mysql8.0",
-                "DBParameterGroupFamily": "mysql8.0",
-                "Description": "Default MySQL 8.0 parameter group",
-                "TagList": [],
             },
-            {
-                "DBParameterGroupName": "custom-mysql-params",
-                "DBParameterGroupFamily": "mysql8.0",
-                "Description": "Custom MySQL parameters for production",
-                "TagList": [{"Key": "Environment", "Value": "prod"}],
+            "MultiAZ": True,
+            "AvailabilityZone": "us-east-1a",
+            "StorageType": "gp3",
+            "AllocatedStorage": 100,
+            "StorageEncrypted": True,
+            "PubliclyAccessible": False,
+            "VpcSecurityGroups": [
+                {"VpcSecurityGroupId": "sg-12345678", "Status": "active"}
+            ],
+            "DBSubnetGroup": {
+                "DBSubnetGroupName": "default-vpc-123",
+                "VpcId": "vpc-12345678",
             },
-        ]
-    }
+            "DBParameterGroups": [
+                {"DBParameterGroupName": "default.mysql8.0", "ParameterApplyStatus": "in-sync"}
+            ],
+            "TagList": [
+                {"Key": "Environment", "Value": "test"},
+                {"Key": "Team", "Value": "backend"},
+            ],
+            "InstanceCreateTime": "2024-01-15T10:00:00Z",
+            "BackupRetentionPeriod": 7,
+            "PreferredBackupWindow": "03:00-04:00",
+            "PreferredMaintenanceWindow": "sun:04:00-sun:05:00",
+            "LatestRestorableTime": "2024-01-20T10:00:00Z",
+            "EarliestRestorableTime": "2024-01-15T11:00:00Z",
+        },
+        {
+            "DBInstanceIdentifier": "test-db-instance-2",
+            "DBInstanceClass": "db.t3.small",
+            "Engine": "postgres",
+            "EngineVersion": "15.4",
+            "DBInstanceStatus": "available",
+            "MasterUsername": "postgres",
+            "Endpoint": {
+                "Address": "test-db-instance-2.cxyz456.us-east-1.rds.amazonaws.com",
+                "Port": 5432,
+            },
+            "MultiAZ": False,
+            "AvailabilityZone": "us-east-1b",
+            "StorageType": "gp2",
+            "AllocatedStorage": 50,
+            "StorageEncrypted": False,
+            "PubliclyAccessible": False,
+            "VpcSecurityGroups": [],
+            "DBSubnetGroup": {},
+            "DBParameterGroups": [],
+            "TagList": [],
+            "InstanceCreateTime": "2024-02-01T08:00:00Z",
+            "BackupRetentionPeriod": 14,
+            "PreferredBackupWindow": "02:00-03:00",
+            "PreferredMaintenanceWindow": "mon:03:00-mon:04:00",
+            "LatestRestorableTime": "2024-02-10T08:00:00Z",
+            "EarliestRestorableTime": "2024-02-01T09:00:00Z",
+        },
+    ]
 
-    # Mock describe_db_cluster_parameter_groups
-    mock_client.describe_db_cluster_parameter_groups.return_value = {
-        "DBClusterParameterGroups": [
-            {
-                "DBClusterParameterGroupName": "default.aurora-mysql8.0",
-                "DBClusterParameterGroupFamily": "aurora-mysql8.0",
-                "Description": "Default Aurora MySQL 8.0 parameter group",
-                "TagList": [],
-            },
-        ]
-    }
+    clusters_data = [
+        {
+            "DBClusterIdentifier": "test-cluster-1",
+            "Engine": "aurora-mysql",
+            "EngineVersion": "8.0.mysql_aurora.3.04.0",
+            "Status": "available",
+            "MasterUsername": "clusteradmin",
+            "Endpoint": "test-cluster-1.cluster-cxyz.us-east-1.rds.amazonaws.com",
+            "ReaderEndpoint": "test-cluster-1.reader-cxyz.us-east-1.rds.amazonaws.com",
+            "Port": 3306,
+            "MultiAZ": True,
+            "StorageType": "aurora",
+            "AllocatedStorage": 100,
+            "StorageEncrypted": True,
+            "VpcSecurityGroups": [
+                {"VpcSecurityGroupId": "sg-cluster-123", "Status": "active"}
+            ],
+            "DBSubnetGroup": "default-vpc-123",
+            "DBClusterParameterGroup": "default.aurora-mysql8.0",
+            "TagList": [
+                {"Key": "Environment", "Value": "prod"},
+            ],
+            "ClusterCreateTime": "2024-01-10T12:00:00Z",
+            "EarliestRestorableTime": "2024-01-10T13:00:00Z",
+            "LatestRestorableTime": "2024-01-20T12:00:00Z",
+            "BackupRetentionPeriod": 14,
+            "PreferredBackupWindow": "04:00-05:00",
+            "PreferredMaintenanceWindow": "sun:05:00-sun:06:00",
+            "ReadReplicaDBClusterIdentifiers": [],
+            "DBClusterMembers": [
+                {
+                    "DBInstanceIdentifier": "test-cluster-1-instance-1",
+                    "IsClusterWriter": True,
+                    "DBClusterParameterGroupStatus": "in-sync",
+                    "PromotionTier": 1,
+                },
+                {
+                    "DBInstanceIdentifier": "test-cluster-1-instance-2",
+                    "IsClusterWriter": False,
+                    "DBClusterParameterGroupStatus": "in-sync",
+                    "PromotionTier": 2,
+                },
+            ],
+        }
+    ]
 
-    # Mock describe_db_parameters
-    mock_client.describe_db_parameters.return_value = {
-        "Parameters": [
-            {
-                "ParameterName": "max_connections",
-                "ParameterValue": "1000",
-                "Description": "Maximum number of connections",
-                "DataType": "integer",
-                "AllowedValues": "1-10000",
-                "IsModifiable": True,
-                "ApplyMethod": "pending-reboot",
-            },
-            {
-                "ParameterName": "innodb_buffer_pool_size",
-                "ParameterValue": "134217728",
-                "Description": "InnoDB buffer pool size",
-                "DataType": "long",
-                "AllowedValues": "1048576-4294967296",
-                "IsModifiable": True,
-                "ApplyMethod": "dynamic",
-            },
-        ]
-    }
+    snapshots_data = [
+        {
+            "DBSnapshotIdentifier": "test-snapshot-1",
+            "DBInstanceIdentifier": "test-db-instance-1",
+            "SnapshotType": "automated",
+            "Status": "available",
+            "Engine": "mysql",
+            "EngineVersion": "8.0.32",
+            "AllocatedStorage": 100,
+            "SnapshotCreateTime": "2024-01-19T03:00:00Z",
+            "SnapshotSize": 52428800,
+            "Encrypted": True,
+            "TagList": [],
+        }
+    ]
 
-    # Mock describe_db_cluster_parameters
-    mock_client.describe_db_cluster_parameters.return_value = {
-        "Parameters": [
-            {
-                "ParameterName": "aurora_parallel_query",
-                "ParameterValue": "ON",
-                "Description": "Enable Aurora parallel query",
-                "DataType": "string",
-                "AllowedValues": "ON,OFF",
-                "IsModifiable": True,
-                "ApplyMethod": "pending-reboot",
-            },
-        ]
-    }
+    cluster_snapshots_data = [
+        {
+            "DBClusterSnapshotIdentifier": "test-cluster-snapshot-1",
+            "DBClusterIdentifier": "test-cluster-1",
+            "SnapshotType": "manual",
+            "Status": "available",
+            "Engine": "aurora-mysql",
+            "EngineVersion": "8.0.mysql_aurora.3.04.0",
+            "AllocatedStorage": 100,
+            "SnapshotCreateTime": "2024-01-18T04:00:00Z",
+            "SnapshotSize": 104857600,
+            "Encrypted": True,
+            "TagList": [],
+        }
+    ]
 
-    # Mock list_tags_for_resource
+    parameter_groups_data = [
+        {
+            "DBParameterGroupName": "default.mysql8.0",
+            "DBParameterGroupFamily": "mysql8.0",
+            "Description": "Default MySQL 8.0 parameter group",
+            "TagList": [],
+        },
+        {
+            "DBParameterGroupName": "custom-mysql-params",
+            "DBParameterGroupFamily": "mysql8.0",
+            "Description": "Custom MySQL parameters for production",
+            "TagList": [{"Key": "Environment", "Value": "prod"}],
+        },
+    ]
+
+    cluster_parameter_groups_data = [
+        {
+            "DBClusterParameterGroupName": "default.aurora-mysql8.0",
+            "DBClusterParameterGroupFamily": "aurora-mysql8.0",
+            "Description": "Default Aurora MySQL 8.0 parameter group",
+            "TagList": [],
+        },
+    ]
+
+    parameters_data = [
+        {
+            "ParameterName": "max_connections",
+            "ParameterValue": "1000",
+            "Description": "Maximum number of connections",
+            "DataType": "integer",
+            "AllowedValues": "1-10000",
+            "IsModifiable": True,
+            "ApplyMethod": "pending-reboot",
+        },
+        {
+            "ParameterName": "innodb_buffer_pool_size",
+            "ParameterValue": "134217728",
+            "Description": "InnoDB buffer pool size",
+            "DataType": "long",
+            "AllowedValues": "1048576-4294967296",
+            "IsModifiable": True,
+            "ApplyMethod": "dynamic",
+        },
+    ]
+
+    cluster_parameters_data = [
+        {
+            "ParameterName": "aurora_parallel_query",
+            "ParameterValue": "ON",
+            "Description": "Enable Aurora parallel query",
+            "DataType": "string",
+            "AllowedValues": "ON,OFF",
+            "IsModifiable": True,
+            "ApplyMethod": "pending-reboot",
+        },
+    ]
+
+    # Set up mock return values
+    mock_client.describe_db_instances.return_value = {"DBInstances": instances_data}
+    mock_client.describe_db_clusters.return_value = {"DBClusters": clusters_data}
+    mock_client.describe_db_snapshots.return_value = {"DBSnapshots": snapshots_data}
+    mock_client.describe_db_cluster_snapshots.return_value = {"DBClusterSnapshots": cluster_snapshots_data}
+    mock_client.describe_db_parameter_groups.return_value = {"DBParameterGroups": parameter_groups_data}
+    mock_client.describe_db_cluster_parameter_groups.return_value = {"DBClusterParameterGroups": cluster_parameter_groups_data}
+    mock_client.describe_db_parameters.return_value = {"Parameters": parameters_data}
+    mock_client.describe_db_cluster_parameters.return_value = {"Parameters": cluster_parameters_data}
     mock_client.list_tags_for_resource.return_value = {"TagList": []}
+
+    # Create cached paginators
+    paginators = {}
+
+    def get_paginator_cached(operation_name):
+        if operation_name not in paginators:
+            paginator = mocker.Mock()
+            paginators[operation_name] = paginator
+        
+        return paginators[operation_name]
+
+    mock_client.get_paginator.side_effect = get_paginator_cached
+
+    # Set up paginator return values
+    paginators["describe_db_instances"] = mocker.Mock()
+    paginators["describe_db_instances"].paginate.return_value = [{"DBInstances": instances_data}]
+    
+    paginators["describe_db_clusters"] = mocker.Mock()
+    paginators["describe_db_clusters"].paginate.return_value = [{"DBClusters": clusters_data}]
+    
+    paginators["describe_db_snapshots"] = mocker.Mock()
+    paginators["describe_db_snapshots"].paginate.return_value = [{"DBSnapshots": snapshots_data}]
+    
+    paginators["describe_db_cluster_snapshots"] = mocker.Mock()
+    paginators["describe_db_cluster_snapshots"].paginate.return_value = [{"DBClusterSnapshots": cluster_snapshots_data}]
+    
+    paginators["describe_db_parameter_groups"] = mocker.Mock()
+    paginators["describe_db_parameter_groups"].paginate.return_value = [{"DBParameterGroups": parameter_groups_data}]
+    
+    paginators["describe_db_cluster_parameter_groups"] = mocker.Mock()
+    paginators["describe_db_cluster_parameter_groups"].paginate.return_value = [{"DBClusterParameterGroups": cluster_parameter_groups_data}]
+
+    # Store references for test modifications
+    mock_client._paginators = paginators
+    mock_client._instances_data = instances_data
+    mock_client._clusters_data = clusters_data
 
     # Patch get_client to return our mock
     mocker.patch("backend.routes.rds.get_client", return_value=mock_client)
@@ -277,6 +298,9 @@ class TestListDBInstances:
     def test_list_instances_empty(self, mock_rds_client):
         """Test listing DB instances when none exist."""
         mock_rds_client.describe_db_instances.return_value = {"DBInstances": []}
+        # Also update the paginator mock - need to update the side_effect function's returned paginator
+        instances_paginator = mock_rds_client.get_paginator("describe_db_instances")
+        instances_paginator.paginate.return_value = [{"DBInstances": []}]
 
         response = client.get("/api/rds/instances")
 
@@ -337,6 +361,9 @@ class TestListDBClusters:
     def test_list_clusters_empty(self, mock_rds_client):
         """Test listing DB clusters when none exist."""
         mock_rds_client.describe_db_clusters.return_value = {"DBClusters": []}
+        # Also update the paginator mock
+        clusters_paginator = mock_rds_client.get_paginator("describe_db_clusters")
+        clusters_paginator.paginate.return_value = [{"DBClusters": []}]
 
         response = client.get("/api/rds/clusters")
 
