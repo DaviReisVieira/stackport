@@ -12,6 +12,7 @@ node_modules/
 .eggs/
 build/
 *.whl
+.workspace_rag
 
 # VS Code extension
 /vscode-extension/node_modules/
