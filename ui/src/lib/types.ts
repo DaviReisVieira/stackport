@@ -871,3 +871,223 @@ export interface StopExecutionRequest {
 export interface StopExecutionResponse {
   stopDate: string
 }
+
+// --- RDS ---
+
+export interface RDSSecurityGroup {
+  VpcSecurityGroupId: string
+  Status: string
+}
+
+export interface RDSSubnet {
+  SubnetIdentifier: string
+  SubnetAvailabilityZone: {
+    Name: string
+  }
+  SubnetStatus: string
+}
+
+export interface RDSSubnetGroup {
+  DBSubnetGroupName: string
+  DBSubnetGroupDescription: string
+  VpcId: string
+  Subnets: RDSSubnet[]
+  SubnetGroupStatus: string
+}
+
+export interface RDSParameterGroup {
+  DBParameterGroupName: string
+  ParameterApplyStatus: string
+}
+
+export interface RDSInstance {
+  dbInstanceIdentifier: string
+  dbInstanceClass: string
+  engine: string
+  engineVersion: string
+  status: string
+  masterUsername: string
+  endpoint: string
+  port: number
+  multiAz: boolean
+  availabilityZone: string
+  storageType: string
+  allocatedStorage: number
+  storageEncrypted: boolean
+  publiclyAccessible: boolean
+  vpcSecurityGroups: RDSSecurityGroup[]
+  dbSubnetGroup: RDSSubnetGroup
+  parameterGroup: RDSParameterGroup
+  tags: Array<{ Key: string; Value: string }>
+  createdTime: string | null
+  readReplicaSourceIdentifier: string | null
+  readReplicaIdentifiers: string[]
+}
+
+export interface RDSInstanceDetail {
+  instance: {
+    dbInstanceIdentifier: string
+    dbInstanceClass: string
+    engine: string
+    engineVersion: string
+    status: string
+    masterUsername: string
+    endpoint: string
+    port: number
+    multiAz: boolean
+    availabilityZone: string
+    storageType: string
+    allocatedStorage: number
+    iops?: number
+    storageEncrypted: boolean
+    kmsKeyId?: string
+    publiclyAccessible: boolean
+    vpcSecurityGroups: RDSSecurityGroup[]
+    dbSubnetGroup: RDSSubnetGroup
+    dbParameterGroups: RDSParameterGroup[]
+    optionGroupMemberships: Array<{ OptionGroupName: string; Status: string }>
+    tags: Array<{ Key: string; Value: string }>
+    createdTime: string | null
+    backupRetentionPeriod: number
+    preferredBackupWindow: string
+    preferredMaintenanceWindow: string
+    readReplicaSourceIdentifier: string | null
+    readReplicaIdentifiers: string[]
+    certificateDetails: {
+      CAIdentifier?: string
+      ValidTill?: string
+    }
+    pendingModifiedValues: Record<string, unknown>
+    latestRestorableTime: string | null
+    earliestRestorableTime: string | null
+  }
+}
+
+export interface RDSClusterMember {
+  DBInstanceIdentifier: string
+  IsClusterWriter: boolean
+  DBClusterParameterGroupStatus: string
+  PromotionTier: number
+}
+
+export interface RDSCluster {
+  dbClusterIdentifier: string
+  engine: string
+  engineVersion: string
+  status: string
+  masterUsername: string
+  endpoint: string
+  readerEndpoint: string
+  port: number
+  multiAz: boolean
+  storageType: string
+  allocatedStorage: number
+  storageEncrypted: boolean
+  vpcSecurityGroups: RDSSecurityGroup[]
+  dbSubnetGroup: string
+  parameterGroup: string
+  tags: Array<{ Key: string; Value: string }>
+  createdTime: string | null
+  earliestRestorableTime: string | null
+  latestRestorableTime: string | null
+  backupRetentionPeriod: number
+  preferredBackupWindow: string
+  preferredMaintenanceWindow: string
+  readReplicaIdentifiers: string[]
+  dbClusterMembers: RDSClusterMember[]
+  serverlessV2ScalingConfiguration: Record<string, unknown>
+}
+
+export interface RDSClusterDetail {
+  cluster: {
+    dbClusterIdentifier: string
+    engine: string
+    engineVersion: string
+    status: string
+    masterUsername: string
+    endpoint: string
+    readerEndpoint: string
+    port: number
+    multiAz: boolean
+    storageType: string
+    allocatedStorage: number
+    storageEncrypted: boolean
+    kmsKeyId?: string
+    vpcSecurityGroups: RDSSecurityGroup[]
+    dbSubnetGroup: string
+    dbClusterParameterGroup: string
+    optionGroupMemberships: Array<{ OptionGroupName: string; Status: string }>
+    tags: Array<{ Key: string; Value: string }>
+    createdTime: string | null
+    earliestRestorableTime: string | null
+    latestRestorableTime: string | null
+    backupRetentionPeriod: number
+    preferredBackupWindow: string
+    preferredMaintenanceWindow: string
+    readReplicaIdentifiers: string[]
+    dbClusterMembers: RDSClusterMember[]
+    serverlessV2ScalingConfiguration: Record<string, unknown>
+    scalingConfigurationInfo: Record<string, unknown>
+    pendingModifiedValues: Record<string, unknown>
+  }
+}
+
+export interface RDSSnapshot {
+  snapshotIdentifier: string
+  snapshotType: string
+  status: string
+  sourceType: 'instance' | 'cluster'
+  sourceIdentifier: string
+  engine: string
+  engineVersion: string
+  allocatedStorage: number
+  snapshotCreateTime: string | null
+  snapshotSize: number
+  encrypted: boolean
+  kmsKeyId?: string
+  tags: Array<{ Key: string; Value: string }>
+}
+
+export interface RDSParameterGroupInfo {
+  name: string
+  family: string
+  description: string
+  source: 'instance' | 'cluster'
+  tags: Array<{ Key: string; Value: string }>
+}
+
+export interface RDSParameter {
+  name: string
+  value: string
+  description: string
+  dataType: string
+  allowedValues: string
+  isModifiable: boolean
+  applyMethod: string
+}
+
+export interface RDSParameterGroupDetail {
+  parameterGroup: {
+    name: string
+    family: string
+    description: string
+    source: 'instance' | 'cluster'
+    parameters: RDSParameter[]
+  }
+}
+
+export interface RDSInstancesResponse {
+  instances: RDSInstance[]
+}
+
+export interface RDSClustersResponse {
+  clusters: RDSCluster[]
+}
+
+export interface RDSSnapshotsResponse {
+  snapshots: RDSSnapshot[]
+}
+
+export interface RDSParameterGroupsResponse {
+  parameterGroups: RDSParameterGroupInfo[]
+}

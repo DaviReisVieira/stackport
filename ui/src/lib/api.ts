@@ -1,80 +1,86 @@
 import type {
-  HealthResponse,
-  StatsResponse,
-  ResourceListResponse,
-  ResourceDetailResponse,
-  TagsSupportedResponse,
-  ResourceTagsResponse,
-  BulkTagRequest,
   BulkDeleteRequest,
   BulkOperationResponse,
-  EndpointsResponse,
-  S3Bucket,
-  S3ObjectsResponse,
-  S3ObjectDetail,
-  S3UploadResponse,
-  S3UploadConfig,
-  S3DeleteObjectResponse,
-  S3DeleteBatchResponse,
-  S3CreateFolderResponse,
-  DynamoDBTable,
-  DynamoDBTableDetail,
-  DynamoDBScanResponse,
-  DynamoDBQueryRequest,
-  DynamoDBQueryResponse,
+  BulkTagRequest,
+  DynamoDBBatchOperation,
   DynamoDBItem,
   DynamoDBItemFormat,
+  DynamoDBQueryRequest,
+  DynamoDBQueryResponse,
+  DynamoDBScanResponse,
+  DynamoDBTable,
+  DynamoDBTableDetail,
   DynamoDBWriteResponse,
-  DynamoDBBatchOperation,
+  EC2ActionResponse,
+  EC2AutoScalingGroup,
+  EC2Instance,
+  EC2InstanceDetail,
+  EC2KeyPair,
+  EC2ListASGsResponse,
+  EC2SecurityGroup,
+  EC2VPC,
+  EndpointsResponse,
+  HealthResponse,
+  IAMGroup,
+  IAMGroupDetail,
+  IAMPolicy,
+  IAMPolicyDetail,
+  IAMRole,
+  IAMRoleDetail,
+  IAMUser,
+  IAMUserDetail,
+  LambdaAlias,
+  LambdaEventSourceMapping,
   LambdaFunction,
   LambdaFunctionDetail,
   LambdaInvokeRequest,
   LambdaInvokeResponse,
   LambdaUpdateConfigRequest,
-  LambdaEventSourceMapping,
-  LambdaAlias,
   LambdaVersion,
-  SQSQueue,
-  SQSQueueDetail,
-  SQSMessage,
-  SQSSendMessageRequest,
-  SQSSendMessageResponse,
-  SQSBatchSendRequest,
-  SQSBatchSendResponse,
-  SQSBatchDeleteRequest,
-  SQSCreateQueueRequest,
-  SQSCreateQueueResponse,
-  SQSUpdateAttributesRequest,
-  RedrivePolicy,
-  IAMUser,
-  IAMRole,
-  IAMGroup,
-  IAMPolicy,
-  IAMUserDetail,
-  IAMRoleDetail,
-  IAMGroupDetail,
-  IAMPolicyDetail,
-  EC2Instance,
-  EC2InstanceDetail,
-  EC2SecurityGroup,
-  EC2VPC,
-  EC2KeyPair,
-  EC2ActionResponse,
-  Secret,
-  SecretDetail,
+  LogEventsResponse,
   LogGroupsResponse,
   LogStreamsResponse,
-  LogEventsResponse,
-  StepFunctionsStateMachine,
-  StepFunctionsStateMachineDetail,
+  RDSCluster, RDSClusterDetail,
+  RDSInstance, RDSInstanceDetail,
+  RDSParameterGroupDetail,
+  RDSParameterGroupInfo,
+  RDSSnapshot,
+  RedrivePolicy,
+  ResourceDetailResponse,
+  ResourceListResponse,
+  ResourceTagsResponse,
+  S3Bucket,
+  S3CreateFolderResponse,
+  S3DeleteBatchResponse,
+  S3DeleteObjectResponse,
+  S3ObjectDetail,
+  S3ObjectsResponse,
+  S3UploadConfig,
+  S3UploadResponse,
+  Secret,
+  SecretDetail,
+  SQSBatchDeleteRequest,
+  SQSBatchSendRequest,
+  SQSBatchSendResponse,
+  SQSCreateQueueRequest,
+  SQSCreateQueueResponse,
+  SQSMessage,
+  SQSQueue,
+  SQSQueueDetail,
+  SQSSendMessageRequest,
+  SQSSendMessageResponse,
+  SQSUpdateAttributesRequest,
+  StartExecutionRequest,
+  StartExecutionResponse,
+  StatsResponse,
   StepFunctionsExecution,
   StepFunctionsExecutionDetail,
   StepFunctionsHistoryEvent,
-  StartExecutionRequest,
-  StartExecutionResponse,
+  StepFunctionsStateMachine,
+  StepFunctionsStateMachineDetail,
   StopExecutionRequest,
   StopExecutionResponse,
-  EC2AutoScalingGroup, EC2ListASGsResponse,
+  TagsSupportedResponse,
 } from './types'
 
 const API_BASE = '/api'
@@ -1097,4 +1103,52 @@ export async function stopStepFunctionsExecution(
     throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
   }
   return res.json()
+}
+
+export async function fetchRDSInstances(endpoint?: string | null): Promise<{ instances: RDSInstance[] }> {
+  return fetchJSON<{ instances: RDSInstance[] }>(buildUrl('/rds/instances', endpoint))
+}
+
+export async function fetchRDSInstanceDetail(instanceId: string, endpoint?: string | null): Promise<RDSInstanceDetail> {
+  return fetchJSON<RDSInstanceDetail>(buildUrl(`/rds/instances/${encodeURIComponent(instanceId)}`, endpoint))
+}
+
+export async function fetchRDSClusters(endpoint?: string | null): Promise<{ clusters: RDSCluster[] }> {
+  return fetchJSON<{ clusters: RDSCluster[] }>(buildUrl('/rds/clusters', endpoint))
+}
+
+export async function fetchRDSClusterDetail(clusterId: string, endpoint?: string | null): Promise<RDSClusterDetail> {
+  return fetchJSON<RDSClusterDetail>(buildUrl(`/rds/clusters/${encodeURIComponent(clusterId)}`, endpoint))
+}
+
+export async function fetchRDSSnapshots(
+  instanceId?: string | null,
+  clusterId?: string | null,
+  snapshotType?: string | null,
+  endpoint?: string | null
+): Promise<{ snapshots: RDSSnapshot[] }> {
+  const params = new URLSearchParams()
+  if (instanceId) params.set('instance_id', instanceId)
+  if (clusterId) params.set('cluster_id', clusterId)
+  if (snapshotType) params.set('snapshot_type', snapshotType)
+  return fetchJSON<{ snapshots: RDSSnapshot[] }>(buildUrl('/rds/snapshots', endpoint, params))
+}
+
+export async function fetchRDSParameterGroups(
+  source?: string,
+  endpoint?: string | null
+): Promise<{ parameterGroups: RDSParameterGroupInfo[] }> {
+  const params = new URLSearchParams()
+  if (source) params.set('source', source)
+  return fetchJSON<{ parameterGroups: RDSParameterGroupInfo[] }>(buildUrl('/rds/parameter-groups', endpoint, params))
+}
+
+export async function fetchRDSParameterGroupDetail(
+  groupName: string,
+  source?: string,
+  endpoint?: string | null
+): Promise<RDSParameterGroupDetail> {
+  const params = new URLSearchParams()
+  if (source) params.set('source', source)
+  return fetchJSON<RDSParameterGroupDetail>(buildUrl(`/rds/parameter-groups/${encodeURIComponent(groupName)}`, endpoint, params))
 }

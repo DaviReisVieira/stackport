@@ -605,30 +605,73 @@ def populate_iam():
 
 
 def populate_rds():
-    """Populate RDS with test DB instances."""
+    """Populate RDS with test DB instances and clusters."""
     print("\n=== RDS ===")
     client = get_client("rds")
 
-    instance_count = random.randint(1, 3)
+    instance_count = random.randint(2, 4)
     engines = ["mysql", "postgres", "mariadb"]
+    instance_classes = ["db.t3.micro", "db.t3.small", "db.t3.medium"]
+
+    created_instances = []
 
     try:
+        # Create DB instances
         for i in range(instance_count):
             db_name = cool_name("db", funny=True)
+            engine = random.choice(engines)
             try:
+                # Determine port based on engine
+                port = 3306 if engine in ["mysql", "mariadb"] else 5432
+
                 client.create_db_instance(
                     DBInstanceIdentifier=db_name,
-                    DBInstanceClass="db.t3.micro",
-                    Engine=random.choice(engines),
+                    DBInstanceClass=random.choice(instance_classes),
+                    Engine=engine,
+                    EngineVersion="8.0" if engine == "mysql" else ("10.6" if engine == "mariadb" else "15.4"),
                     MasterUsername="admin",
                     MasterUserPassword="SecurePass123!",
-                    AllocatedStorage=20,
+                    AllocatedStorage=random.choice([20, 50, 100]),
+                    StorageType=random.choice(["gp2", "gp3", "io1"]),
+                    MultiAZ=random.choice([True, False]),
+                    PubliclyAccessible=False,
+                    BackupRetentionPeriod=random.choice([7, 14, 30]),
+                    Tags=[
+                        {"Key": "Environment", "Value": random.choice(["dev", "staging", "prod"])},
+                        {"Key": "Team", "Value": random.choice(["platform", "data", "backend"])},
+                    ],
                 )
-                print(f"  ✓ {db_name}")
+                created_instances.append(db_name)
+                print(f"  ✓ {db_name} ({engine}, {engine == 'mysql' and '3306' or '5432'})")
             except Exception as e:
-                print(f"  ✗ Error: {e}")
+                print(f"  ✗ Error creating {db_name}: {e}")
 
-        print(f"Created {instance_count} RDS instances")
+        # Create DB cluster
+        cluster_count = random.randint(1, 2)
+        cluster_engines = ["aurora-mysql", "aurora-postgresql"]
+
+        for i in range(cluster_count):
+            cluster_name = cool_name("cluster", funny=True)
+            engine = random.choice(cluster_engines)
+            try:
+                client.create_db_cluster(
+                    DBClusterIdentifier=cluster_name,
+                    Engine=engine,
+                    EngineVersion="8.0.mysql_aurora.3.04.0" if engine == "aurora-mysql" else "15.4",
+                    MasterUsername="clusteradmin",
+                    MasterUserPassword="ClusterPass456!",
+                    Port=3306 if engine == "aurora-mysql" else 5432,
+                    BackupRetentionPeriod=14,
+                    Tags=[
+                        {"Key": "Environment", "Value": random.choice(["dev", "staging", "prod"])},
+                        {"Key": "Team", "Value": random.choice(["platform", "data"])},
+                    ],
+                )
+                print(f"  ✓ Cluster: {cluster_name} ({engine})")
+            except Exception as e:
+                print(f"  ✗ Error creating cluster {cluster_name}: {e}")
+
+        print(f"Created {len(created_instances)} RDS instances and {cluster_count} clusters")
     except Exception as e:
         print(f"RDS error: {e}")
 
