@@ -212,7 +212,7 @@ export function CreateQueueSheet({
                 value={messageRetentionPeriod}
                 onChange={(e) => setMessageRetentionPeriod(Number(e.target.value))}
               />
-              <p className="text-xs text-muted-foreground">60-1209600 seconds (4 days). Default: 345600</p>
+              <p className="text-xs text-muted-foreground">60-1209600 seconds (14 days). Default: 345600</p>
             </div>
 
             <div className="space-y-2">
