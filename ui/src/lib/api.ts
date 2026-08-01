@@ -799,6 +799,14 @@ export async function fetchEC2SecurityGroups(endpoint?: string | null): Promise<
   return fetchJSON<{ securityGroups: EC2SecurityGroup[] }>(buildUrl('/ec2/security-groups', endpoint))
 }
 
+export async function fetchEC2SecurityGroupInboundRules(groupId: string, endpoint?: string | null): Promise<{ groupId: string; groupName: string; inboundRules: Array<{ ruleId: string; ipVersion: "IPv4" | "IPv6"; type: "Inbound" | "Outbound"; protocol: string; portRange: string; source: string; description: string }> }> {
+  return fetchJSON(buildUrl(`/ec2/security-groups/${encodeURIComponent(groupId)}/inbound`, endpoint))
+}
+
+export async function fetchEC2SecurityGroupOutboundRules(groupId: string, endpoint?: string | null): Promise<{ groupId: string; groupName: string; outboundRules: Array<{ ruleId: string; ipVersion: "IPv4" | "IPv6"; type: "Inbound" | "Outbound"; protocol: string; portRange: string; source: string; description: string }> }> {
+  return fetchJSON(buildUrl(`/ec2/security-groups/${encodeURIComponent(groupId)}/outbound`, endpoint))
+}
+
 export async function fetchEC2VPCs(endpoint?: string | null): Promise<{ vpcs: EC2VPC[] }> {
   return fetchJSON<{ vpcs: EC2VPC[] }>(buildUrl('/ec2/vpcs', endpoint))
 }

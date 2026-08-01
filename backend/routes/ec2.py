@@ -301,6 +301,162 @@ def list_security_groups(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _get_rule_id(rule: dict, rule_type: str, idx: int) -> str:
+    """Generate a rule ID based on rule properties."""
+    return f"{rule_type}-sgrule-{idx:04d}"
+
+
+def _get_ip_version(ip_range: dict | None, ipv6_range: dict | None) -> str:
+    """Determine IP version from rule."""
+    if ipv6_range:
+        return "IPv6"
+    if ip_range:
+        cidr = ip_range.get("CidrIp", "")
+        return "IPv6" if ":" in cidr else "IPv4"
+    return "IPv4"
+
+
+def _format_port_range(protocol: str, from_port: int | None, to_port: int | None) -> str:
+    """Format port range for display."""
+    if protocol == "-1" or protocol == "all":
+        return "All"
+    if from_port is None and to_port is None:
+        return "All"
+    if from_port is not None and to_port is not None and from_port != to_port:
+        return f"{from_port}-{to_port}"
+    if from_port is not None:
+        return str(from_port)
+    return "All"
+
+
+def _expand_rules(ip_permissions: list[dict], rule_type: str) -> list[dict]:
+    """Expand IP permissions into individual rule rows."""
+    expanded = []
+    rule_idx = 0
+    
+    for perm in ip_permissions:
+        protocol = perm.get("IpProtocol", "tcp")
+        from_port = perm.get("FromPort")
+        to_port = perm.get("ToPort")
+        
+        # Normalize protocol display
+        if protocol == "-1":
+            protocol = "All"
+        
+        # Expand IPv4 ranges
+        for ip_range in perm.get("IpRanges", []):
+            expanded.append({
+                "ruleId": _get_rule_id(perm, rule_type, rule_idx),
+                "ipVersion": "IPv4",
+                "type": rule_type.capitalize(),
+                "protocol": protocol,
+                "portRange": _format_port_range(protocol, from_port, to_port),
+                "source": ip_range.get("CidrIp", ""),
+                "description": ip_range.get("Description", ""),
+            })
+            rule_idx += 1
+        
+        # Expand IPv6 ranges
+        for ipv6_range in perm.get("Ipv6Ranges", []):
+            expanded.append({
+                "ruleId": _get_rule_id(perm, rule_type, rule_idx),
+                "ipVersion": "IPv6",
+                "type": rule_type.capitalize(),
+                "protocol": protocol,
+                "portRange": _format_port_range(protocol, from_port, to_port),
+                "source": ipv6_range.get("CidrIpv6", ""),
+                "description": ipv6_range.get("Description", ""),
+            })
+            rule_idx += 1
+        
+        # Expand prefix list IDs
+        for prefix_list in perm.get("PrefixListIds", []):
+            expanded.append({
+                "ruleId": _get_rule_id(perm, rule_type, rule_idx),
+                "ipVersion": "IPv4",
+                "type": rule_type.capitalize(),
+                "protocol": protocol,
+                "portRange": _format_port_range(protocol, from_port, to_port),
+                "source": prefix_list.get("PrefixListId", ""),
+                "description": "",
+            })
+            rule_idx += 1
+        
+        # Expand user ID group pairs (security group references)
+        for group_pair in perm.get("UserIdGroupPairs", []):
+            expanded.append({
+                "ruleId": _get_rule_id(perm, rule_type, rule_idx),
+                "ipVersion": "IPv4",
+                "type": rule_type.capitalize(),
+                "protocol": protocol,
+                "portRange": _format_port_range(protocol, from_port, to_port),
+                "source": group_pair.get("GroupId", "") or group_pair.get("GroupName", ""),
+                "description": group_pair.get("Description", ""),
+            })
+            rule_idx += 1
+    
+    # If no rules found, return empty list (don't add placeholder)
+    return expanded
+
+
+@router.get("/security-groups/{group_id}/inbound")
+def get_security_group_inbound_rules(group_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
+    """Get inbound rules for a specific security group with detailed rule information."""
+    try:
+        client = get_client("ec2", **ep.client_kwargs())
+        response = client.describe_security_groups(GroupIds=[group_id])
+
+        if not response.get("SecurityGroups"):
+            raise HTTPException(status_code=404, detail=f"Security group {group_id} not found")
+
+        sg = response["SecurityGroups"][0]
+        inbound_rules = _expand_rules(sg.get("IpPermissions", []), "inbound")
+
+        return {
+            "groupId": group_id,
+            "groupName": sg["GroupName"],
+            "inboundRules": inbound_rules,
+        }
+    except HTTPException:
+        raise
+    except client.exceptions.ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == "InvalidGroupId.NotFound":
+            raise HTTPException(status_code=404, detail=f"Security group {group_id} not found")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/security-groups/{group_id}/outbound")
+def get_security_group_outbound_rules(group_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
+    """Get outbound rules for a specific security group with detailed rule information."""
+    try:
+        client = get_client("ec2", **ep.client_kwargs())
+        response = client.describe_security_groups(GroupIds=[group_id])
+
+        if not response.get("SecurityGroups"):
+            raise HTTPException(status_code=404, detail=f"Security group {group_id} not found")
+
+        sg = response["SecurityGroups"][0]
+        outbound_rules = _expand_rules(sg.get("IpPermissionsEgress", []), "outbound")
+
+        return {
+            "groupId": group_id,
+            "groupName": sg["GroupName"],
+            "outboundRules": outbound_rules,
+        }
+    except HTTPException:
+        raise
+    except client.exceptions.ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == "InvalidGroupId.NotFound":
+            raise HTTPException(status_code=404, detail=f"Security group {group_id} not found")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/vpcs")
 def list_vpcs(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """List all VPCs with their subnets."""

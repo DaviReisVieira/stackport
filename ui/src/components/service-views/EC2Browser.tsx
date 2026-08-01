@@ -5,11 +5,14 @@ import {
   fetchEC2Instances,
   fetchEC2InstanceDetail,
   fetchEC2SecurityGroups,
+  fetchEC2SecurityGroupInboundRules,
+  fetchEC2SecurityGroupOutboundRules,
   fetchEC2VPCs,
   startEC2Instance,
   stopEC2Instance,
   terminateEC2Instance,
-  updateResourceTags, fetchEC2AutoscalingGroups,
+  updateResourceTags,
+  fetchEC2AutoscalingGroups,
 } from '@/lib/api'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import type {
@@ -305,6 +308,143 @@ function InstanceDetailSheet({
   )
 }
 
+interface EC2SecurityGroupRule {
+  ruleId: string
+  ipVersion: "IPv4" | "IPv6"
+  type: "Inbound" | "Outbound"
+  protocol: string
+  portRange: string
+  source: string
+  description: string
+}
+
+function SecurityGroupDetailSheet({
+  groupId,
+  open,
+  onOpenChange,
+}: {
+  groupId: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { activeEndpoint } = useEndpoint()
+  const inboundFetcher = useCallback(() => fetchEC2SecurityGroupInboundRules(groupId, activeEndpoint), [groupId, activeEndpoint])
+  const outboundFetcher = useCallback(() => fetchEC2SecurityGroupOutboundRules(groupId, activeEndpoint), [groupId, activeEndpoint])
+  const { data: inboundData, loading: inboundLoading } = useFetch<{ groupId: string; groupName: string; inboundRules: EC2SecurityGroupRule[] }>(inboundFetcher, 10000)
+  const { data: outboundData, loading: outboundLoading } = useFetch<{ groupId: string; groupName: string; outboundRules: EC2SecurityGroupRule[] }>(outboundFetcher, 10000)
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-4xl overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            {inboundData?.groupName || groupId}
+          </SheetTitle>
+        </SheetHeader>
+
+        {(inboundLoading || outboundLoading) && (
+          <div className="space-y-4 mt-4">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        )}
+
+        {!inboundLoading && !outboundLoading && (
+          <div className="mt-4">
+            <Tabs defaultValue="inbound" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="inbound">
+                  Inbound Rules
+                  {inboundData && <Badge variant="secondary" className="ml-2">{inboundData.inboundRules.length}</Badge>}
+                </TabsTrigger>
+                <TabsTrigger value="outbound">
+                  Outbound Rules
+                  {outboundData && <Badge variant="secondary" className="ml-2">{outboundData.outboundRules.length}</Badge>}
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="inbound" className="space-y-4">
+                {inboundData && inboundData.inboundRules.length === 0 ? (
+                  <EmptyState icon={Shield} title="No Inbound Rules" description="No inbound rules defined for this security group." />
+                ) : (
+                  inboundData && (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[180px]">Security group rule ID</TableHead>
+                            <TableHead className="w-[100px]">IP version</TableHead>
+                            <TableHead className="w-[100px]">Type</TableHead>
+                            <TableHead className="w-[100px]">Protocol</TableHead>
+                            <TableHead className="w-[120px]">Port range</TableHead>
+                            <TableHead>Source</TableHead>
+                            <TableHead>Description</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {inboundData.inboundRules.map((rule) => (
+                            <TableRow key={rule.ruleId}>
+                              <TableCell className="font-mono text-xs">{rule.ruleId}</TableCell>
+                              <TableCell className="text-xs">{rule.ipVersion}</TableCell>
+                              <TableCell className="text-xs">{rule.type}</TableCell>
+                              <TableCell className="font-mono text-xs">{rule.protocol}</TableCell>
+                              <TableCell className="font-mono text-xs">{rule.portRange}</TableCell>
+                              <TableCell className="text-xs">{rule.source}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{rule.description || '—'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )
+                )}
+              </TabsContent>
+
+              <TabsContent value="outbound" className="space-y-4">
+                {outboundData && outboundData.outboundRules.length === 0 ? (
+                  <EmptyState icon={Shield} title="No Outbound Rules" description="No outbound rules defined for this security group." />
+                ) : (
+                  outboundData && (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[180px]">Security group rule ID</TableHead>
+                            <TableHead className="w-[100px]">IP version</TableHead>
+                            <TableHead className="w-[100px]">Type</TableHead>
+                            <TableHead className="w-[100px]">Protocol</TableHead>
+                            <TableHead className="w-[120px]">Port range</TableHead>
+                            <TableHead>Destination</TableHead>
+                            <TableHead>Description</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {outboundData.outboundRules.map((rule) => (
+                            <TableRow key={rule.ruleId}>
+                              <TableCell className="font-mono text-xs">{rule.ruleId}</TableCell>
+                              <TableCell className="text-xs">{rule.ipVersion}</TableCell>
+                              <TableCell className="text-xs">{rule.type}</TableCell>
+                              <TableCell className="font-mono text-xs">{rule.protocol}</TableCell>
+                              <TableCell className="font-mono text-xs">{rule.portRange}</TableCell>
+                              <TableCell className="text-xs">{rule.source}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{rule.description || '—'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
 function ASGDetailSheet({
   asg,
   open,
@@ -399,6 +539,7 @@ export function EC2Browser() {
 
   const [refreshing, setRefreshing] = useState(false)
   const [selectedAsg, setSelectedAsg] = useState<EC2AutoScalingGroup | null>(null)
+  const [selectedSecurityGroup, setSelectedSecurityGroup] = useState<string | null>(null)
 
   // Read selected instance from URL params
   const selectedInstance = searchParams.get('instance')
@@ -574,7 +715,11 @@ export function EC2Browser() {
                   </TableHeader>
                   <TableBody>
                     {sgData.securityGroups.map((sg) => (
-                      <TableRow key={sg.groupId}>
+                      <TableRow
+                        key={sg.groupId}
+                        className="cursor-pointer hover:bg-accent"
+                        onClick={() => setSelectedSecurityGroup(sg.groupId)}
+                      >
                         <TableCell className="font-mono text-xs">{sg.groupId}</TableCell>
                         <TableCell className="font-medium">{sg.groupName}</TableCell>
                         <TableCell className="font-mono text-xs">{sg.vpcId || '—'}</TableCell>
@@ -744,6 +889,14 @@ export function EC2Browser() {
           open={!!selectedInstance}
           onOpenChange={(open) => !open && setSelectedInstance(null)}
           onRefresh={refreshInstances}
+        />
+      )}
+
+      {selectedSecurityGroup && (
+        <SecurityGroupDetailSheet
+          groupId={selectedSecurityGroup}
+          open={!!selectedSecurityGroup}
+          onOpenChange={(open) => !open && setSelectedSecurityGroup(null)}
         />
       )}
 

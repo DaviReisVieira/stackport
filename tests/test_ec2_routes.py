@@ -362,3 +362,276 @@ class TestListAutoscalingGroups:
         assert instance["lifecycleState"] == "InService"
         assert instance["healthStatus"] == "Healthy"
         assert instance["availabilityZone"] == "us-east-1a"
+
+
+class TestGetSecurityGroupInboundRules:
+    @patch("backend.routes.ec2.get_client")
+    def test_get_security_group_inbound_rules(self, mock_get_client):
+        mock_ec2 = MagicMock()
+        mock_get_client.return_value = mock_ec2
+        mock_ec2.describe_security_groups.return_value = {
+            "SecurityGroups": [
+                {
+                    "GroupId": "sg-123456",
+                    "GroupName": "web-sg",
+                    "Description": "Web security group",
+                    "VpcId": "vpc-abc123",
+                    "IpPermissions": [
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 80,
+                            "ToPort": 80,
+                            "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "HTTP access"}],
+                        },
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 443,
+                            "ToPort": 443,
+                            "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "HTTPS access"}],
+                        },
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 22,
+                            "ToPort": 22,
+                            "IpRanges": [{"CidrIp": "10.0.0.0/8", "Description": "SSH access"}],
+                        },
+                    ],
+                    "IpPermissionsEgress": [],
+                    "Tags": [],
+                }
+            ]
+        }
+
+        resp = client.get("/api/ec2/security-groups/sg-123456/inbound")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["groupId"] == "sg-123456"
+        assert data["groupName"] == "web-sg"
+        assert len(data["inboundRules"]) == 3
+        rule = data["inboundRules"][0]
+        assert rule["ruleId"].startswith("inbound-sgrule-")
+        assert rule["protocol"] == "tcp"
+        assert rule["portRange"] == "80"
+        assert rule["ipVersion"] == "IPv4"
+        assert rule["type"] == "Inbound"
+        assert rule["source"] == "0.0.0.0/0"
+        assert rule["description"] == "HTTP access"
+
+    @patch("backend.routes.ec2.get_client")
+    def test_get_security_group_inbound_rules_not_found(self, mock_get_client):
+        mock_ec2 = MagicMock()
+        mock_get_client.return_value = mock_ec2
+        mock_ec2.describe_security_groups.return_value = {"SecurityGroups": []}
+
+        resp = client.get("/api/ec2/security-groups/sg-nonexistent/inbound")
+        assert resp.status_code == 404
+
+
+class TestGetSecurityGroupOutboundRules:
+    @patch("backend.routes.ec2.get_client")
+    def test_get_security_group_outbound_rules(self, mock_get_client):
+        mock_ec2 = MagicMock()
+        mock_get_client.return_value = mock_ec2
+        mock_ec2.describe_security_groups.return_value = {
+            "SecurityGroups": [
+                {
+                    "GroupId": "sg-123456",
+                    "GroupName": "web-sg",
+                    "Description": "Web security group",
+                    "VpcId": "vpc-abc123",
+                    "IpPermissions": [],
+                    "IpPermissionsEgress": [
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 443,
+                            "ToPort": 443,
+                            "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "HTTPS outbound"}],
+                        },
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 80,
+                            "ToPort": 80,
+                            "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "HTTP outbound"}],
+                        },
+                    ],
+                    "Tags": [],
+                }
+            ]
+        }
+
+        resp = client.get("/api/ec2/security-groups/sg-123456/outbound")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["groupId"] == "sg-123456"
+        assert data["groupName"] == "web-sg"
+        assert len(data["outboundRules"]) == 2
+        rule = data["outboundRules"][0]
+        assert rule["ruleId"].startswith("outbound-sgrule-")
+        assert rule["protocol"] == "tcp"
+        assert rule["portRange"] == "443"
+        assert rule["ipVersion"] == "IPv4"
+        assert rule["type"] == "Outbound"
+        assert rule["source"] == "0.0.0.0/0"
+        assert rule["description"] == "HTTPS outbound"
+
+    @patch("backend.routes.ec2.get_client")
+    def test_get_security_group_outbound_rules_not_found(self, mock_get_client):
+        mock_ec2 = MagicMock()
+        mock_get_client.return_value = mock_ec2
+        mock_ec2.describe_security_groups.return_value = {"SecurityGroups": []}
+
+        resp = client.get("/api/ec2/security-groups/sg-nonexistent/outbound")
+        assert resp.status_code == 404
+
+    @patch("backend.routes.ec2.get_client")
+    def test_get_security_group_outbound_rules_empty(self, mock_get_client):
+        mock_ec2 = MagicMock()
+        mock_get_client.return_value = mock_ec2
+        mock_ec2.describe_security_groups.return_value = {
+            "SecurityGroups": [
+                {
+                    "GroupId": "sg-123456",
+                    "GroupName": "empty-sg",
+                    "Description": "Empty security group",
+                    "VpcId": "vpc-abc123",
+                    "IpPermissions": [],
+                    "IpPermissionsEgress": [],
+                    "Tags": [],
+                }
+            ]
+        }
+
+        resp = client.get("/api/ec2/security-groups/sg-123456/outbound")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["groupId"] == "sg-123456"
+        assert data["groupName"] == "empty-sg"
+        assert len(data["outboundRules"]) == 0
+
+
+class TestGetSecurityGroupInboundRulesProtocolAll:
+    """Test handling of protocol -1 (all traffic)."""
+
+    @patch("backend.routes.ec2.get_client")
+    def test_get_security_group_inbound_rules_protocol_all(self, mock_get_client):
+        """Test that protocol -1 is converted to 'All' and port range shows 'All'."""
+        mock_ec2 = MagicMock()
+        mock_get_client.return_value = mock_ec2
+        mock_ec2.describe_security_groups.return_value = {
+            "SecurityGroups": [
+                {
+                    "GroupId": "sg-123456",
+                    "GroupName": "ecs-tasks-sg",
+                    "Description": "ECS tasks security group",
+                    "VpcId": "vpc-abc123",
+                    "IpPermissions": [
+                        {
+                            "IpProtocol": "-1",
+                            "FromPort": None,
+                            "ToPort": None,
+                            "IpRanges": [{"CidrIp": "10.1.0.0/16", "Description": "VPC traffic"}],
+                        },
+                    ],
+                    "IpPermissionsEgress": [],
+                    "Tags": [],
+                }
+            ]
+        }
+
+        resp = client.get("/api/ec2/security-groups/sg-123456/inbound")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["groupId"] == "sg-123456"
+        assert data["groupName"] == "ecs-tasks-sg"
+        assert len(data["inboundRules"]) == 1
+        rule = data["inboundRules"][0]
+        assert rule["ruleId"].startswith("inbound-sgrule-")
+        assert rule["protocol"] == "All"
+        assert rule["portRange"] == "All"
+        assert rule["ipVersion"] == "IPv4"
+        assert rule["type"] == "Inbound"
+        assert rule["source"] == "10.1.0.0/16"
+        assert rule["description"] == "VPC traffic"
+
+
+class TestGetSecurityGroupOutboundRulesProtocolAll:
+    """Test handling of protocol -1 (all traffic) for outbound rules."""
+
+    @patch("backend.routes.ec2.get_client")
+    def test_get_security_group_outbound_rules_protocol_all(self, mock_get_client):
+        """Test that protocol -1 is converted to 'All' and port range shows 'All' for outbound."""
+        mock_ec2 = MagicMock()
+        mock_get_client.return_value = mock_ec2
+        mock_ec2.describe_security_groups.return_value = {
+            "SecurityGroups": [
+                {
+                    "GroupId": "sg-00220f1150c89205a",
+                    "GroupName": "web-saas-development-ecs-tasks-sg",
+                    "Description": "ECS tasks security group",
+                    "VpcId": "vpc-abc123",
+                    "IpPermissions": [],
+                    "IpPermissionsEgress": [
+                        {
+                            "IpProtocol": "-1",
+                            "FromPort": None,
+                            "ToPort": None,
+                            "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                        },
+                    ],
+                    "Tags": [],
+                }
+            ]
+        }
+
+        resp = client.get("/api/ec2/security-groups/sg-00220f1150c89205a/outbound")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["groupId"] == "sg-00220f1150c89205a"
+        assert data["groupName"] == "web-saas-development-ecs-tasks-sg"
+        assert len(data["outboundRules"]) == 1
+        rule = data["outboundRules"][0]
+        assert rule["ruleId"].startswith("outbound-sgrule-")
+        assert rule["protocol"] == "All"
+        assert rule["portRange"] == "All"
+        assert rule["ipVersion"] == "IPv4"
+        assert rule["type"] == "Outbound"
+        assert rule["source"] == "0.0.0.0/0"
+
+
+class TestSecurityGroupRulesPortRanges:
+    """Test handling of port ranges."""
+
+    @patch("backend.routes.ec2.get_client")
+    def test_get_security_group_port_range(self, mock_get_client):
+        """Test that port ranges are formatted correctly."""
+        mock_ec2 = MagicMock()
+        mock_get_client.return_value = mock_ec2
+        mock_ec2.describe_security_groups.return_value = {
+            "SecurityGroups": [
+                {
+                    "GroupId": "sg-123456",
+                    "GroupName": "port-range-sg",
+                    "Description": "Security group with port range",
+                    "VpcId": "vpc-abc123",
+                    "IpPermissions": [
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 8000,
+                            "ToPort": 9000,
+                            "IpRanges": [{"CidrIp": "10.0.0.0/8"}],
+                        },
+                    ],
+                    "IpPermissionsEgress": [],
+                    "Tags": [],
+                }
+            ]
+        }
+
+        resp = client.get("/api/ec2/security-groups/sg-123456/inbound")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["inboundRules"]) == 1
+        rule = data["inboundRules"][0]
+        assert rule["protocol"] == "tcp"
+        assert rule["portRange"] == "8000-9000"
+        assert rule["source"] == "10.0.0.0/8"
