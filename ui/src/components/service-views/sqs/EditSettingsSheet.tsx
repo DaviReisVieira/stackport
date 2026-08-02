@@ -125,7 +125,7 @@ export function EditSettingsSheet({
               value={messageRetentionPeriod}
               onChange={(e) => setMessageRetentionPeriod(Number(e.target.value))}
             />
-            <p className="text-xs text-muted-foreground">60-1209600 seconds (4 days)</p>
+            <p className="text-xs text-muted-foreground">60-1209600 seconds (14 days)</p>
           </div>
 
           <div className="space-y-2">
