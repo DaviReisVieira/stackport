@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreateLogGroupBody(BaseModel):
-      """Request body for creating a new log group."""
+    """Request body for creating a new log group."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -14,7 +14,7 @@ class CreateLogGroupBody(BaseModel):
 
 
 class SetRetentionBody(BaseModel):
-      """Request body for setting a log group's retention policy."""
+    """Request body for setting a log group's retention policy."""
 
     model_config = ConfigDict(populate_by_name=True)
 
