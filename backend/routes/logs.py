@@ -252,20 +252,25 @@ def create_log_group(body: CreateLogGroupBody, ep: EndpointInfo = Depends(get_en
     return {"name": body.name, "retention_in_days": body.retention_in_days}
 
 
-@router.delete("/groups/{name:path}")
-def delete_log_group(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    """Delete a CloudWatch log group."""
+@router.delete("/groups/{name:path}/streams/{stream:path}")
+def delete_log_stream(name: str, stream: str, ep: EndpointInfo = Depends(get_endpoint_info)):
+    """Delete a log stream from a log group.
+
+    Registered before delete_log_group: {name:path} matches slashes greedily,
+    so if the bare /groups/{name:path} DELETE route were checked first it would
+    swallow this whole path (including "/streams/{stream}") as the group name
+    and never reach this handler. The more specific route has to come first.
+    """
     logs = get_client("logs", **ep.client_kwargs())
     try:
-        logs.delete_log_group(logGroupName=name)
+        logs.delete_log_stream(logGroupName=name, logStreamName=stream)
     except logs.exceptions.ResourceNotFoundException:
-        raise HTTPException(status_code=404, detail=f"Log group '{name}' not found")
+        raise HTTPException(status_code=404, detail=f"Log stream '{stream}' not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    cache.delete_by_prefix(f"{ep.url}:logs:groups:")
     cache.delete_by_prefix(f"{ep.url}:logs:streams:{name}:")
-    return {"success": True, "message": f"Log group '{name}' deleted"}
+    return {"success": True, "message": f"Log stream '{stream}' deleted"}
 
 
 @router.put("/groups/{name:path}/retention")
@@ -292,16 +297,17 @@ def set_log_group_retention(name: str, body: SetRetentionBody, ep: EndpointInfo 
     return {"name": name, "retention_in_days": body.retention_in_days}
 
 
-@router.delete("/groups/{name:path}/streams/{stream:path}")
-def delete_log_stream(name: str, stream: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    """Delete a log stream from a log group."""
+@router.delete("/groups/{name:path}")
+def delete_log_group(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
+    """Delete a CloudWatch log group."""
     logs = get_client("logs", **ep.client_kwargs())
     try:
-        logs.delete_log_stream(logGroupName=name, logStreamName=stream)
+        logs.delete_log_group(logGroupName=name)
     except logs.exceptions.ResourceNotFoundException:
-        raise HTTPException(status_code=404, detail=f"Log stream '{stream}' not found")
+        raise HTTPException(status_code=404, detail=f"Log group '{name}' not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    cache.delete_by_prefix(f"{ep.url}:logs:groups:")
     cache.delete_by_prefix(f"{ep.url}:logs:streams:{name}:")
-    return {"success": True, "message": f"Log stream '{stream}' deleted"}
+    return {"success": True, "message": f"Log group '{name}' deleted"}
