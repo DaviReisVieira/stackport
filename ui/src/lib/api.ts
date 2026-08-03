@@ -965,6 +965,70 @@ export async function fetchLogEvents(
   )
 }
 
+export async function createLogGroup(
+  name: string,
+  retentionInDays?: number | null,
+  tags?: Record<string, string>,
+  endpoint?: string | null,
+): Promise<{ name: string; retention_in_days: number | null }> {
+  const url = buildUrl('/logs/groups', endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, retentionInDays: retentionInDays ?? null, tags: tags ?? {} }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function deleteLogGroup(
+  logGroupName: string,
+  endpoint?: string | null,
+): Promise<{ success: boolean; message: string }> {
+  const url = buildUrl(`/logs/groups/${encodeURIComponent(logGroupName)}`, endpoint)
+  const res = await fetch(url, { method: 'DELETE' })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function setLogGroupRetention(
+  logGroupName: string,
+  retentionInDays: number | null,
+  endpoint?: string | null,
+): Promise<{ name: string; retention_in_days: number | null }> {
+  const url = buildUrl(`/logs/groups/${encodeURIComponent(logGroupName)}/retention`, endpoint)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ retentionInDays }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function deleteLogStream(
+  logGroupName: string,
+  logStreamName: string,
+  endpoint?: string | null,
+): Promise<{ success: boolean; message: string }> {
+  const url = buildUrl(`/logs/groups/${encodeURIComponent(logGroupName)}/streams/${encodeURIComponent(logStreamName)}`, endpoint)
+  const res = await fetch(url, { method: 'DELETE' })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
 // --- Tag and Bulk Operations ---
 
 export async function fetchTagsSupported(endpoint?: string | null): Promise<TagsSupportedResponse> {
