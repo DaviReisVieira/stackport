@@ -2,15 +2,18 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.aws_client import get_client
 from backend.cache import cache
 from backend.routes.common import EndpointInfo, get_endpoint_info
+from backend.schemas.logs import CreateLogGroupBody, SetRetentionBody
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+VALID_RETENTION_DAYS = {1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653}
 
 
 def _epoch_millis_to_iso(timestamp: Optional[int]) -> Optional[str]:
@@ -218,3 +221,93 @@ def get_log_events(
             "events": events,
             "next_token": response.get("nextForwardToken"),
         }
+
+
+@router.post("/groups", status_code=201)
+def create_log_group(body: CreateLogGroupBody, ep: EndpointInfo = Depends(get_endpoint_info)):
+    """Create a new CloudWatch log group."""
+    if body.retention_in_days is not None and body.retention_in_days not in VALID_RETENTION_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"retention_in_days must be one of {sorted(VALID_RETENTION_DAYS)}",
+        )
+
+    logs = get_client("logs", **ep.client_kwargs())
+    try:
+        kwargs: dict = {"logGroupName": body.name}
+        if body.tags:
+            kwargs["tags"] = body.tags
+        logs.create_log_group(**kwargs)
+
+        if body.retention_in_days is not None:
+            logs.put_retention_policy(
+                logGroupName=body.name, retentionInDays=body.retention_in_days
+            )
+    except logs.exceptions.ResourceAlreadyExistsException:
+        raise HTTPException(status_code=409, detail=f"Log group '{body.name}' already exists")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    cache.delete_by_prefix(f"{ep.url}:logs:groups:")
+    return {"name": body.name, "retention_in_days": body.retention_in_days}
+
+
+@router.delete("/groups/{name:path}/streams/{stream:path}")
+def delete_log_stream(name: str, stream: str, ep: EndpointInfo = Depends(get_endpoint_info)):
+    """Delete a log stream from a log group.
+
+    Registered before delete_log_group: {name:path} matches slashes greedily,
+    so if the bare /groups/{name:path} DELETE route were checked first it would
+    swallow this whole path (including "/streams/{stream}") as the group name
+    and never reach this handler. The more specific route has to come first.
+    """
+    logs = get_client("logs", **ep.client_kwargs())
+    try:
+        logs.delete_log_stream(logGroupName=name, logStreamName=stream)
+    except logs.exceptions.ResourceNotFoundException:
+        raise HTTPException(status_code=404, detail=f"Log stream '{stream}' not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    cache.delete_by_prefix(f"{ep.url}:logs:streams:{name}:")
+    return {"success": True, "message": f"Log stream '{stream}' deleted"}
+
+
+@router.put("/groups/{name:path}/retention")
+def set_log_group_retention(name: str, body: SetRetentionBody, ep: EndpointInfo = Depends(get_endpoint_info)):
+    """Set or remove a log group's retention policy."""
+    if body.retention_in_days is not None and body.retention_in_days not in VALID_RETENTION_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"retention_in_days must be one of {sorted(VALID_RETENTION_DAYS)}",
+        )
+
+    logs = get_client("logs", **ep.client_kwargs())
+    try:
+        if body.retention_in_days is None:
+            logs.delete_retention_policy(logGroupName=name)
+        else:
+            logs.put_retention_policy(logGroupName=name, retentionInDays=body.retention_in_days)
+    except logs.exceptions.ResourceNotFoundException:
+        raise HTTPException(status_code=404, detail=f"Log group '{name}' not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    cache.delete_by_prefix(f"{ep.url}:logs:groups:")
+    return {"name": name, "retention_in_days": body.retention_in_days}
+
+
+@router.delete("/groups/{name:path}")
+def delete_log_group(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
+    """Delete a CloudWatch log group."""
+    logs = get_client("logs", **ep.client_kwargs())
+    try:
+        logs.delete_log_group(logGroupName=name)
+    except logs.exceptions.ResourceNotFoundException:
+        raise HTTPException(status_code=404, detail=f"Log group '{name}' not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    cache.delete_by_prefix(f"{ep.url}:logs:groups:")
+    cache.delete_by_prefix(f"{ep.url}:logs:streams:{name}:")
+    return {"success": True, "message": f"Log group '{name}' deleted"}

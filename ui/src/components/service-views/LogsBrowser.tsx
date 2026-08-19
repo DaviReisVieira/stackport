@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Breadcrumb, createHomeSegment } from '@/components/Breadcrumb'
-import { fetchLogGroups, fetchLogStreams, fetchLogEvents, fetchResourceTags, updateResourceTags } from '@/lib/api'
+import { fetchLogGroups, fetchLogStreams, fetchLogEvents, fetchResourceTags, updateResourceTags, deleteLogGroup, deleteLogStream } from '@/lib/api'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import type { LogEvent, LogGroupsResponse, LogStreamsResponse } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,8 +19,11 @@ import { getServiceIcon } from '@/lib/service-icons'
 import { useFetch } from '@/hooks/useFetch'
 import { TagsSection } from '@/components/TagsSection'
 import { ExportDropdown } from '@/components/ExportDropdown'
-import { ScrollText, Search, FileText, Clock, Play, Pause, Copy, Filter, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
+import { ScrollText, Search, FileText, Clock, Play, Pause, Copy, Filter, ChevronDown, ChevronUp, RefreshCw, Plus, Settings, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { CreateLogGroupSheet } from './logs/CreateLogGroupSheet'
+import { SetRetentionSheet } from './logs/SetRetentionSheet'
+import { DeleteLogGroupConfirmSheet, DeleteLogStreamConfirmSheet } from './logs/LogsConfirmSheets'
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -157,6 +160,15 @@ export function LogsBrowser() {
   const [endTime, setEndTime] = useState(0)
   const [logGroupTags, setLogGroupTags] = useState<Record<string, string>>({})
 
+  // Log group / stream management sheets
+  const [createGroupSheetOpen, setCreateGroupSheetOpen] = useState(false)
+  const [retentionSheetOpen, setRetentionSheetOpen] = useState(false)
+  const [groupForRetention, setGroupForRetention] = useState<string | null>(null)
+  const [deleteGroupConfirmOpen, setDeleteGroupConfirmOpen] = useState(false)
+  const [groupToDelete, setGroupToDelete] = useState<string | null>(null)
+  const [deleteStreamConfirmOpen, setDeleteStreamConfirmOpen] = useState(false)
+  const [streamToDelete, setStreamToDelete] = useState<string | null>(null)
+
   // Fetch log groups
   const groupsFetcher = useCallback(() => fetchLogGroups(groupSearch, '', activeEndpoint), [groupSearch, activeEndpoint])
   const { data: groupsData, loading: groupsLoading, refresh: refreshGroups } = useFetch<LogGroupsResponse>(
@@ -168,14 +180,8 @@ export function LogsBrowser() {
   const [streamsData, setStreamsData] = useState<LogStreamsResponse | null>(null)
   const [streamsLoading, setStreamsLoading] = useState(false)
 
-  useEffect(() => {
-    if (!selectedGroup) {
-      setStreamsData(null)
-      setSelectedStream(null)
-      setEvents([])
-      setLogGroupTags({})
-      return
-    }
+  const loadStreams = useCallback(() => {
+    if (!selectedGroup) return
     setStreamsLoading(true)
     fetchLogStreams(selectedGroup, streamSearch, 'LastEventTime', true, 50, '', activeEndpoint)
       .then(setStreamsData)
@@ -184,12 +190,24 @@ export function LogsBrowser() {
         setStreamsData(null)
       })
       .finally(() => setStreamsLoading(false))
+  }, [selectedGroup, streamSearch, activeEndpoint])
+
+  useEffect(() => {
+    if (!selectedGroup) {
+      setStreamsData(null)
+      setSelectedStream(null)
+      setEvents([])
+      setLogGroupTags({})
+      return
+    }
+    loadStreams()
     const group = groupsData?.log_groups?.find(g => g.name === selectedGroup)
     if (group?.arn) {
       fetchResourceTags('logs', 'log_groups', group.arn, activeEndpoint)
         .then(res => setLogGroupTags(res.tags))
         .catch(() => setLogGroupTags({}))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGroup, streamSearch, groupsData, activeEndpoint])
 
   // Fetch log events (manual)
@@ -277,6 +295,38 @@ export function LogsBrowser() {
     }
   }
 
+  const confirmDeleteGroup = async () => {
+    if (!groupToDelete) return
+    try {
+      await deleteLogGroup(groupToDelete, activeEndpoint)
+      toast.success(`Log group "${groupToDelete}" deleted`)
+      if (selectedGroup === groupToDelete) {
+        setSelectedGroup(null)
+      }
+      setGroupToDelete(null)
+      refreshGroups()
+    } catch (error) {
+      toast.error(`Failed to delete log group: ${error}`)
+      throw error
+    }
+  }
+
+  const confirmDeleteStream = async () => {
+    if (!selectedGroup || !streamToDelete) return
+    try {
+      await deleteLogStream(selectedGroup, streamToDelete, activeEndpoint)
+      toast.success(`Log stream "${streamToDelete}" deleted`)
+      if (selectedStream === streamToDelete) {
+        setSelectedStream(null)
+      }
+      setStreamToDelete(null)
+      loadStreams()
+    } catch (error) {
+      toast.error(`Failed to delete log stream: ${error}`)
+      throw error
+    }
+  }
+
   const filteredGroups = groupsData?.log_groups || []
   const filteredStreams = streamsData?.log_streams || []
 
@@ -299,15 +349,26 @@ export function LogsBrowser() {
             <Badge variant="secondary">
               {filteredGroups.length}
             </Badge>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 ml-auto"
-              onClick={async () => { setRefreshing(true); await refreshGroups(); setRefreshing(false) }}
-              title="Refresh"
-            >
-              <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
-            </Button>
+            <div className="flex items-center gap-1 ml-auto">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => setCreateGroupSheetOpen(true)}
+                title="Create log group"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={async () => { setRefreshing(true); await refreshGroups(); setRefreshing(false) }}
+                title="Refresh"
+              >
+                <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col gap-3 overflow-hidden">
@@ -345,8 +406,38 @@ export function LogsBrowser() {
                   onClick={() => setSelectedGroup(group.name)}
                 >
                   <CardContent className="p-3">
-                    <div className="text-sm font-medium truncate" title={group.name}>
-                      {group.name}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-medium truncate" title={group.name}>
+                        {group.name}
+                      </div>
+                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setGroupForRetention(group.name)
+                            setRetentionSheetOpen(true)
+                          }}
+                          title="Edit retention"
+                        >
+                          <Settings className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setGroupToDelete(group.name)
+                            setDeleteGroupConfirmOpen(true)
+                          }}
+                          title="Delete log group"
+                        >
+                          <Trash2 className="h-3 w-3 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                       <span>{formatBytes(group.stored_bytes)}</span>
@@ -418,6 +509,7 @@ export function LogsBrowser() {
                         <TableHead>Stream Name</TableHead>
                         <TableHead>Last Event</TableHead>
                         <TableHead>Size</TableHead>
+                        <TableHead className="w-10" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -437,6 +529,21 @@ export function LogsBrowser() {
                           </TableCell>
                           <TableCell className="text-xs">
                             {formatBytes(stream.stored_bytes)}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setStreamToDelete(stream.name)
+                                setDeleteStreamConfirmOpen(true)
+                              }}
+                              title="Delete stream"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -624,6 +731,38 @@ export function LogsBrowser() {
           )}
         </TabsContent>
       </Tabs>
+
+      <CreateLogGroupSheet
+        open={createGroupSheetOpen}
+        onOpenChange={setCreateGroupSheetOpen}
+        onSuccess={() => {
+          refreshGroups()
+        }}
+      />
+
+      <SetRetentionSheet
+        logGroupName={groupForRetention}
+        currentRetention={filteredGroups.find((g) => g.name === groupForRetention)?.retention_days ?? null}
+        open={retentionSheetOpen}
+        onOpenChange={setRetentionSheetOpen}
+        onSuccess={() => {
+          refreshGroups()
+        }}
+      />
+
+      <DeleteLogGroupConfirmSheet
+        logGroupName={groupToDelete}
+        open={deleteGroupConfirmOpen}
+        onOpenChange={setDeleteGroupConfirmOpen}
+        onConfirm={confirmDeleteGroup}
+      />
+
+      <DeleteLogStreamConfirmSheet
+        logStreamName={streamToDelete}
+        open={deleteStreamConfirmOpen}
+        onOpenChange={setDeleteStreamConfirmOpen}
+        onConfirm={confirmDeleteStream}
+      />
     </div>
   )
 }

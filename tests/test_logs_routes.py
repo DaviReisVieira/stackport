@@ -272,3 +272,162 @@ class TestGetLogEvents:
         assert resp.status_code == 200
         data = resp.json()
         assert data["events"] == []
+
+
+class TestCreateLogGroup:
+    @patch("backend.routes.logs.cache")
+    @patch("backend.routes.logs.get_client")
+    def test_create_log_group(self, mock_get_client, mock_cache):
+        mock_logs = MagicMock()
+        mock_get_client.return_value = mock_logs
+
+        resp = client.post("/api/logs/groups", json={"name": "/aws/lambda/new-fn"})
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "/aws/lambda/new-fn"
+        assert data["retention_in_days"] is None
+        mock_logs.create_log_group.assert_called_once_with(logGroupName="/aws/lambda/new-fn")
+        mock_logs.put_retention_policy.assert_not_called()
+
+    @patch("backend.routes.logs.cache")
+    @patch("backend.routes.logs.get_client")
+    def test_create_log_group_with_retention_and_tags(self, mock_get_client, mock_cache):
+        mock_logs = MagicMock()
+        mock_get_client.return_value = mock_logs
+
+        resp = client.post(
+            "/api/logs/groups",
+            json={"name": "/aws/lambda/new-fn", "retentionInDays": 14, "tags": {"env": "prod"}},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["retention_in_days"] == 14
+
+        mock_logs.create_log_group.assert_called_once_with(
+            logGroupName="/aws/lambda/new-fn", tags={"env": "prod"}
+        )
+        mock_logs.put_retention_policy.assert_called_once_with(
+            logGroupName="/aws/lambda/new-fn", retentionInDays=14
+        )
+
+    @patch("backend.routes.logs.get_client")
+    def test_create_log_group_invalid_retention(self, mock_get_client):
+        resp = client.post(
+            "/api/logs/groups", json={"name": "/aws/lambda/new-fn", "retentionInDays": 13}
+        )
+        assert resp.status_code == 400
+
+    @patch("backend.routes.logs.get_client")
+    def test_create_log_group_already_exists(self, mock_get_client):
+        mock_logs = MagicMock()
+        mock_get_client.return_value = mock_logs
+        mock_logs.exceptions.ResourceAlreadyExistsException = type(
+            "ResourceAlreadyExistsException", (Exception,), {}
+        )
+        mock_logs.create_log_group.side_effect = mock_logs.exceptions.ResourceAlreadyExistsException()
+
+        resp = client.post("/api/logs/groups", json={"name": "existing-group"})
+        assert resp.status_code == 409
+
+
+class TestDeleteLogGroup:
+    @patch("backend.routes.logs.cache")
+    @patch("backend.routes.logs.get_client")
+    def test_delete_log_group(self, mock_get_client, mock_cache):
+        mock_logs = MagicMock()
+        mock_get_client.return_value = mock_logs
+
+        resp = client.delete("/api/logs/groups/my-log-group")
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        mock_logs.delete_log_group.assert_called_once_with(logGroupName="my-log-group")
+
+    @patch("backend.routes.logs.get_client")
+    def test_delete_log_group_not_found(self, mock_get_client):
+        mock_logs = MagicMock()
+        mock_get_client.return_value = mock_logs
+        mock_logs.exceptions.ResourceNotFoundException = type(
+            "ResourceNotFoundException", (Exception,), {}
+        )
+        mock_logs.delete_log_group.side_effect = mock_logs.exceptions.ResourceNotFoundException()
+
+        resp = client.delete("/api/logs/groups/missing-group")
+        assert resp.status_code == 404
+
+
+class TestSetLogGroupRetention:
+    @patch("backend.routes.logs.cache")
+    @patch("backend.routes.logs.get_client")
+    def test_set_retention(self, mock_get_client, mock_cache):
+        mock_logs = MagicMock()
+        mock_get_client.return_value = mock_logs
+
+        resp = client.put(
+            "/api/logs/groups/my-log-group/retention", json={"retentionInDays": 30}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["retention_in_days"] == 30
+        mock_logs.put_retention_policy.assert_called_once_with(
+            logGroupName="my-log-group", retentionInDays=30
+        )
+
+    @patch("backend.routes.logs.cache")
+    @patch("backend.routes.logs.get_client")
+    def test_clear_retention(self, mock_get_client, mock_cache):
+        mock_logs = MagicMock()
+        mock_get_client.return_value = mock_logs
+
+        resp = client.put(
+            "/api/logs/groups/my-log-group/retention", json={"retentionInDays": None}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["retention_in_days"] is None
+        mock_logs.delete_retention_policy.assert_called_once_with(logGroupName="my-log-group")
+
+    @patch("backend.routes.logs.get_client")
+    def test_set_retention_invalid_value(self, mock_get_client):
+        resp = client.put(
+            "/api/logs/groups/my-log-group/retention", json={"retentionInDays": 999}
+        )
+        assert resp.status_code == 400
+
+    @patch("backend.routes.logs.get_client")
+    def test_set_retention_group_not_found(self, mock_get_client):
+        mock_logs = MagicMock()
+        mock_get_client.return_value = mock_logs
+        mock_logs.exceptions.ResourceNotFoundException = type(
+            "ResourceNotFoundException", (Exception,), {}
+        )
+        mock_logs.put_retention_policy.side_effect = mock_logs.exceptions.ResourceNotFoundException()
+
+        resp = client.put(
+            "/api/logs/groups/missing-group/retention", json={"retentionInDays": 30}
+        )
+        assert resp.status_code == 404
+
+
+class TestDeleteLogStream:
+    @patch("backend.routes.logs.cache")
+    @patch("backend.routes.logs.get_client")
+    def test_delete_log_stream(self, mock_get_client, mock_cache):
+        mock_logs = MagicMock()
+        mock_get_client.return_value = mock_logs
+
+        resp = client.delete("/api/logs/groups/my-log-group/streams/my-stream")
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        mock_logs.delete_log_stream.assert_called_once_with(
+            logGroupName="my-log-group", logStreamName="my-stream"
+        )
+
+    @patch("backend.routes.logs.get_client")
+    def test_delete_log_stream_not_found(self, mock_get_client):
+        mock_logs = MagicMock()
+        mock_get_client.return_value = mock_logs
+        mock_logs.exceptions.ResourceNotFoundException = type(
+            "ResourceNotFoundException", (Exception,), {}
+        )
+        mock_logs.delete_log_stream.side_effect = mock_logs.exceptions.ResourceNotFoundException()
+
+        resp = client.delete("/api/logs/groups/my-log-group/streams/missing-stream")
+        assert resp.status_code == 404
