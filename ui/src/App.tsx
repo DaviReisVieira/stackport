@@ -8,7 +8,7 @@ import About from './pages/About'
 import Settings from './pages/Settings'
 import { Skeleton } from './components/ui/skeleton'
 
-const CloudscapePreview = lazy(() => import('./pages/CloudscapePreview'))
+const CloudscapeDashboard = lazy(() => import('./pages/CloudscapeDashboard'))
 
 function MainApp() {
   return (
@@ -34,7 +34,7 @@ export default function App() {
           path="/cloudscape"
           element={
             <Suspense fallback={<div className="p-6"><Skeleton className="h-64 w-full" /></div>}>
-              <CloudscapePreview />
+              <CloudscapeDashboard />
             </Suspense>
           }
         />
