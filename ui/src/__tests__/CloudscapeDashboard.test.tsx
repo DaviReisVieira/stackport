@@ -40,6 +40,11 @@ function renderDashboard() {
 beforeEach(() => {
   localStorage.clear()
   refresh.mockReset()
+  // The shell fetches /api/stats once for the top-nav search options
+  globalThis.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: () => Promise.resolve(stats),
+  }) as unknown as typeof fetch
 })
 
 describe('CloudscapeDashboard', () => {
@@ -76,6 +81,19 @@ describe('CloudscapeDashboard', () => {
     fireEvent.click(star)
     expect(JSON.parse(localStorage.getItem('stackport:favorites') ?? '[]')).toContain('ec2')
     expect(screen.getByLabelText('Remove ec2 from favorites')).toBeInTheDocument()
+  })
+
+  it('shows the top-nav service search', () => {
+    renderDashboard()
+    expect(screen.getAllByPlaceholderText('Search services').length).toBeGreaterThan(0)
+  })
+
+  it('pins a favorited service to the top navigation', () => {
+    renderDashboard()
+    expect(screen.getAllByText('dynamodb')).toHaveLength(1)
+    fireEvent.click(screen.getByLabelText('Add dynamodb to favorites'))
+    // dashboard entry + pinned top-nav shortcut
+    expect(screen.getAllByText('dynamodb').length).toBeGreaterThan(1)
   })
 
   it('refreshes on demand', () => {
