@@ -12,6 +12,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@cloudscape-design/components": "^3.0.1359",
+    "@cloudscape-design/global-styles": "^1.0.67",
     "@dagrejs/dagre": "^3.0.0",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-dialog": "^1.1.15",
