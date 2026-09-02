@@ -76,10 +76,28 @@ function mockFetchByUrl() {
     const url = String(input)
     const method = init?.method ?? 'GET'
     let payload: unknown = statsPayload
-    if (url.includes('/api/sqs/queues') && method === 'POST' && !url.includes('/purge')) {
-      payload = { queueName: 'new-queue', queueUrl: 'http://x/new-queue', queueArn: 'arn:x' }
+    if (url.includes('/messages/batch')) {
+      payload = {}
+    } else if (url.includes('/api/sqs/queues/orders/messages')) {
+      payload = {
+        messages: [
+          { messageId: 'm-1', receiptHandle: 'rh-1', body: 'hello one', md5OfBody: 'md5-1', attributes: {}, messageAttributes: {} },
+          { messageId: 'm-2', receiptHandle: 'rh-2', body: 'hello two', md5OfBody: 'md5-2', attributes: {}, messageAttributes: {} },
+        ],
+      }
     } else if (url.includes('/purge')) {
       payload = { success: true, message: 'purged' }
+    } else if (url.includes('/tags')) {
+      payload = { tags: { env: 'dev' } }
+    } else if (url.includes('/api/sqs/queues/orders')) {
+      payload = {
+        ...queuesPayload.queues[0],
+        arn: 'arn:aws:sqs:us-east-1:000000000000:orders',
+        maximumMessageSize: 262144,
+        contentBasedDeduplication: false,
+      }
+    } else if (url.includes('/api/sqs/queues') && method === 'POST') {
+      payload = { queueName: 'new-queue', queueUrl: 'http://x/new-queue', queueArn: 'arn:x' }
     } else if (url.includes('/api/sqs/queues')) {
       payload = queuesPayload
     } else if (url.includes('/api/stats')) {
@@ -151,5 +169,50 @@ describe('CloudscapeSQSBrowser (via registry dispatch)', () => {
     await screen.findByText('orders')
     const purgeCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/sqs/queues/orders/purge'))
     expect(purgeCall).toBeTruthy()
+  })
+
+  it('opens the queue detail via deep link and shows configuration', async () => {
+    renderSQS()
+    fireEvent.click(await screen.findByRole('link', { name: 'orders' }))
+    expect(await screen.findByText('arn:aws:sqs:us-east-1:000000000000:orders')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Configuration'))
+    expect(await screen.findByText('Content-based deduplication')).toBeInTheDocument()
+    expect(screen.getByText('262144 bytes')).toBeInTheDocument()
+  })
+
+  it('polls messages and batch-deletes the selection in the detail view', async () => {
+    renderSQS()
+    fireEvent.click(await screen.findByRole('link', { name: 'orders' }))
+    fireEvent.click(await screen.findByText('Poll for messages'))
+    expect(await screen.findByText('hello one')).toBeInTheDocument()
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    fireEvent.click(checkboxes[0]) // select-all header checkbox
+    fireEvent.click(screen.getByText(/Delete selected \(2\)/))
+
+    await screen.findByText('Poll for messages')
+    const batchCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/messages/batch'))
+    expect(batchCall).toBeTruthy()
+    const body = JSON.parse((batchCall![1] as RequestInit).body as string)
+    expect(body.receiptHandles).toEqual(['rh-1', 'rh-2'])
+  })
+
+  it('sends DLQ settings from the advanced create form', async () => {
+    renderSQS()
+    fireEvent.click(await screen.findByText('Create queue'))
+    fireEvent.change(await screen.findByPlaceholderText('my-queue'), { target: { value: 'with-dlq' } })
+    fireEvent.click(screen.getByText('Advanced settings'))
+    fireEvent.click(await screen.findByText('Create a dead-letter queue'))
+    const submitButtons = screen.getAllByRole('button', { name: 'Create queue' })
+    fireEvent.click(submitButtons[submitButtons.length - 1])
+
+    await screen.findByText('orders')
+    const createCall = fetchMock.mock.calls.find(
+      ([url, init]) => String(url).endsWith('/api/sqs/queues?endpoint=local') && (init as RequestInit)?.method === 'POST',
+    )
+    const body = JSON.parse((createCall![1] as RequestInit).body as string)
+    expect(body.dlqEnabled).toBe(true)
+    expect(body.maxReceiveCount).toBe(5)
+    expect(body.sqsManagedSseEnabled).toBe(true)
   })
 })
