@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@cloudscape-design/collection-hooks": "^1.0.107",
     "@cloudscape-design/components": "^3.0.1359",
     "@cloudscape-design/global-styles": "^1.0.67",
     "@dagrejs/dagre": "^3.0.0",

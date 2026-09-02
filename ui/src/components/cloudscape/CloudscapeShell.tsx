@@ -5,7 +5,10 @@ import AppLayout from '@cloudscape-design/components/app-layout'
 import Autosuggest from '@cloudscape-design/components/autosuggest'
 import Flashbar from '@cloudscape-design/components/flashbar'
 import SideNavigation from '@cloudscape-design/components/side-navigation'
+import type { SideNavigationProps } from '@cloudscape-design/components/side-navigation'
 import TopNavigation from '@cloudscape-design/components/top-navigation'
+import { I18nProvider } from '@cloudscape-design/components/i18n'
+import enMessages from '@cloudscape-design/components/i18n/messages/all.en'
 import type { TopNavigationProps } from '@cloudscape-design/components/top-navigation'
 import { applyMode, Mode } from '@cloudscape-design/global-styles'
 import '@cloudscape-design/global-styles/index.css'
@@ -32,7 +35,15 @@ import { getServiceIcon } from '@/lib/service-icons'
  * entry at its /cloudscape route once the view lands, and leave it pointing at
  * the legacy route until then.
  */
-export function CloudscapeShell({ activeHref, children }: { activeHref: string; children: ReactNode }) {
+export function CloudscapeShell({
+  activeHref,
+  extraNavItems = [],
+  children,
+}: {
+  activeHref: string
+  extraNavItems?: SideNavigationProps.Item[]
+  children: ReactNode
+}) {
   const navigate = useNavigate()
   const [navOpen, setNavOpen] = useState(true)
   const [searchValue, setSearchValue] = useState('')
@@ -64,7 +75,7 @@ export function CloudscapeShell({ activeHref, children }: { activeHref: string; 
     ],
     [
       { sequence: ['g', 'd'], handler: () => navigate('/cloudscape') },
-      { sequence: ['g', 'r'], handler: () => navigate('/resources') },
+      { sequence: ['g', 'r'], handler: () => navigate('/cloudscape/resources') },
       { sequence: ['g', 's'], handler: () => navigate('/settings') },
       { sequence: ['g', 'a'], handler: () => navigate('/about') },
     ],
@@ -78,7 +89,7 @@ export function CloudscapeShell({ activeHref, children }: { activeHref: string; 
   const goToService = useCallback(
     (service: string) => {
       setSearchValue('')
-      navigate(`/resources/${service}`)
+      navigate(`/cloudscape/resources/${service}`)
     },
     [navigate],
   )
@@ -143,7 +154,7 @@ export function CloudscapeShell({ activeHref, children }: { activeHref: string; 
   const awsWarning = health?.connection_type === 'aws'
 
   return (
-    <>
+    <I18nProvider locale="en" messages={[enMessages]}>
       <div id="stackport-top-nav" style={{ position: 'sticky', top: 0, zIndex: 1002 }}>
         <TopNavigation
           identity={{
@@ -203,7 +214,8 @@ export function CloudscapeShell({ activeHref, children }: { activeHref: string; 
             }}
             items={[
               { type: 'link', text: 'Dashboard', href: '/cloudscape' },
-              { type: 'link', text: 'Resources', href: '/resources' },
+              { type: 'link', text: 'Resources', href: '/cloudscape/resources' },
+              ...extraNavItems,
               { type: 'link', text: 'Settings', href: '/settings' },
               { type: 'link', text: 'About', href: '/about' },
               { type: 'divider' },
@@ -219,6 +231,6 @@ export function CloudscapeShell({ activeHref, children }: { activeHref: string; 
         }
         content={children}
       />
-    </>
+    </I18nProvider>
   )
 }
