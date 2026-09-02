@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react'
+import { CloudscapeSQSBrowser } from './SQSBrowser'
 
 /**
  * Registry of Cloudscape service-specific views (launch PR #149).
@@ -7,4 +8,6 @@ import type { ComponentType } from 'react'
  * the Cloudscape ResourceBrowser renders it instead of the generic table.
  * Add each service browser here as its migration issue (#137-#146) lands.
  */
-export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {}
+export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {
+  sqs: CloudscapeSQSBrowser,
+}
