@@ -1,6 +1,8 @@
 """Pydantic schemas for S3 API requests."""
 
-from pydantic import BaseModel, Field, model_validator
+import re
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DeleteBatchBody(BaseModel):
@@ -101,3 +103,51 @@ class PutCORSBody(BaseModel):
     model_config = {"populate_by_name": True}
 
     rules: list[CORSRuleBody] = Field(..., alias="rules")
+
+# S3 general purpose bucket naming rules.
+# https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+_BUCKET_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
+_BUCKET_IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+_BUCKET_RESERVED_PREFIXES = ("xn--", "sthree-", "amzn-s3-demo-")
+_BUCKET_RESERVED_SUFFIXES = ("-s3alias", "--ol-s3", ".mrap", "--x-s3", "--table-s3")
+
+
+def validate_bucket_name(name: str) -> str:
+    """Validate a name against the AWS general purpose bucket naming rules.
+
+    Raises ValueError with the specific rule that failed, so the UI can show it.
+    """
+    if not 3 <= len(name) <= 63:
+        raise ValueError("Bucket name must be between 3 and 63 characters long")
+    if not _BUCKET_NAME_RE.match(name):
+        raise ValueError(
+            "Bucket name must use only lowercase letters, numbers, periods and hyphens, "
+            "and must begin and end with a letter or number"
+        )
+    if ".." in name:
+        raise ValueError("Bucket name must not contain two adjacent periods")
+    if _BUCKET_IP_RE.match(name):
+        raise ValueError("Bucket name must not be formatted as an IP address")
+    for prefix in _BUCKET_RESERVED_PREFIXES:
+        if name.startswith(prefix):
+            raise ValueError(f"Bucket name must not start with the reserved prefix '{prefix}'")
+    for suffix in _BUCKET_RESERVED_SUFFIXES:
+        if name.endswith(suffix):
+            raise ValueError(f"Bucket name must not end with the reserved suffix '{suffix}'")
+    return name
+
+
+class CreateBucketBody(BaseModel):
+    """Create a general purpose bucket, optionally enabling versioning and tags."""
+
+    model_config = {"populate_by_name": True}
+
+    name: str
+    region: str | None = None
+    versioning: bool = False
+    tags: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, value: str) -> str:
+        return validate_bucket_name(value)

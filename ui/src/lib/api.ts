@@ -110,6 +110,19 @@ async function fetchJSON<T>(url: string): Promise<T> {
   return res.json()
 }
 
+
+/** FastAPI returns a string detail for HTTPException and a list of errors for 422. */
+function detailMessage(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null
+  const detail = (data as { detail?: unknown }).detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const first = detail[0] as { msg?: string } | undefined
+    if (first?.msg) return first.msg.replace(/^Value error, /, '')
+  }
+  return null
+}
+
 // --- Endpoints ---
 
 export async function fetchEndpoints(): Promise<EndpointsResponse> {
@@ -230,6 +243,23 @@ export async function fetchResourceDetail(service: string, type: string, id: str
 }
 
 // --- S3 ---
+
+export async function createS3Bucket(
+  body: { name: string; region?: string | null; versioning?: boolean; tags?: Record<string, string> },
+  endpoint?: string | null,
+): Promise<{ name: string; region: string; versioning: boolean }> {
+  const url = buildUrl('/s3/buckets', endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(detailMessage(data) || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
 
 export async function fetchS3Buckets(endpoint?: string | null): Promise<{ buckets: S3Bucket[] }> {
   return fetchJSON<{ buckets: S3Bucket[] }>(buildUrl('/s3/buckets', endpoint))
@@ -451,6 +481,30 @@ export async function putS3CORS(
 }
 
 // --- DynamoDB ---
+
+export async function createDynamoDBTable(
+  body: {
+    name: string
+    partitionKey: { name: string; type: string }
+    sortKey?: { name: string; type: string }
+    billingMode?: string
+    readCapacity?: number
+    writeCapacity?: number
+  },
+  endpoint?: string | null,
+): Promise<{ name: string; status: string; partitionKey: string; sortKey: string | null; billingMode: string }> {
+  const url = buildUrl('/dynamodb/tables', endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(detailMessage(data) || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
 
 export async function fetchDynamoDBTables(endpoint?: string | null): Promise<{ tables: DynamoDBTable[] }> {
   return fetchJSON<{ tables: DynamoDBTable[] }>(buildUrl('/dynamodb/tables', endpoint))

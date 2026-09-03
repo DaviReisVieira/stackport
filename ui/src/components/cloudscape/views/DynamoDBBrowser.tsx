@@ -5,6 +5,7 @@ import Alert from '@cloudscape-design/components/alert'
 import Badge from '@cloudscape-design/components/badge'
 import Box from '@cloudscape-design/components/box'
 import Button from '@cloudscape-design/components/button'
+import Checkbox from '@cloudscape-design/components/checkbox'
 import ColumnLayout from '@cloudscape-design/components/column-layout'
 import Form from '@cloudscape-design/components/form'
 import FormField from '@cloudscape-design/components/form-field'
@@ -23,6 +24,7 @@ import TextFilter from '@cloudscape-design/components/text-filter'
 import { toast } from 'sonner'
 import {
   batchWriteDynamoDBItems,
+  createDynamoDBTable,
   deleteDynamoDBItem,
   fetchDynamoDBItems,
   fetchDynamoDBTable,
@@ -477,12 +479,195 @@ function TableDetailView({ tableName, onBack }: { tableName: string; onBack: () 
   )
 }
 
+
+const KEY_TYPE_OPTIONS = [
+  { label: 'String', value: 'S' },
+  { label: 'Number', value: 'N' },
+  { label: 'Binary', value: 'B' },
+]
+
+/**
+ * Create table, mirroring the console's two sections: Table details (name and
+ * keys) then Table settings, where the default is on-demand capacity.
+ * https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/getting-started-step-1.html
+ */
+function CreateTableModal({ onClose, onDone }: { onClose: () => void; onDone: (name: string) => void }) {
+  const { activeEndpoint } = useEndpoint()
+  const [name, setName] = useState('')
+  const [partitionKey, setPartitionKey] = useState('')
+  const [partitionType, setPartitionType] = useState('S')
+  const [withSortKey, setWithSortKey] = useState(false)
+  const [sortKey, setSortKey] = useState('')
+  const [sortType, setSortType] = useState('S')
+  const [settings, setSettings] = useState<'default' | 'customize'>('default')
+  const [billingMode, setBillingMode] = useState('PAY_PER_REQUEST')
+  const [readCapacity, setReadCapacity] = useState('5')
+  const [writeCapacity, setWriteCapacity] = useState('5')
+  const [saving, setSaving] = useState(false)
+
+  const provisioned = settings === 'customize' && billingMode === 'PROVISIONED'
+  const duplicateKey = withSortKey && sortKey.trim() !== '' && sortKey.trim() === partitionKey.trim()
+
+  const submit = async () => {
+    setSaving(true)
+    try {
+      await createDynamoDBTable(
+        {
+          name: name.trim(),
+          partitionKey: { name: partitionKey.trim(), type: partitionType },
+          sortKey: withSortKey && sortKey.trim() ? { name: sortKey.trim(), type: sortType } : undefined,
+          billingMode: settings === 'customize' ? billingMode : 'PAY_PER_REQUEST',
+          readCapacity: provisioned ? Number(readCapacity) : undefined,
+          writeCapacity: provisioned ? Number(writeCapacity) : undefined,
+        },
+        activeEndpoint,
+      )
+      toast.success(`Table '${name.trim()}' created`)
+      onDone(name.trim())
+    } catch (error) {
+      toast.error(`Failed to create table: ${error instanceof Error ? error.message : error}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal visible onDismiss={onClose} header="Create table" size="medium">
+      <Form
+        actions={
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button variant="link" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={submit}
+              loading={saving}
+              disabled={!name.trim() || !partitionKey.trim() || duplicateKey}
+              data-testid="create-table-submit"
+            >
+              Create table
+            </Button>
+          </SpaceBetween>
+        }
+      >
+        <SpaceBetween size="l">
+          <SpaceBetween size="m">
+            <Header variant="h3">Table details</Header>
+            <FormField label="Table name" description="3 to 255 characters. Unique per region and account.">
+              <Input value={name} onChange={({ detail }) => setName(detail.value)} placeholder="Music" autoFocus />
+            </FormField>
+            <FormField
+              label="Partition key"
+              description="How items are distributed and looked up. You cannot change it after the table is created."
+            >
+              <ColumnLayout columns={2}>
+                <Input
+                  value={partitionKey}
+                  onChange={({ detail }) => setPartitionKey(detail.value)}
+                  placeholder="Artist"
+                  ariaLabel="Partition key name"
+                />
+                <div data-testid="partition-key-type">
+                  <Select
+                    selectedOption={KEY_TYPE_OPTIONS.find((o) => o.value === partitionType) ?? KEY_TYPE_OPTIONS[0]}
+                    onChange={({ detail }) => setPartitionType(detail.selectedOption.value as string)}
+                    options={KEY_TYPE_OPTIONS}
+                    ariaLabel="Partition key type"
+                  />
+                </div>
+              </ColumnLayout>
+            </FormField>
+            <Checkbox checked={withSortKey} onChange={({ detail }) => setWithSortKey(detail.checked)}>
+              Add a sort key
+            </Checkbox>
+            {withSortKey && (
+              <FormField
+                label="Sort key"
+                description="Orders items that share a partition key, and lets you query ranges."
+                errorText={duplicateKey ? 'The sort key must differ from the partition key' : undefined}
+              >
+                <ColumnLayout columns={2}>
+                  <Input
+                    value={sortKey}
+                    onChange={({ detail }) => setSortKey(detail.value)}
+                    placeholder="SongTitle"
+                    ariaLabel="Sort key name"
+                  />
+                  <div data-testid="sort-key-type">
+                    <Select
+                      selectedOption={KEY_TYPE_OPTIONS.find((o) => o.value === sortType) ?? KEY_TYPE_OPTIONS[0]}
+                      onChange={({ detail }) => setSortType(detail.selectedOption.value as string)}
+                      options={KEY_TYPE_OPTIONS}
+                      ariaLabel="Sort key type"
+                    />
+                  </div>
+                </ColumnLayout>
+              </FormField>
+            )}
+          </SpaceBetween>
+
+          <SpaceBetween size="m">
+            <Header variant="h3">Table settings</Header>
+            <SegmentedControl
+              selectedId={settings}
+              onChange={({ detail }) => setSettings(detail.selectedId as 'default' | 'customize')}
+              label="Table settings"
+              options={[
+                { id: 'default', text: 'Default settings' },
+                { id: 'customize', text: 'Customize settings' },
+              ]}
+            />
+            {settings === 'default' ? (
+              <Box color="text-body-secondary" fontSize="body-s">
+                On-demand capacity. You pay per request and the table scales itself — the right default for
+                development and for traffic you cannot predict.
+              </Box>
+            ) : (
+              <SpaceBetween size="m">
+                <FormField label="Capacity mode">
+                  <div data-testid="capacity-mode">
+                  <Select
+                    selectedOption={
+                      billingMode === 'PROVISIONED'
+                        ? { label: 'Provisioned', value: 'PROVISIONED' }
+                        : { label: 'On-demand', value: 'PAY_PER_REQUEST' }
+                    }
+                    onChange={({ detail }) => setBillingMode(detail.selectedOption.value as string)}
+                    options={[
+                      { label: 'On-demand', value: 'PAY_PER_REQUEST' },
+                      { label: 'Provisioned', value: 'PROVISIONED' },
+                    ]}
+                    ariaLabel="Capacity mode"
+                  />
+                  </div>
+                </FormField>
+                {provisioned && (
+                  <ColumnLayout columns={2}>
+                    <FormField label="Read capacity units">
+                      <Input type="number" value={readCapacity} onChange={({ detail }) => setReadCapacity(detail.value)} />
+                    </FormField>
+                    <FormField label="Write capacity units">
+                      <Input type="number" value={writeCapacity} onChange={({ detail }) => setWriteCapacity(detail.value)} />
+                    </FormField>
+                  </ColumnLayout>
+                )}
+              </SpaceBetween>
+            )}
+          </SpaceBetween>
+        </SpaceBetween>
+      </Form>
+    </Modal>
+  )
+}
+
 export function CloudscapeDynamoDBBrowser() {
   const { activeEndpoint } = useEndpoint()
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedTable = searchParams.get('table')
   const tablesFetcher = useCallback(() => fetchDynamoDBTables(activeEndpoint), [activeEndpoint])
   const { data, loading, error, refresh } = useFetch<{ tables: DynamoDBTable[] }>(tablesFetcher, 10000)
+  const [creating, setCreating] = useState(false)
 
   const tables = data?.tables ?? []
   const { items, filteredItemsCount, collectionProps, filterProps, paginationProps } = useCollection(tables, {
@@ -521,7 +706,14 @@ export function CloudscapeDynamoDBBrowser() {
           <Header
             variant="h2"
             counter={data ? `(${tables.length})` : undefined}
-            actions={<Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh tables" />}
+            actions={
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh tables" />
+                <Button variant="primary" onClick={() => setCreating(true)}>
+                  Create table
+                </Button>
+              </SpaceBetween>
+            }
           >
             Tables
           </Header>
@@ -534,7 +726,14 @@ export function CloudscapeDynamoDBBrowser() {
           />
         }
         pagination={<Pagination {...paginationProps} />}
-        empty={<Box textAlign="center">No tables found</Box>}
+        empty={
+          <Box textAlign="center" padding="l">
+            <SpaceBetween size="s">
+              <Box>No tables found</Box>
+              <Button onClick={() => setCreating(true)}>Create table</Button>
+            </SpaceBetween>
+          </Box>
+        }
         columnDefinitions={[
           {
             id: 'name',
@@ -582,6 +781,17 @@ export function CloudscapeDynamoDBBrowser() {
           },
         ]}
       />
+
+      {creating && (
+        <CreateTableModal
+          onClose={() => setCreating(false)}
+          onDone={(name) => {
+            setCreating(false)
+            refresh()
+            openTable(name)
+          }}
+        />
+      )}
     </SpaceBetween>
   )
 }

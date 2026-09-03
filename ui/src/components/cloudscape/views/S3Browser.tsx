@@ -8,7 +8,9 @@ import Box from '@cloudscape-design/components/box'
 import BreadcrumbGroup from '@cloudscape-design/components/breadcrumb-group'
 import Button from '@cloudscape-design/components/button'
 import ButtonDropdown from '@cloudscape-design/components/button-dropdown'
+import Checkbox from '@cloudscape-design/components/checkbox'
 import ColumnLayout from '@cloudscape-design/components/column-layout'
+import ExpandableSection from '@cloudscape-design/components/expandable-section'
 import Form from '@cloudscape-design/components/form'
 import FormField from '@cloudscape-design/components/form-field'
 import Header from '@cloudscape-design/components/header'
@@ -25,6 +27,7 @@ import Tabs from '@cloudscape-design/components/tabs'
 import TextFilter from '@cloudscape-design/components/text-filter'
 import { toast } from 'sonner'
 import {
+  createS3Bucket,
   createS3Folder,
   deleteS3Object,
   deleteS3ObjectsBatch,
@@ -39,6 +42,7 @@ import {
 } from '@/lib/api'
 import type { S3Bucket, S3File, S3ObjectDetail, S3ObjectsResponse } from '@/lib/types'
 import { useEndpoint } from '@/hooks/useEndpoint'
+import { useHealth } from '@/hooks/useHealth'
 import { useFetch } from '@/hooks/useFetch'
 import { exportData } from '@/lib/export'
 import { S3BucketSettingsPanel } from './s3/S3BucketSettingsPanel'
@@ -336,6 +340,142 @@ function NewFolderModal({
             }}
           />
         </FormField>
+      </Form>
+    </Modal>
+  )
+}
+
+/**
+ * Create bucket, modelled on the console's form.
+ *
+ * Object Ownership, Block Public Access and Object Lock are deliberately absent:
+ * emulators don't implement them, and a control that silently does nothing is
+ * worse than no control. Encryption is stated rather than offered because SSE-S3
+ * is the unconditional base level on real S3.
+ * https://docs.aws.amazon.com/AmazonS3/latest/userguide/create-bucket-overview.html
+ */
+function validateBucketName(name: string): string | null {
+  if (name.length < 3 || name.length > 63) return 'Bucket name must be between 3 and 63 characters long'
+  if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(name))
+    return 'Use only lowercase letters, numbers, periods and hyphens, beginning and ending with a letter or number'
+  if (name.includes('..')) return 'Bucket name must not contain two adjacent periods'
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(name)) return 'Bucket name must not be formatted as an IP address'
+  for (const prefix of ['xn--', 'sthree-', 'amzn-s3-demo-']) {
+    if (name.startsWith(prefix)) return `Bucket name must not start with the reserved prefix "${prefix}"`
+  }
+  for (const suffix of ['-s3alias', '--ol-s3', '.mrap', '--x-s3', '--table-s3']) {
+    if (name.endsWith(suffix)) return `Bucket name must not end with the reserved suffix "${suffix}"`
+  }
+  return null
+}
+
+function CreateBucketModal({ onClose, onDone }: { onClose: () => void; onDone: (name: string) => void }) {
+  const { activeEndpoint } = useEndpoint()
+  const { data: health } = useHealth()
+  const [name, setName] = useState('')
+  const [versioning, setVersioning] = useState(false)
+  const [tags, setTags] = useState<Array<{ key: string; value: string }>>([])
+  const [saving, setSaving] = useState(false)
+
+  const nameError = name ? validateBucketName(name) : null
+
+  const submit = async () => {
+    const error = validateBucketName(name)
+    if (error) {
+      toast.error(error)
+      return
+    }
+    setSaving(true)
+    try {
+      const record = Object.fromEntries(tags.filter((t) => t.key.trim()).map((t) => [t.key.trim(), t.value]))
+      await createS3Bucket(
+        { name, versioning, tags: Object.keys(record).length > 0 ? record : undefined },
+        activeEndpoint,
+      )
+      toast.success(`Bucket '${name}' created`)
+      onDone(name)
+    } catch (error) {
+      toast.error(`Failed to create bucket: ${error instanceof Error ? error.message : error}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal visible onDismiss={onClose} header="Create bucket" size="medium">
+      <Form
+        actions={
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button variant="link" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={submit}
+              loading={saving}
+              disabled={!name.trim() || nameError !== null}
+              data-testid="create-bucket-submit"
+            >
+              Create bucket
+            </Button>
+          </SpaceBetween>
+        }
+      >
+        <SpaceBetween size="m">
+          <FormField
+            label="Bucket name"
+            description="3 to 63 characters, lowercase. On AWS this name has to be unique across every account in the partition, and it cannot be changed later."
+            errorText={nameError ?? undefined}
+          >
+            <Input value={name} onChange={({ detail }) => setName(detail.value)} placeholder="my-bucket" autoFocus />
+          </FormField>
+
+          <FormField label="AWS Region" description="A bucket lives in one region and cannot be moved.">
+            <Box fontSize="body-s">{health?.region ?? 'us-east-1'}</Box>
+          </FormField>
+
+          <FormField label="Bucket versioning" description="Keep every version of every object. Off by default, as on AWS.">
+            <Checkbox checked={versioning} onChange={({ detail }) => setVersioning(detail.checked)}>
+              Enable versioning
+            </Checkbox>
+          </FormField>
+
+          <ExpandableSection headerText="Tags">
+            <AttributeEditor
+              items={tags}
+              onAddButtonClick={() => setTags([...tags, { key: '', value: '' }])}
+              onRemoveButtonClick={({ detail }) => setTags(tags.filter((_, i) => i !== detail.itemIndex))}
+              addButtonText="Add tag"
+              removeButtonText="Remove"
+              empty="No tags"
+              definition={[
+                {
+                  label: 'Key',
+                  control: (item, index) => (
+                    <Input
+                      value={item.key}
+                      onChange={({ detail }) => setTags(tags.map((t, i) => (i === index ? { ...t, key: detail.value } : t)))}
+                    />
+                  ),
+                },
+                {
+                  label: 'Value',
+                  control: (item, index) => (
+                    <Input
+                      value={item.value}
+                      onChange={({ detail }) => setTags(tags.map((t, i) => (i === index ? { ...t, value: detail.value } : t)))}
+                    />
+                  ),
+                },
+              ]}
+            />
+          </ExpandableSection>
+
+          <Alert type="info">
+            New objects are encrypted with SSE-S3 by default. On real AWS, Block Public Access is also on by default
+            and public access stays blocked unless you explicitly change it.
+          </Alert>
+        </SpaceBetween>
       </Form>
     </Modal>
   )
@@ -856,6 +996,7 @@ function BucketList({ onOpen }: { onOpen: (bucket: string) => void }) {
   const { activeEndpoint } = useEndpoint()
   const bucketsFetcher = useCallback(() => fetchS3Buckets(activeEndpoint), [activeEndpoint])
   const { data, loading, error, refresh } = useFetch<{ buckets: S3Bucket[] }>(bucketsFetcher, 10000)
+  const [creating, setCreating] = useState(false)
 
   const buckets = data?.buckets ?? []
   const { items, filteredItemsCount, collectionProps, filterProps, paginationProps } = useCollection(buckets, {
@@ -888,6 +1029,9 @@ function BucketList({ onOpen }: { onOpen: (bucket: string) => void }) {
               <SpaceBetween direction="horizontal" size="xs">
                 <Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh buckets" />
                 {exportDropdown('buckets', buckets as unknown as Record<string, unknown>[])}
+                <Button variant="primary" onClick={() => setCreating(true)}>
+                  Create bucket
+                </Button>
               </SpaceBetween>
             }
           >
@@ -906,7 +1050,7 @@ function BucketList({ onOpen }: { onOpen: (bucket: string) => void }) {
           <Box textAlign="center" padding="l">
             <SpaceBetween size="s">
               <Box>No S3 buckets</Box>
-              <Box color="text-body-secondary">Create a bucket to see it here.</Box>
+              <Button onClick={() => setCreating(true)}>Create bucket</Button>
             </SpaceBetween>
           </Box>
         }
@@ -944,6 +1088,17 @@ function BucketList({ onOpen }: { onOpen: (bucket: string) => void }) {
           },
         ]}
       />
+
+      {creating && (
+        <CreateBucketModal
+          onClose={() => setCreating(false)}
+          onDone={(name) => {
+            setCreating(false)
+            refresh()
+            onOpen(name)
+          }}
+        />
+      )}
     </SpaceBetween>
   )
 }
