@@ -82,6 +82,8 @@ import type {
   StopExecutionResponse,
   TagsSupportedResponse,
   CloudWatchAlarm,
+  SNSTopic,
+  SNSTopicDetail,
   CloudWatchDashboardDetail,
   CloudWatchDashboardEntry,
   MetricDataQueryInput,
@@ -1256,5 +1258,94 @@ export async function fetchMetricData(
     body: JSON.stringify({ queries, startMinutes }),
   })
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
+}
+
+// --- SNS (#75) ---
+
+export async function fetchSNSTopics(endpoint?: string | null): Promise<{ topics: SNSTopic[] }> {
+  return fetchJSON<{ topics: SNSTopic[] }>(buildUrl('/sns/topics', endpoint))
+}
+
+export async function fetchSNSTopic(arn: string, endpoint?: string | null): Promise<SNSTopicDetail> {
+  return fetchJSON<SNSTopicDetail>(buildUrl(`/sns/topics/${encodeURIComponent(arn)}`, endpoint))
+}
+
+export async function createSNSTopic(
+  body: { name: string; displayName?: string; fifo?: boolean; contentBasedDeduplication?: boolean },
+  endpoint?: string | null,
+): Promise<{ arn: string; name: string }> {
+  const url = buildUrl('/sns/topics', endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function deleteSNSTopic(arn: string, endpoint?: string | null): Promise<{ deleted: boolean }> {
+  const url = buildUrl(`/sns/topics/${encodeURIComponent(arn)}`, endpoint)
+  const res = await fetch(url, { method: 'DELETE' })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function subscribeSNSTopic(
+  arn: string,
+  body: { protocol: string; endpoint: string; filterPolicy?: Record<string, unknown>; rawMessageDelivery?: boolean },
+  endpoint?: string | null,
+): Promise<{ subscriptionArn: string }> {
+  const url = buildUrl(`/sns/topics/${encodeURIComponent(arn)}/subscriptions`, endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function unsubscribeSNS(subscriptionArn: string, endpoint?: string | null): Promise<{ deleted: boolean }> {
+  const url = buildUrl(`/sns/subscriptions/${encodeURIComponent(subscriptionArn)}`, endpoint)
+  const res = await fetch(url, { method: 'DELETE' })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function publishSNSMessage(
+  arn: string,
+  body: {
+    message: string
+    subject?: string
+    messageGroupId?: string
+    messageDeduplicationId?: string
+    messageAttributes?: Record<string, { dataType: string; stringValue: string }>
+  },
+  endpoint?: string | null,
+): Promise<{ messageId: string }> {
+  const url = buildUrl(`/sns/topics/${encodeURIComponent(arn)}/publish`, endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
+  }
   return res.json()
 }

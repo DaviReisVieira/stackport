@@ -8,6 +8,7 @@ import { CloudscapeMonitoringBrowser } from './MonitoringBrowser'
 import { CloudscapeRDSBrowser } from './RDSBrowser'
 import { CloudscapeS3Browser } from './S3Browser'
 import { CloudscapeSecretsManagerBrowser } from './SecretsManagerBrowser'
+import { CloudscapeSNSBrowser } from './SNSBrowser'
 import { CloudscapeSQSBrowser } from './SQSBrowser'
 import { CloudscapeStepFunctionsBrowser } from './StepFunctionsBrowser'
 
@@ -28,6 +29,7 @@ export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {
   rds: CloudscapeRDSBrowser,
   s3: CloudscapeS3Browser,
   secretsmanager: CloudscapeSecretsManagerBrowser,
+  sns: CloudscapeSNSBrowser,
   sqs: CloudscapeSQSBrowser,
   stepfunctions: CloudscapeStepFunctionsBrowser,
 }
