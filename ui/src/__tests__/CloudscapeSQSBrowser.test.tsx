@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 vi.mock('@/hooks/useEndpoint', () => ({
@@ -77,8 +77,13 @@ function mockFetchByUrl() {
     const method = init?.method ?? 'GET'
     let payload: unknown = statsPayload
     if (url.includes('/messages/batch')) {
-      payload = {}
+      payload =
+        method === 'POST'
+          ? { successful: [{ id: 'msg-1', messageId: 'x1' }, { id: 'msg-2', messageId: 'x2' }], failed: [] }
+          : {}
     } else if (url.includes('/api/sqs/queues/orders/messages')) {
+      if (method === 'POST') payload = { messageId: 'sent-1', md5OfMessageBody: 'md5' }
+      else
       payload = {
         messages: [
           { messageId: 'm-1', receiptHandle: 'rh-1', body: 'hello one', md5OfBody: 'md5-1', attributes: {}, messageAttributes: {} },
@@ -214,5 +219,92 @@ describe('CloudscapeSQSBrowser (via registry dispatch)', () => {
     expect(body.dlqEnabled).toBe(true)
     expect(body.maxReceiveCount).toBe(5)
     expect(body.sqsManagedSseEnabled).toBe(true)
+  })
+
+  it('batch-sends messages from the JSON template', async () => {
+    renderSQS()
+    fireEvent.click(await screen.findByRole('link', { name: 'orders' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Send batch' }))
+    fireEvent.click(await screen.findByTestId('batch-send-submit'))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) => String(url).includes('/messages/batch') && (init as RequestInit)?.method === 'POST',
+      )
+      expect(call).toBeTruthy()
+    })
+    const call = fetchMock.mock.calls.find(
+      ([url, init]) => String(url).includes('/messages/batch') && (init as RequestInit)?.method === 'POST',
+    )
+    const body = JSON.parse((call![1] as RequestInit).body as string)
+    expect(body.entries).toHaveLength(2)
+    expect(body.entries[0].id).toBe('msg-1')
+    expect(JSON.parse(body.entries[0].messageBody).documentNumber).toBe('123456789')
+  })
+
+  it('creates a saved message template and sends it to the queue', async () => {
+    renderSQS()
+    fireEvent.click(await screen.findByRole('link', { name: 'orders' }))
+    fireEvent.click(await screen.findByRole('tab', { name: 'Saved messages' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Create saved message' }))
+
+    fireEvent.change(await screen.findByPlaceholderText('Order created event'), { target: { value: 'ping' } })
+    const textarea = screen.getAllByRole('textbox').find((el) => el.tagName === 'TEXTAREA') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: '{"kind":"ping"}' } })
+    fireEvent.click(screen.getByTestId('save-favorite-submit'))
+
+    // persisted to the legacy localStorage key and listed in the table
+    expect(await screen.findByRole('link', { name: 'ping' })).toBeInTheDocument()
+    const stored = JSON.parse(localStorage.getItem('stackport:sqs-favorite-messages') ?? '{}')
+    expect(stored.messages).toHaveLength(1)
+    expect(stored.messages[0].sourceQueue).toBe('orders')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send ping' }))
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          String(url).includes('/api/sqs/queues/orders/messages') &&
+          !String(url).includes('/batch') &&
+          (init as RequestInit)?.method === 'POST',
+      )
+      expect(call).toBeTruthy()
+    })
+    const call = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url).includes('/api/sqs/queues/orders/messages') &&
+        !String(url).includes('/batch') &&
+        (init as RequestInit)?.method === 'POST',
+    )
+    const body = JSON.parse((call![1] as RequestInit).body as string)
+    expect(body.messageBody).toBe('{"kind":"ping"}')
+  })
+
+  it('saves a polled message as a template from the messages table', async () => {
+    renderSQS()
+    fireEvent.click(await screen.findByRole('link', { name: 'orders' }))
+    fireEvent.click(await screen.findByText('Poll for messages'))
+    await screen.findByText('hello one')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save message m-1' }))
+    const nameInput = await screen.findByDisplayValue('Message from orders')
+    fireEvent.change(nameInput, { target: { value: 'replayable' } })
+    fireEvent.click(screen.getByTestId('save-favorite-submit'))
+
+    const stored = JSON.parse(localStorage.getItem('stackport:sqs-favorite-messages') ?? '{}')
+    expect(stored.messages).toHaveLength(1)
+    expect(stored.messages[0].messageBody).toBe('hello one')
+    expect(stored.messages[0].originalMessageId).toBe('m-1')
+  })
+
+  it('navigates queues with j/k and opens the selection with Enter', async () => {
+    renderSQS()
+    await screen.findByRole('link', { name: 'orders' })
+
+    fireEvent.keyDown(document.body, { key: 'j' })
+    fireEvent.keyDown(document.body, { key: 'j' })
+    fireEvent.keyDown(document.body, { key: 'k' })
+    fireEvent.keyDown(document.body, { key: 'Enter' })
+
+    expect(await screen.findByText('arn:aws:sqs:us-east-1:000000000000:orders')).toBeInTheDocument()
   })
 })

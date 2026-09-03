@@ -16,6 +16,7 @@ import Input from '@cloudscape-design/components/input'
 import Link from '@cloudscape-design/components/link'
 import Modal from '@cloudscape-design/components/modal'
 import Pagination from '@cloudscape-design/components/pagination'
+import SegmentedControl from '@cloudscape-design/components/segmented-control'
 import SpaceBetween from '@cloudscape-design/components/space-between'
 import StatusIndicator from '@cloudscape-design/components/status-indicator'
 import Table from '@cloudscape-design/components/table'
@@ -34,15 +35,24 @@ import {
   purgeSQSQueue,
   receiveSQSMessages,
   sendSQSMessage,
+  sendSQSMessagesBatch,
   updateResourceTags,
   updateSQSQueueAttributes,
   updateSQSRedrivePolicy,
 } from '@/lib/api'
-import type { SQSMessage, SQSQueue, SQSQueueDetail } from '@/lib/types'
+import type {
+  SQSBatchSendMessageEntry,
+  SQSFavoriteMessage,
+  SQSMessage,
+  SQSQueue,
+  SQSQueueDetail,
+  SQSSendMessageRequest,
+} from '@/lib/types'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
+import { useSQSFavoriteMessages } from '@/hooks/useSQSFavoriteMessages'
 
-type ModalKind = 'create' | 'send' | 'settings' | 'purge' | 'delete'
+type ModalKind = 'create' | 'send' | 'batch-send' | 'settings' | 'purge' | 'delete'
 
 // Same storage key as the legacy view so queue favorites survive the migration
 const QUEUE_FAVORITES_KEY = 'sqs-favorites'
@@ -362,6 +372,511 @@ function EditSettingsModal({ queue, onClose, onDone }: { queue: SQSQueueDetail; 
   )
 }
 
+/** Port of the legacy BatchSendSheet: paste a JSON array, entries are auto-wrapped. */
+function BatchSendModal({ queue, onClose, onDone }: { queue: SQSQueueDetail; onClose: () => void; onDone: () => void }) {
+  const { activeEndpoint } = useEndpoint()
+  const isFifo = queue.type === 'FIFO'
+  const [jsonInput, setJsonInput] = useState(() =>
+    JSON.stringify(
+      isFifo
+        ? [
+            { documentNumber: '123456789', filters: [{ name: 'John Doe', age: '30' }], messageGroupId: 'group1' },
+            { documentNumber: '987654321', filters: [{ name: 'Jane Doe', age: '30' }], messageGroupId: 'group1' },
+          ]
+        : [
+            { documentNumber: '123456789', filters: [{ name: 'John Doe', age: '30' }] },
+            { documentNumber: '987654321', filters: [{ name: 'Jane Doe', age: '30' }] },
+          ],
+      null,
+      2,
+    ),
+  )
+  const [sending, setSending] = useState(false)
+
+  const submit = async () => {
+    let entries: unknown
+    try {
+      entries = JSON.parse(jsonInput)
+    } catch {
+      toast.error('Invalid JSON format')
+      return
+    }
+    if (!Array.isArray(entries) || entries.length === 0) {
+      toast.error('Root must be a non-empty array of message objects')
+      return
+    }
+    if (entries.length > 10) {
+      toast.error('Maximum 10 messages per batch')
+      return
+    }
+
+    const transformed: SQSBatchSendMessageEntry[] = []
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i]
+      if (typeof entry !== 'object' || entry === null) {
+        toast.error(`Entry ${i + 1} must be an object`)
+        return
+      }
+      const record = entry as Record<string, unknown>
+      const batchEntry: SQSBatchSendMessageEntry = {
+        id: `msg-${i + 1}`,
+        messageBody: typeof record.messageBody === 'string' ? record.messageBody : JSON.stringify(entry),
+      }
+      if (typeof record.delaySeconds === 'number') batchEntry.delaySeconds = record.delaySeconds
+      if (typeof record.messageGroupId === 'string') batchEntry.messageGroupId = record.messageGroupId
+      if (typeof record.messageDeduplicationId === 'string') batchEntry.messageDeduplicationId = record.messageDeduplicationId
+      transformed.push(batchEntry)
+    }
+
+    setSending(true)
+    try {
+      const response = await sendSQSMessagesBatch(queue.name, { entries: transformed }, activeEndpoint)
+      if (response.failed.length > 0) {
+        toast.error(`Sent ${response.successful.length}, failed ${response.failed.length}: ${response.failed.map((f) => f.message).join(', ')}`)
+      } else {
+        toast.success(`Sent ${response.successful.length} message(s) successfully`)
+      }
+      if (response.successful.length > 0) onDone()
+    } catch (error) {
+      toast.error(`Failed to send messages: ${error}`)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <Modal visible onDismiss={onClose} header={`Batch send messages to ${queue.name}`} size="large">
+      <Form
+        actions={
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button variant="link" onClick={onClose} disabled={sending}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={submit} loading={sending} data-testid="batch-send-submit">
+              Send batch
+            </Button>
+          </SpaceBetween>
+        }
+      >
+        <SpaceBetween size="m">
+          <FormField
+            label="Message data (JSON array)"
+            description={`Paste an array of message objects as-is; entry IDs are generated and objects are stringified. Max 10 per batch.${isFifo ? ' Each message must have a messageGroupId.' : ''}`}
+          >
+            <Textarea value={jsonInput} onChange={({ detail }) => setJsonInput(detail.value)} rows={14} spellcheck={false} />
+          </FormField>
+          <Alert type="info">
+            Your entire object (including any <code>id</code> field) is preserved in the message body. Optional per-entry
+            fields: <code>messageBody</code>, <code>delaySeconds</code>, <code>messageGroupId</code>,{' '}
+            <code>messageDeduplicationId</code>.
+          </Alert>
+        </SpaceBetween>
+      </Form>
+    </Modal>
+  )
+}
+
+/** Create or save a reusable message template (single or batch), ported from CreateFavoriteSheet. */
+function CreateSavedMessageModal({
+  queueName,
+  initial,
+  onClose,
+  onSave,
+}: {
+  queueName: string
+  initial?: { name: string; messageBody: string; originalMessageId?: string }
+  onClose: () => void
+  onSave: (data: {
+    name: string
+    messageBody: string
+    delaySeconds?: number
+    messageGroupId?: string
+    messageDeduplicationId?: string
+    sourceQueue?: string
+    originalMessageId?: string
+    isBatch?: boolean
+  }) => void
+}) {
+  const [mode, setMode] = useState<'single' | 'batch'>('single')
+  const [name, setName] = useState(initial?.name ?? '')
+  const [body, setBody] = useState(initial?.messageBody ?? '')
+  const [batchJson, setBatchJson] = useState(() =>
+    JSON.stringify(
+      [
+        { documentNumber: '123456789', filters: [{ name: 'John Doe', age: '30' }] },
+        { documentNumber: '987654321', filters: [{ name: 'Jane Doe', age: '30' }] },
+      ],
+      null,
+      2,
+    ),
+  )
+  const [delay, setDelay] = useState('')
+  const [groupId, setGroupId] = useState('')
+  const [dedupId, setDedupId] = useState('')
+
+  const submit = () => {
+    if (!name.trim()) {
+      toast.error('Name is required')
+      return
+    }
+    if (mode === 'batch') {
+      try {
+        const parsed = JSON.parse(batchJson)
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          toast.error('Batch must be a non-empty JSON array')
+          return
+        }
+      } catch {
+        toast.error('Invalid JSON format')
+        return
+      }
+      onSave({ name: name.trim(), messageBody: batchJson, sourceQueue: queueName, isBatch: true })
+    } else {
+      if (!body.trim()) {
+        toast.error('Message body is required')
+        return
+      }
+      onSave({
+        name: name.trim(),
+        messageBody: body,
+        delaySeconds: delay ? Number(delay) : undefined,
+        messageGroupId: groupId || undefined,
+        messageDeduplicationId: dedupId || undefined,
+        sourceQueue: queueName,
+        originalMessageId: initial?.originalMessageId,
+        isBatch: false,
+      })
+    }
+    toast.success(`Saved "${name.trim()}"`)
+    onClose()
+  }
+
+  return (
+    <Modal visible onDismiss={onClose} header="Save message template" size="medium">
+      <Form
+        actions={
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button variant="link" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={submit} data-testid="save-favorite-submit">
+              Save
+            </Button>
+          </SpaceBetween>
+        }
+      >
+        <SpaceBetween size="m">
+          <SegmentedControl
+            selectedId={mode}
+            onChange={({ detail }) => setMode(detail.selectedId as 'single' | 'batch')}
+            label="Template kind"
+            options={[
+              { id: 'single', text: 'Single message' },
+              { id: 'batch', text: 'Batch' },
+            ]}
+          />
+          <FormField label="Name">
+            <Input value={name} onChange={({ detail }) => setName(detail.value)} placeholder="Order created event" autoFocus />
+          </FormField>
+          {mode === 'single' ? (
+            <>
+              <FormField label="Message body">
+                <Textarea value={body} onChange={({ detail }) => setBody(detail.value)} rows={8} spellcheck={false} />
+              </FormField>
+              <ExpandableSection headerText="Optional send parameters">
+                <SpaceBetween size="s">
+                  <FormField label="Delay seconds">
+                    <Input type="number" value={delay} onChange={({ detail }) => setDelay(detail.value)} />
+                  </FormField>
+                  <FormField label="Message group ID" description="FIFO queues">
+                    <Input value={groupId} onChange={({ detail }) => setGroupId(detail.value)} />
+                  </FormField>
+                  <FormField label="Message deduplication ID" description="FIFO queues">
+                    <Input value={dedupId} onChange={({ detail }) => setDedupId(detail.value)} />
+                  </FormField>
+                </SpaceBetween>
+              </ExpandableSection>
+            </>
+          ) : (
+            <FormField label="Batch messages (JSON array)" description="Sent through the batch endpoint, max 10 per send">
+              <Textarea value={batchJson} onChange={({ detail }) => setBatchJson(detail.value)} rows={10} spellcheck={false} />
+            </FormField>
+          )}
+        </SpaceBetween>
+      </Form>
+    </Modal>
+  )
+}
+
+/** Saved message viewer with in-place editing, ported from FavoriteViewerSheet. */
+function SavedMessageViewerModal({
+  favorite,
+  onClose,
+  onUpdate,
+  onDelete,
+  onSend,
+}: {
+  favorite: SQSFavoriteMessage
+  onClose: () => void
+  onUpdate: (id: string, data: { name: string; messageBody: string }) => void
+  onDelete: (id: string) => void
+  onSend: (favorite: SQSFavoriteMessage) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(favorite.name)
+  const [body, setBody] = useState(favorite.messageBody)
+
+  const details: Array<[string, string]> = [
+    ['Created', new Date(favorite.createdAt).toLocaleString()],
+    ...(favorite.sourceQueue ? ([['Source queue', favorite.sourceQueue]] as Array<[string, string]>) : []),
+    ...(favorite.originalMessageId ? ([['Original message ID', favorite.originalMessageId]] as Array<[string, string]>) : []),
+    ...(favorite.delaySeconds ? ([['Delay seconds', String(favorite.delaySeconds)]] as Array<[string, string]>) : []),
+    ...(favorite.messageGroupId ? ([['Message group ID', favorite.messageGroupId]] as Array<[string, string]>) : []),
+    ...(favorite.messageDeduplicationId ? ([['Deduplication ID', favorite.messageDeduplicationId]] as Array<[string, string]>) : []),
+  ]
+
+  return (
+    <Modal visible onDismiss={onClose} header={favorite.name} size="large">
+      <SpaceBetween size="m">
+        <SpaceBetween direction="horizontal" size="xs">
+          {favorite.isBatch && <Badge color="blue">Batch</Badge>}
+          {editing ? (
+            <>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  onUpdate(favorite.id, { name: name.trim(), messageBody: body })
+                  toast.success('Saved message updated')
+                  setEditing(false)
+                }}
+                disabled={!name.trim()}
+                data-testid="favorite-save-edit"
+              >
+                Save
+              </Button>
+              <Button
+                variant="link"
+                onClick={() => {
+                  setEditing(false)
+                  setName(favorite.name)
+                  setBody(favorite.messageBody)
+                }}
+              >
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button iconName="edit" onClick={() => setEditing(true)}>
+                Edit
+              </Button>
+              <Button
+                iconName="copy"
+                onClick={() => {
+                  navigator.clipboard
+                    .writeText(favorite.messageBody)
+                    .then(() => toast.success('Copied message body to clipboard'))
+                    .catch(() => toast.error('Failed to copy'))
+                }}
+              >
+                Copy
+              </Button>
+              <Button iconName="send" onClick={() => onSend(favorite)}>
+                Send
+              </Button>
+              <Button iconName="remove" onClick={() => onDelete(favorite.id)}>
+                Delete
+              </Button>
+            </>
+          )}
+        </SpaceBetween>
+
+        {editing ? (
+          <SpaceBetween size="s">
+            <FormField label="Name">
+              <Input value={name} onChange={({ detail }) => setName(detail.value)} />
+            </FormField>
+            <FormField label="Message body">
+              <Textarea value={body} onChange={({ detail }) => setBody(detail.value)} rows={10} spellcheck={false} />
+            </FormField>
+          </SpaceBetween>
+        ) : (
+          <FormField label="Message body">
+            <Box variant="code">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all text-xs">{favorite.messageBody}</pre>
+            </Box>
+          </FormField>
+        )}
+
+        <ColumnLayout columns={2} variant="text-grid">
+          {details.map(([label, value]) => (
+            <div key={label}>
+              <Box variant="awsui-key-label">{label}</Box>
+              <Box fontSize="body-s">{value}</Box>
+            </div>
+          ))}
+        </ColumnLayout>
+      </SpaceBetween>
+    </Modal>
+  )
+}
+
+/** Saved messages tab: reusable templates scoped to this queue, ported from the legacy Favorites tab. */
+function SavedMessagesPanel({ queue, onCountsChanged }: { queue: SQSQueueDetail; onCountsChanged: () => void }) {
+  const { activeEndpoint } = useEndpoint()
+  const { favoriteMessages, addFavorite, removeFavorite, updateFavorite } = useSQSFavoriteMessages()
+  const saved = favoriteMessages.filter((f) => f.sourceQueue === queue.name)
+  const [creating, setCreating] = useState(false)
+  const [viewing, setViewing] = useState<SQSFavoriteMessage | null>(null)
+
+  const send = async (favorite: SQSFavoriteMessage) => {
+    try {
+      if (favorite.isBatch) {
+        let entries: unknown
+        try {
+          entries = JSON.parse(favorite.messageBody)
+        } catch {
+          toast.error('Invalid batch format')
+          return
+        }
+        if (!Array.isArray(entries)) {
+          toast.error('Batch template has an invalid format')
+          return
+        }
+        const transformed = entries.map((entry, i) => ({
+          id: `msg-${i + 1}`,
+          messageBody:
+            typeof entry === 'object' && entry !== null && 'messageBody' in entry
+              ? String((entry as Record<string, unknown>).messageBody)
+              : JSON.stringify(entry),
+        }))
+        const response = await sendSQSMessagesBatch(queue.name, { entries: transformed }, activeEndpoint)
+        if (response.failed.length > 0) {
+          toast.error(`Sent ${response.successful.length}, failed ${response.failed.length}`)
+        } else {
+          toast.success(`Sent batch "${favorite.name}" (${response.successful.length} messages)`)
+        }
+      } else {
+        const request: SQSSendMessageRequest = {
+          messageBody: favorite.messageBody,
+          delaySeconds: favorite.delaySeconds,
+          messageGroupId: favorite.messageGroupId,
+          messageDeduplicationId: favorite.messageDeduplicationId,
+        }
+        await sendSQSMessage(queue.name, request, activeEndpoint)
+        toast.success(`Sent "${favorite.name}" to ${queue.name}`)
+      }
+      onCountsChanged()
+    } catch (error) {
+      toast.error(`Failed to send: ${error}`)
+    }
+  }
+
+  return (
+    <SpaceBetween size="m">
+      <Table
+        items={saved}
+        trackBy="id"
+        variant="embedded"
+        header={
+          <Header
+            variant="h3"
+            counter={saved.length ? `(${saved.length})` : undefined}
+            description="Save frequently used message templates for quick reuse"
+            actions={
+              <Button iconName="add-plus" onClick={() => setCreating(true)}>
+                Create saved message
+              </Button>
+            }
+          >
+            Saved messages
+          </Header>
+        }
+        empty={
+          <Box textAlign="center" padding="l">
+            <SpaceBetween size="s">
+              <Box>No saved messages</Box>
+              <Box color="text-body-secondary">Save polled messages or create templates to quickly reuse them.</Box>
+            </SpaceBetween>
+          </Box>
+        }
+        columnDefinitions={[
+          {
+            id: 'name',
+            header: 'Name',
+            cell: (f) => (
+              <SpaceBetween direction="horizontal" size="xs">
+                <Link
+                  href={`#${f.id}`}
+                  onFollow={(event) => {
+                    event.preventDefault()
+                    setViewing(f)
+                  }}
+                >
+                  {f.name}
+                </Link>
+                {f.isBatch && <Badge color="blue">Batch</Badge>}
+              </SpaceBetween>
+            ),
+          },
+          {
+            id: 'preview',
+            header: 'Body preview',
+            cell: (f) => <Box fontSize="body-s">{f.messageBody.length > 100 ? `${f.messageBody.slice(0, 97)}...` : f.messageBody}</Box>,
+          },
+          { id: 'created', header: 'Created', cell: (f) => new Date(f.createdAt).toLocaleString() },
+          {
+            id: 'actions',
+            header: '',
+            cell: (f) => (
+              <SpaceBetween direction="horizontal" size="xxs">
+                <Button variant="inline-icon" iconName="send" ariaLabel={`Send ${f.name}`} onClick={() => void send(f)} />
+                <Button
+                  variant="inline-icon"
+                  iconName="copy"
+                  ariaLabel={`Copy body of ${f.name}`}
+                  onClick={() => {
+                    navigator.clipboard
+                      .writeText(f.messageBody)
+                      .then(() => toast.success('Copied message body to clipboard'))
+                      .catch(() => toast.error('Failed to copy'))
+                  }}
+                />
+                <Button
+                  variant="inline-icon"
+                  iconName="remove"
+                  ariaLabel={`Delete ${f.name}`}
+                  onClick={() => {
+                    removeFavorite(f.id)
+                    toast.success(`Deleted "${f.name}"`)
+                  }}
+                />
+              </SpaceBetween>
+            ),
+          },
+        ]}
+      />
+
+      {creating && (
+        <CreateSavedMessageModal queueName={queue.name} onClose={() => setCreating(false)} onSave={addFavorite} />
+      )}
+      {viewing && (
+        <SavedMessageViewerModal
+          favorite={favoriteMessages.find((f) => f.id === viewing.id) ?? viewing}
+          onClose={() => setViewing(null)}
+          onUpdate={updateFavorite}
+          onDelete={(id) => {
+            removeFavorite(id)
+            toast.success('Saved message deleted')
+            setViewing(null)
+          }}
+          onSend={(f) => void send(f)}
+        />
+      )}
+    </SpaceBetween>
+  )
+}
+
 function ConfirmActionModal({
   queue,
   action,
@@ -473,11 +988,27 @@ function MessageViewerModal({ message, onClose }: { message: SQSMessage; onClose
 
 function MessagesPanel({ queue, onCountsChanged }: { queue: SQSQueueDetail; onCountsChanged: () => void }) {
   const { activeEndpoint } = useEndpoint()
+  const { addFavorite, addFavorites } = useSQSFavoriteMessages()
   const [messages, setMessages] = useState<SQSMessage[]>([])
   const [selected, setSelected] = useState<SQSMessage[]>([])
   const [viewing, setViewing] = useState<SQSMessage | null>(null)
+  const [saving, setSaving] = useState<SQSMessage | null>(null)
   const [polling, setPolling] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  const saveSelected = () => {
+    if (selected.length === 0) return
+    addFavorites(
+      selected.map((m) => ({
+        messageBody: m.body,
+        name: `Message from ${queue.name}`,
+        sourceQueue: queue.name,
+        originalMessageId: m.messageId,
+      })),
+    )
+    setSelected([])
+    toast.success(`Saved ${selected.length} message(s)`)
+  }
 
   const poll = useCallback(async () => {
     setPolling(true)
@@ -542,6 +1073,9 @@ function MessagesPanel({ queue, onCountsChanged }: { queue: SQSQueueDetail; onCo
                 <Button iconName="refresh" onClick={poll} loading={polling}>
                   Poll for messages
                 </Button>
+                <Button disabled={selected.length === 0} onClick={saveSelected}>
+                  Save selected ({selected.length})
+                </Button>
                 <Button disabled={selected.length === 0} loading={deleting} onClick={deleteSelected}>
                   Delete selected ({selected.length})
                 </Button>
@@ -576,16 +1110,32 @@ function MessagesPanel({ queue, onCountsChanged }: { queue: SQSQueueDetail; onCo
           {
             id: 'actions',
             header: '',
-            width: 90,
+            width: 130,
             cell: (m) => (
-              <Button variant="inline-link" onClick={() => deleteOne(m)}>
-                Delete
-              </Button>
+              <SpaceBetween direction="horizontal" size="xxs">
+                <Button
+                  variant="inline-icon"
+                  iconName="star"
+                  ariaLabel={`Save message ${m.messageId}`}
+                  onClick={() => setSaving(m)}
+                />
+                <Button variant="inline-link" onClick={() => deleteOne(m)}>
+                  Delete
+                </Button>
+              </SpaceBetween>
             ),
           },
         ]}
       />
       {viewing && <MessageViewerModal message={viewing} onClose={() => setViewing(null)} />}
+      {saving && (
+        <CreateSavedMessageModal
+          queueName={queue.name}
+          initial={{ name: `Message from ${queue.name}`, messageBody: saving.body, originalMessageId: saving.messageId }}
+          onClose={() => setSaving(null)}
+          onSave={addFavorite}
+        />
+      )}
     </SpaceBetween>
   )
 }
@@ -737,6 +1287,7 @@ function QueueDetailView({
             <Button onClick={onBack}>Back to queues</Button>
             <Button iconName="refresh" onClick={() => refresh()} ariaLabel="Refresh queue" />
             <Button onClick={() => setModal('send')}>Send message</Button>
+            <Button onClick={() => setModal('batch-send')}>Send batch</Button>
             <Button onClick={() => setModal('settings')}>Edit</Button>
             <Button onClick={() => setModal('purge')}>Purge</Button>
             <Button onClick={() => setModal('delete')}>Delete</Button>
@@ -760,6 +1311,11 @@ function QueueDetailView({
             content: <MessagesPanel queue={detail} onCountsChanged={refresh} />,
           },
           {
+            id: 'saved',
+            label: 'Saved messages',
+            content: <SavedMessagesPanel queue={detail} onCountsChanged={refresh} />,
+          },
+          {
             id: 'config',
             label: 'Configuration',
             content: <ConfigPanel detail={detail} />,
@@ -773,6 +1329,7 @@ function QueueDetailView({
       />
 
       {modal === 'send' && <SendMessageModal queue={detail} onClose={closeModal} onDone={doneAndRefresh} />}
+      {modal === 'batch-send' && <BatchSendModal queue={detail} onClose={closeModal} onDone={doneAndRefresh} />}
       {modal === 'settings' && <EditSettingsModal queue={detail} onClose={closeModal} onDone={doneAndRefresh} />}
       {modal === 'purge' && <ConfirmActionModal queue={detail} action="purge" onClose={closeModal} onDone={doneAndRefresh} />}
       {modal === 'delete' && (
@@ -826,6 +1383,31 @@ export function CloudscapeSQSBrowser() {
     setSelected(null)
     refresh()
   }
+
+  // j/k/Enter keyboard navigation over the visible page, ported from the legacy browser.
+  useEffect(() => {
+    if (selectedQueueName) return
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      if (e.key === 'j' || e.key === 'k') {
+        setSelected((prev) => {
+          const list = items as SQSQueue[]
+          if (list.length === 0) return prev
+          const idx = prev ? list.findIndex((q) => q.name === prev.name) : -1
+          const next = e.key === 'j' ? Math.min(idx + 1, list.length - 1) : Math.max(idx - 1, 0)
+          return list[next] ?? prev
+        })
+      } else if (e.key === 'Enter') {
+        setSelected((prev) => {
+          if (prev) openQueue(prev.name)
+          return prev
+        })
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [items, selectedQueueName, openQueue])
 
   // Deep-linked queue detail (?queue=name), matching the legacy view
   if (selectedQueueName) {

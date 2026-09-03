@@ -1,7 +1,9 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useCollection } from '@cloudscape-design/collection-hooks'
 import Alert from '@cloudscape-design/components/alert'
+import AttributeEditor from '@cloudscape-design/components/attribute-editor'
+import Badge from '@cloudscape-design/components/badge'
 import Box from '@cloudscape-design/components/box'
 import Button from '@cloudscape-design/components/button'
 import ButtonDropdown from '@cloudscape-design/components/button-dropdown'
@@ -9,6 +11,7 @@ import Cards from '@cloudscape-design/components/cards'
 import CollectionPreferences from '@cloudscape-design/components/collection-preferences'
 import ContentLayout from '@cloudscape-design/components/content-layout'
 import Header from '@cloudscape-design/components/header'
+import Input from '@cloudscape-design/components/input'
 import Link from '@cloudscape-design/components/link'
 import Modal from '@cloudscape-design/components/modal'
 import Pagination from '@cloudscape-design/components/pagination'
@@ -18,10 +21,18 @@ import StatusIndicator from '@cloudscape-design/components/status-indicator'
 import Table from '@cloudscape-design/components/table'
 import type { TableProps } from '@cloudscape-design/components/table'
 import Tabs from '@cloudscape-design/components/tabs'
+import { toast } from 'sonner'
 import { CloudscapeShell } from '@/components/cloudscape/CloudscapeShell'
 import { CLOUDSCAPE_SERVICE_VIEWS } from '@/components/cloudscape/views'
-import { fetchResourceDetail, fetchResources, fetchStats } from '@/lib/api'
-import type { ResourceItem, ResourceListResponse, StatsResponse } from '@/lib/types'
+import {
+  fetchResourceDetail,
+  fetchResources,
+  fetchResourceTags,
+  fetchStats,
+  fetchTagsSupported,
+  updateResourceTags,
+} from '@/lib/api'
+import type { ResourceItem, ResourceListResponse, StatsResponse, TagsSupportedEntry } from '@/lib/types'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
 import { exportData } from '@/lib/export'
@@ -56,15 +67,117 @@ function deriveColumns(items: ResourceItem[]): string[] {
   return [...keys].slice(0, MAX_COLUMNS)
 }
 
+function ResourceTagsPanel({
+  service,
+  resourceType,
+  resourceId,
+  writable,
+}: {
+  service: string
+  resourceType: string
+  resourceId: string
+  writable: boolean
+}) {
+  const { activeEndpoint } = useEndpoint()
+  const [tags, setTags] = useState<Array<{ key: string; value: string }>>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    fetchResourceTags(service, resourceType, resourceId, activeEndpoint)
+      .then((res) => {
+        if (!cancelled) setTags(Object.entries(res.tags).map(([key, value]) => ({ key, value })))
+      })
+      .catch(() => {
+        if (!cancelled) setTags([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [service, resourceType, resourceId, activeEndpoint])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const record = Object.fromEntries(tags.filter((t) => t.key.trim()).map((t) => [t.key.trim(), t.value]))
+      await updateResourceTags(service, resourceType, resourceId, record, activeEndpoint)
+      toast.success('Tags updated')
+    } catch (error) {
+      toast.error(`Failed to update tags: ${error}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <StatusIndicator type="loading">Loading tags</StatusIndicator>
+
+  if (!writable) {
+    return tags.length === 0 ? (
+      <Box color="text-status-inactive">No tags</Box>
+    ) : (
+      <SpaceBetween direction="horizontal" size="xs">
+        {tags.map((t) => (
+          <Badge key={t.key} color="grey">
+            {t.key}: {t.value}
+          </Badge>
+        ))}
+      </SpaceBetween>
+    )
+  }
+
+  return (
+    <SpaceBetween size="m">
+      <AttributeEditor
+        items={tags}
+        onAddButtonClick={() => setTags([...tags, { key: '', value: '' }])}
+        onRemoveButtonClick={({ detail }) => setTags(tags.filter((_, i) => i !== detail.itemIndex))}
+        addButtonText="Add tag"
+        removeButtonText="Remove"
+        empty="No tags"
+        definition={[
+          {
+            label: 'Key',
+            control: (item, index) => (
+              <Input
+                value={item.key}
+                onChange={({ detail }) => setTags(tags.map((t, i) => (i === index ? { ...t, key: detail.value } : t)))}
+              />
+            ),
+          },
+          {
+            label: 'Value',
+            control: (item, index) => (
+              <Input
+                value={item.value}
+                onChange={({ detail }) => setTags(tags.map((t, i) => (i === index ? { ...t, value: detail.value } : t)))}
+              />
+            ),
+          },
+        ]}
+      />
+      <Button variant="primary" onClick={save} loading={saving} data-testid="save-resource-tags">
+        Save tags
+      </Button>
+    </SpaceBetween>
+  )
+}
+
 function DetailModal({
   service,
   resourceType,
   resourceId,
+  tagSupport,
   onClose,
 }: {
   service: string
   resourceType: string
   resourceId: string
+  tagSupport: TagsSupportedEntry | null
   onClose: () => void
 }) {
   const { activeEndpoint } = useEndpoint()
@@ -74,8 +187,8 @@ function DetailModal({
   )
   const { data, loading, error } = useFetch(fetcher)
 
-  return (
-    <Modal visible onDismiss={onClose} header={resourceId} size="large">
+  const detailsContent = (
+    <>
       {loading && <StatusIndicator type="loading">Loading detail</StatusIndicator>}
       {!loading && error && <Alert type="error">{error}</Alert>}
       {!loading && data && (
@@ -84,6 +197,32 @@ function DetailModal({
             {JSON.stringify(data.detail, null, 2)}
           </pre>
         </Box>
+      )}
+    </>
+  )
+
+  return (
+    <Modal visible onDismiss={onClose} header={resourceId} size="large">
+      {tagSupport ? (
+        <Tabs
+          tabs={[
+            { id: 'details', label: 'Details', content: detailsContent },
+            {
+              id: 'tags',
+              label: 'Tags',
+              content: (
+                <ResourceTagsPanel
+                  service={service}
+                  resourceType={resourceType}
+                  resourceId={resourceId}
+                  writable={tagSupport.writable}
+                />
+              ),
+            },
+          ]}
+        />
+      ) : (
+        detailsContent
       )}
     </Modal>
   )
@@ -119,6 +258,32 @@ function ResourceTable({
       sorting: {},
     })
 
+  // j/k/Enter keyboard navigation over the visible page, ported from the legacy browser.
+  const [selectedRow, setSelectedRow] = useState(-1)
+  const [prevItems, setPrevItems] = useState(items)
+  if (prevItems !== items) {
+    setPrevItems(items)
+    setSelectedRow(-1)
+  }
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      if (e.key === 'j') {
+        setSelectedRow((prev) => Math.min(prev + 1, pageItems.length - 1))
+      } else if (e.key === 'k') {
+        setSelectedRow((prev) => Math.max(prev - 1, 0))
+      } else if (e.key === 'Enter') {
+        setSelectedRow((prev) => {
+          if (prev >= 0 && prev < pageItems.length) onOpenDetail(resourceType, pageItems[prev].id)
+          return prev
+        })
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [pageItems, resourceType, onOpenDetail])
+
   const columnDefinitions = useMemo<TableProps.ColumnDefinition<ResourceItem>[]>(
     () =>
       columns.map((key) => ({
@@ -152,6 +317,16 @@ function ResourceTable({
       variant="borderless"
       stickyHeader
       resizableColumns
+      selectionType="single"
+      selectedItems={selectedRow >= 0 && selectedRow < pageItems.length ? [pageItems[selectedRow]] : []}
+      onSelectionChange={({ detail }) => {
+        const picked = detail.selectedItems[0]
+        setSelectedRow(picked ? pageItems.findIndex((i) => i.id === picked.id) : -1)
+      }}
+      ariaLabels={{
+        selectionGroupLabel: 'Resource selection',
+        itemSelectionLabel: (_data, item) => `Select ${(item as ResourceItem).id}`,
+      }}
       empty={<Box textAlign="center">No {resourceType} found</Box>}
       filter={
         <PropertyFilter
@@ -246,6 +421,9 @@ export default function CloudscapeResourceBrowser() {
 
   const statsFetcher = useCallback(() => fetchStats(activeEndpoint), [activeEndpoint])
   const { data: stats } = useFetch<StatsResponse>(statsFetcher)
+
+  const tagsSupportedFetcher = useCallback(() => fetchTagsSupported(activeEndpoint), [activeEndpoint])
+  const { data: tagsSupported } = useFetch(tagsSupportedFetcher)
 
   const resourcesFetcher = useCallback(
     () => (service ? fetchResources(service, undefined, activeEndpoint) : Promise.resolve(null)),
@@ -359,6 +537,9 @@ export default function CloudscapeResourceBrowser() {
           service={service}
           resourceType={detail.resourceType}
           resourceId={detail.id}
+          tagSupport={
+            tagsSupported?.supported.find((s) => s.service === service && s.type === detail.resourceType) ?? null
+          }
           onClose={() => setDetail(null)}
         />
       )}

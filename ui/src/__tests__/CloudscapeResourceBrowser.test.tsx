@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 vi.mock('@/hooks/useEndpoint', () => ({
@@ -59,15 +59,22 @@ const aliceDetail = {
   detail: { UserName: 'alice', Arn: 'arn:aws:kms:0:key/alice' },
 }
 
+let fetchMock: ReturnType<typeof vi.fn>
+
 function mockFetchByUrl() {
-  globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+  fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
+    const method = init?.method ?? 'GET'
     let payload: unknown = statsPayload
-    if (url.includes('/api/resources/kms/keys/alice')) payload = aliceDetail
+    if (url.includes('/api/tags/supported')) payload = { supported: [{ service: 'kms', type: 'keys', writable: true }] }
+    else if (url.includes('/api/tags/kms/keys/alice') && method === 'PUT') payload = { success: true }
+    else if (url.includes('/api/tags/kms/keys/alice')) payload = { tags: { team: 'core' } }
+    else if (url.includes('/api/resources/kms/keys/alice')) payload = aliceDetail
     else if (url.includes('/api/resources/kms')) payload = kmsResources
     else if (url.includes('/api/stats')) payload = statsPayload
     return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) } as Response)
-  }) as unknown as typeof fetch
+  })
+  globalThis.fetch = fetchMock as unknown as typeof fetch
 }
 
 function renderBrowser(path: string) {
@@ -113,5 +120,42 @@ describe('CloudscapeResourceBrowser', () => {
     renderBrowser('/cloudscape/resources/kms')
     expect((await screen.findAllByText('Export')).length).toBeGreaterThan(0)
     expect(await screen.findByPlaceholderText('Filter aliases')).toBeInTheDocument()
+  })
+
+  it('edits tags from the detail modal when the type supports them', async () => {
+    renderBrowser('/cloudscape/resources/kms')
+    fireEvent.click(await screen.findByText('keys (2)'))
+    fireEvent.click(await screen.findByText('alice'))
+    await screen.findByText(/"UserName": "alice"/)
+
+    const tagsTabs = screen.getAllByRole('tab', { name: 'Tags' })
+    fireEvent.click(tagsTabs[tagsTabs.length - 1])
+
+    const valueInput = await screen.findByDisplayValue('core')
+    fireEvent.change(valueInput, { target: { value: 'platform' } })
+    fireEvent.click(screen.getByTestId('save-resource-tags'))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT')
+      expect(call).toBeTruthy()
+    })
+    const call = fetchMock.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT')
+    expect(String(call![0])).toContain('/api/tags/kms/keys/alice')
+    const body = JSON.parse((call![1] as RequestInit).body as string)
+    expect(body).toEqual({ tags: { team: 'platform' } })
+  })
+
+  it('navigates rows with j/k and opens the detail with Enter', async () => {
+    renderBrowser('/cloudscape/resources/kms')
+    fireEvent.click(await screen.findByText('keys (2)'))
+    await screen.findByText('alice')
+
+    fireEvent.keyDown(document.body, { key: 'j' })
+    fireEvent.keyDown(document.body, { key: 'j' })
+    fireEvent.keyDown(document.body, { key: 'k' })
+    fireEvent.keyDown(document.body, { key: 'Enter' })
+
+    // first j selects alice (index 0), second j selects bob, k moves back to alice
+    expect(await screen.findByText(/"UserName": "alice"/)).toBeInTheDocument()
   })
 })
