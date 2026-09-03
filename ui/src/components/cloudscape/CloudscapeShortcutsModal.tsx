@@ -5,6 +5,7 @@ import SpaceBetween from '@cloudscape-design/components/space-between'
 
 const GLOBAL_SHORTCUTS: Array<[string, string]> = [
   ['?', 'Show keyboard shortcuts'],
+  ['Alt+S', 'Focus service search'],
   ['b', 'Toggle sidebar'],
   ['t', 'Toggle theme'],
   ['g then d', 'Go to Dashboard'],

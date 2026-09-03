@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppLayout from '@cloudscape-design/components/app-layout'
 import Autosuggest from '@cloudscape-design/components/autosuggest'
+import type { AutosuggestProps } from '@cloudscape-design/components/autosuggest'
 import Flashbar from '@cloudscape-design/components/flashbar'
 import SideNavigation from '@cloudscape-design/components/side-navigation'
 import type { SideNavigationProps } from '@cloudscape-design/components/side-navigation'
@@ -62,6 +63,20 @@ export function CloudscapeShell({
   const cycleTheme = useCallback(() => {
     setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')
   }, [theme, setTheme])
+
+  // Alt+S focuses the service search, mirroring the AWS console shortcut.
+  // e.code is used because on macOS Option+S types "ß" into e.key.
+  const searchRef = useRef<AutosuggestProps.Ref>(null)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.altKey && e.code === 'KeyS' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        searchRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
 
   useKeyboardShortcuts(
     [
@@ -165,13 +180,14 @@ export function CloudscapeShell({
           }}
           search={
             <Autosuggest
+              ref={searchRef}
               value={searchValue}
               onChange={({ detail }) => setSearchValue(detail.value)}
               onSelect={({ detail }) => {
                 if (detail.value) goToService(detail.value)
               }}
               options={searchOptions}
-              placeholder="Search services"
+              placeholder="Search services (Alt+S)"
               ariaLabel="Search services"
               empty="No services found"
             />

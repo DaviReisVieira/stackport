@@ -125,7 +125,7 @@ describe('CloudscapeDashboard', () => {
 
   it('shows the top-nav service search', () => {
     renderDashboard()
-    expect(screen.getAllByPlaceholderText('Search services').length).toBeGreaterThan(0)
+    expect(screen.getAllByPlaceholderText(/Search services/).length).toBeGreaterThan(0)
   })
 
   it('pins a favorited service to the top navigation', () => {
@@ -158,5 +158,11 @@ describe('CloudscapeDashboard', () => {
     renderDashboard()
     fireEvent.click(screen.getAllByLabelText('Keyboard shortcuts')[0])
     expect(screen.getByText('Toggle sidebar')).toBeInTheDocument()
+  })
+
+  it('focuses the service search with Alt+S', () => {
+    renderDashboard()
+    fireEvent.keyDown(document.body, { code: 'KeyS', altKey: true })
+    expect((document.activeElement as HTMLInputElement)?.placeholder).toContain('Search services')
   })
 })
