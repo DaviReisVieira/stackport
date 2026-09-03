@@ -1968,6 +1968,39 @@ def populate_cloudwatch():
     except Exception as e:
         print(f"CloudWatch error: {e}")
 
+    # Metric samples so dashboard charts have real lines to draw
+    try:
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        for service in ("api", "worker"):
+            base_latency = random.randint(80, 150)
+            base_requests = random.randint(20, 60)
+            for minute in range(30, 0, -1):
+                ts = now - timedelta(minutes=minute)
+                client.put_metric_data(
+                    Namespace="StackPort/Demo",
+                    MetricData=[
+                        {
+                            "MetricName": "Latency",
+                            "Value": base_latency + random.randint(-20, 40),
+                            "Timestamp": ts,
+                            "Unit": "Milliseconds",
+                            "Dimensions": [{"Name": "Service", "Value": service}],
+                        },
+                        {
+                            "MetricName": "Requests",
+                            "Value": max(0, base_requests + random.randint(-15, 25)),
+                            "Timestamp": ts,
+                            "Unit": "Count",
+                            "Dimensions": [{"Name": "Service", "Value": service}],
+                        },
+                    ],
+                )
+        print("  ✓ Metric samples: StackPort/Demo Latency and Requests (api, worker, 30 min)")
+    except Exception as e:
+        print(f"  ✗ Error writing metric samples: {e}")
+
     dashboard_count = random.randint(1, 2)
     try:
         for i in range(dashboard_count):
@@ -1975,19 +2008,49 @@ def populate_cloudwatch():
             body = {
                 "widgets": [
                     {
-                        "type": "metric",
+                        "type": "text",
                         "x": 0,
                         "y": 0,
+                        "width": 24,
+                        "height": 2,
+                        "properties": {"markdown": f"# {dashboard_name}\nService health overview seeded by StackPort."},
+                    },
+                    {
+                        "type": "metric",
+                        "x": 0,
+                        "y": 2,
                         "width": 12,
                         "height": 6,
                         "properties": {
-                            "metrics": [["AWS/EC2", "CPUUtilization"]],
-                            "period": 300,
+                            "metrics": [
+                                ["StackPort/Demo", "Latency", "Service", "api", {"label": "api latency"}],
+                                ["StackPort/Demo", "Latency", "Service", "worker", {"label": "worker latency"}],
+                            ],
+                            "view": "timeSeries",
+                            "period": 60,
                             "stat": "Average",
                             "region": "us-east-1",
-                            "title": "CPU",
+                            "title": "Latency (ms)",
                         },
-                    }
+                    },
+                    {
+                        "type": "metric",
+                        "x": 12,
+                        "y": 2,
+                        "width": 12,
+                        "height": 6,
+                        "properties": {
+                            "metrics": [
+                                ["StackPort/Demo", "Requests", "Service", "api", {"label": "api requests", "stat": "Sum"}],
+                                ["StackPort/Demo", "Requests", "Service", "worker", {"label": "worker requests", "stat": "Sum"}],
+                            ],
+                            "view": "timeSeries",
+                            "period": 60,
+                            "stat": "Sum",
+                            "region": "us-east-1",
+                            "title": "Requests",
+                        },
+                    },
                 ]
             }
             try:

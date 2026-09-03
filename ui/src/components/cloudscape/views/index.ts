@@ -4,6 +4,7 @@ import { CloudscapeEC2Browser } from './EC2Browser'
 import { CloudscapeIAMBrowser } from './IAMBrowser'
 import { CloudscapeLambdaBrowser } from './LambdaBrowser'
 import { CloudscapeLogsBrowser } from './LogsBrowser'
+import { CloudscapeMonitoringBrowser } from './MonitoringBrowser'
 import { CloudscapeRDSBrowser } from './RDSBrowser'
 import { CloudscapeS3Browser } from './S3Browser'
 import { CloudscapeSecretsManagerBrowser } from './SecretsManagerBrowser'
@@ -23,6 +24,7 @@ export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {
   iam: CloudscapeIAMBrowser,
   lambda: CloudscapeLambdaBrowser,
   logs: CloudscapeLogsBrowser,
+  monitoring: CloudscapeMonitoringBrowser,
   rds: CloudscapeRDSBrowser,
   s3: CloudscapeS3Browser,
   secretsmanager: CloudscapeSecretsManagerBrowser,

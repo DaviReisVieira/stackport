@@ -1089,3 +1089,57 @@ export interface RDSSnapshotsResponse {
 export interface RDSParameterGroupsResponse {
   parameterGroups: RDSParameterGroupInfo[]
 }
+// --- CloudWatch Monitoring (#123) ---
+
+export interface CloudWatchDashboardEntry {
+  name: string
+  lastModified: string | null
+  size: number
+}
+
+export interface CloudWatchWidget {
+  type?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  properties?: Record<string, unknown>
+}
+
+export interface CloudWatchDashboardDetail {
+  name: string
+  body: { widgets?: CloudWatchWidget[]; [key: string]: unknown }
+}
+
+export interface CloudWatchAlarm {
+  name: string
+  arn: string
+  description: string | null
+  state: 'OK' | 'ALARM' | 'INSUFFICIENT_DATA'
+  stateReason: string | null
+  stateUpdated: string | null
+  namespace: string | null
+  metricName: string | null
+  statistic: string | null
+  period: number | null
+  evaluationPeriods: number | null
+  threshold: number | null
+  comparisonOperator: string | null
+  dimensions: Array<{ name: string; value: string }>
+}
+
+export interface MetricDataQueryInput {
+  id: string
+  namespace: string
+  metricName: string
+  dimensions?: Array<{ name: string; value: string }>
+  stat?: string
+  period?: number
+}
+
+export interface MetricSeries {
+  id: string
+  label: string
+  timestamps: string[]
+  values: number[]
+}
