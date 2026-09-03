@@ -10,7 +10,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from backend.aws_client import get_client
 from backend.cache import cache
 from backend.routes.common import EndpointInfo, get_endpoint_info
-from backend.schemas.dynamodb import BatchWriteRequest, DeleteItemRequest, PutItemRequest, QueryRequest
+from backend.schemas.dynamodb import (
+    BatchWriteRequest,
+    CreateTableRequest,
+    DeleteItemRequest,
+    PutItemRequest,
+    QueryRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +95,54 @@ def _get_table_item_count(table_name: str, endpoint_url: str | None) -> int:
     except Exception:
         logger.debug("Failed to get item count for %s", table_name, exc_info=True)
         return 0
+
+
+@router.post("/tables", status_code=201)
+def create_table(body: CreateTableRequest, ep: EndpointInfo = Depends(get_endpoint_info)):
+    """Create a table from a partition key and an optional sort key.
+
+    Mirrors the console: Table details (name and keys) plus Table settings,
+    where the default is on-demand capacity (PAY_PER_REQUEST).
+    """
+    dynamodb = get_client("dynamodb", **ep.client_kwargs())
+
+    attribute_definitions = [{"AttributeName": body.partition_key.name, "AttributeType": body.partition_key.type}]
+    key_schema = [{"AttributeName": body.partition_key.name, "KeyType": "HASH"}]
+    if body.sort_key:
+        if body.sort_key.name == body.partition_key.name:
+            raise HTTPException(status_code=400, detail="The sort key must differ from the partition key")
+        attribute_definitions.append({"AttributeName": body.sort_key.name, "AttributeType": body.sort_key.type})
+        key_schema.append({"AttributeName": body.sort_key.name, "KeyType": "RANGE"})
+
+    params: dict = {
+        "TableName": body.name,
+        "AttributeDefinitions": attribute_definitions,
+        "KeySchema": key_schema,
+        "BillingMode": body.billing_mode,
+    }
+    if body.billing_mode == "PROVISIONED":
+        params["ProvisionedThroughput"] = {
+            "ReadCapacityUnits": body.read_capacity,
+            "WriteCapacityUnits": body.write_capacity,
+        }
+
+    try:
+        response = dynamodb.create_table(**params)
+    except ClientError as err:
+        code = err.response.get("Error", {}).get("Code", "")
+        if code == "ResourceInUseException":
+            raise HTTPException(status_code=409, detail=f"A table named '{body.name}' already exists")
+        logger.debug("Failed to create table %s", body.name, exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Failed to create table: {err}")
+
+    description = response.get("TableDescription", {})
+    return {
+        "name": body.name,
+        "status": description.get("TableStatus", "CREATING"),
+        "partitionKey": body.partition_key.name,
+        "sortKey": body.sort_key.name if body.sort_key else None,
+        "billingMode": body.billing_mode,
+    }
 
 
 @router.get("/tables")

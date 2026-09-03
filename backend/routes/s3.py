@@ -11,6 +11,7 @@ from backend.cache import cache
 from backend.config import AWS_REGION, S3_MAX_UPLOAD_BYTES, is_local_endpoint
 from backend.routes.common import EndpointInfo, get_endpoint_info
 from backend.schemas.s3 import (
+    CreateBucketBody,
     CreateFolderBody,
     DeleteBatchBody,
     PutVersioningBody,
@@ -101,6 +102,48 @@ def _get_bucket_stats(bucket_name: str, endpoint_url: str | None) -> tuple[int, 
     result = (obj_count, total_size)
     cache.set(cache_key, result, ttl=30)
     return result
+
+
+@router.post("/buckets", status_code=201)
+def create_bucket(body: CreateBucketBody, ep: EndpointInfo = Depends(get_endpoint_info)):
+    """Create a general purpose bucket, optionally with versioning and tags.
+
+    Mirrors the console's Create bucket form. The region is informational for a
+    local emulator but faithful to AWS, where it cannot be changed afterwards.
+    """
+    s3 = get_client("s3", **ep.client_kwargs())
+    region = body.region or ep.region or AWS_REGION
+
+    params: dict = {"Bucket": body.name}
+    # CreateBucketConfiguration is rejected for us-east-1, which is the API default.
+    if region and region != "us-east-1":
+        params["CreateBucketConfiguration"] = {"LocationConstraint": region}
+
+    try:
+        s3.create_bucket(**params)
+    except ClientError as err:
+        code = err.response.get("Error", {}).get("Code", "")
+        if code in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
+            raise HTTPException(status_code=409, detail=f"A bucket named '{body.name}' already exists")
+        logger.debug("Failed to create bucket %s", body.name, exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Failed to create bucket: {err}")
+
+    if body.versioning:
+        try:
+            s3.put_bucket_versioning(Bucket=body.name, VersioningConfiguration={"Status": "Enabled"})
+        except ClientError as err:
+            logger.warning("Bucket %s created but versioning failed: %s", body.name, err)
+
+    if body.tags:
+        try:
+            s3.put_bucket_tagging(
+                Bucket=body.name,
+                Tagging={"TagSet": [{"Key": k, "Value": v} for k, v in body.tags.items()]},
+            )
+        except ClientError as err:
+            logger.warning("Bucket %s created but tagging failed: %s", body.name, err)
+
+    return {"name": body.name, "region": region, "versioning": body.versioning}
 
 
 @router.get("/buckets")
