@@ -209,7 +209,64 @@ describe('CloudscapeSNSBrowser (via registry dispatch)', () => {
       protocol: 'sqs',
       endpoint: 'arn:aws:sqs:us-east-1:000000000000:other-q',
       filterPolicy: { type: ['promo'] },
+      rawMessageDelivery: false,
     })
+  })
+
+  it('subscribes with raw message delivery enabled', async () => {
+    renderSNS(`/resources/sns?topic=${encodeURIComponent(ARN)}`)
+    await screen.findByText('Subscriptions (1)')
+    fireEvent.click(screen.getByRole('button', { name: 'Subscribe' }))
+
+    const endpointInput = await screen.findByLabelText('Subscription endpoint')
+    fireEvent.change(endpointInput, { target: { value: 'arn:aws:sqs:us-east-1:000000000000:raw-q' } })
+    fireEvent.click(screen.getByText(/Raw message delivery/))
+    fireEvent.click(screen.getByTestId('subscribe-submit'))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) => String(url).includes('/subscriptions') && (init as RequestInit)?.method === 'POST',
+      )
+      expect(call).toBeTruthy()
+    })
+    const call = fetchMock.mock.calls.find(
+      ([url, init]) => String(url).includes('/subscriptions') && (init as RequestInit)?.method === 'POST',
+    )
+    const body = JSON.parse((call![1] as RequestInit).body as string)
+    expect(body.rawMessageDelivery).toBe(true)
+  })
+
+  it('requires a deduplication ID on FIFO topics without content-based dedup', async () => {
+    const fifoArn = `${ARN}-events.fifo`
+    const fifoDetail = {
+      ...topics.topics[1],
+      arn: fifoArn,
+      contentBasedDeduplication: false,
+      attributes: { FifoTopic: 'true' },
+      subscriptions: [],
+    }
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input)
+      let payload: unknown = statsPayload
+      if (url.includes(encodeURIComponent(fifoArn))) payload = fifoDetail
+      else if (url.includes('/api/stats')) payload = statsPayload
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) } as Response)
+    })
+
+    renderSNS(`/resources/sns?topic=${encodeURIComponent(fifoArn)}`)
+    await screen.findByText('Subscriptions (0)')
+    fireEvent.click(screen.getByRole('button', { name: 'Publish message' }))
+
+    const textarea = (await screen.findAllByRole('textbox')).find((el) => el.tagName === 'TEXTAREA') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'hello' } })
+    const groupInput = screen.getAllByRole('textbox').filter((el) => el.tagName === 'INPUT')[1]
+    fireEvent.change(groupInput, { target: { value: 'g1' } })
+
+    // sem dedup ID o publish fica bloqueado (CBD desligado neste topico)
+    expect(screen.getByTestId('publish-submit')).toBeDisabled()
+    const dedupInput = screen.getAllByRole('textbox').filter((el) => el.tagName === 'INPUT')[2]
+    fireEvent.change(dedupInput, { target: { value: 'd1' } })
+    expect(screen.getByTestId('publish-submit')).toBeEnabled()
   })
 
   it('unsubscribes and deletes with type-the-name confirmation', async () => {

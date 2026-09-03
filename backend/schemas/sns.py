@@ -18,6 +18,7 @@ class SubscribeBody(BaseModel):
     protocol: str
     endpoint: str
     filter_policy: dict | None = Field(alias="filterPolicy", default=None)
+    raw_message_delivery: bool = Field(alias="rawMessageDelivery", default=False)
 
 
 class MessageAttributeValue(BaseModel):

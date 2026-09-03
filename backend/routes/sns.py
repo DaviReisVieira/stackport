@@ -56,13 +56,39 @@ def _serialize_subscription(sns, sub: dict) -> dict:
     return entry
 
 
+def _list_all_topic_arns(sns) -> list[str]:
+    """list_topics returns at most 100 entries per call; follow NextToken."""
+    arns: list[str] = []
+    token: str | None = None
+    while True:
+        response = sns.list_topics(NextToken=token) if token else sns.list_topics()
+        arns.extend(t["TopicArn"] for t in response.get("Topics", []))
+        token = response.get("NextToken")
+        if not token:
+            return arns
+
+
+def _list_all_subscriptions(sns, topic_arn: str) -> list[dict]:
+    """list_subscriptions_by_topic paginates the same way."""
+    subs: list[dict] = []
+    token: str | None = None
+    while True:
+        if token:
+            response = sns.list_subscriptions_by_topic(TopicArn=topic_arn, NextToken=token)
+        else:
+            response = sns.list_subscriptions_by_topic(TopicArn=topic_arn)
+        subs.extend(response.get("Subscriptions", []))
+        token = response.get("NextToken")
+        if not token:
+            return subs
+
+
 @router.get("/topics")
 def list_topics(ep: EndpointInfo = Depends(get_endpoint_info)):
     """List SNS topics enriched with their attributes."""
     sns = get_client("sns", **ep.client_kwargs())
     topics = []
-    paginator_arns = [t["TopicArn"] for t in sns.list_topics().get("Topics", [])]
-    for arn in paginator_arns:
+    for arn in _list_all_topic_arns(sns):
         try:
             attributes = sns.get_topic_attributes(TopicArn=arn).get("Attributes", {})
         except Exception:
@@ -81,10 +107,7 @@ def get_topic(arn: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Topic not found: {exc}")
 
-    subscriptions = [
-        _serialize_subscription(sns, sub)
-        for sub in sns.list_subscriptions_by_topic(TopicArn=arn).get("Subscriptions", [])
-    ]
+    subscriptions = [_serialize_subscription(sns, sub) for sub in _list_all_subscriptions(sns, arn)]
 
     return {
         **_serialize_topic(arn, attributes),
@@ -136,6 +159,8 @@ def subscribe(arn: str, body: SubscribeBody, ep: EndpointInfo = Depends(get_endp
     attributes: dict[str, str] = {}
     if body.filter_policy:
         attributes["FilterPolicy"] = json.dumps(body.filter_policy)
+    if body.raw_message_delivery:
+        attributes["RawMessageDelivery"] = "true"
     params: dict = {
         "TopicArn": arn,
         "Protocol": body.protocol,

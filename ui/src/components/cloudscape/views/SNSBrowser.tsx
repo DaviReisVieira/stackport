@@ -38,6 +38,12 @@ import type { SNSSubscription, SNSTopic, SNSTopicDetail } from '@/lib/types'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
 
+const ATTRIBUTE_TYPE_OPTIONS = [
+  { label: 'String', value: 'String' },
+  { label: 'Number', value: 'Number' },
+  { label: 'String.Array', value: 'String.Array' },
+]
+
 const PROTOCOL_OPTIONS = [
   { label: 'SQS queue', value: 'sqs' },
   { label: 'Lambda function', value: 'lambda' },
@@ -120,8 +126,11 @@ function PublishModal({ topic, onClose }: { topic: SNSTopicDetail; onClose: () =
   const [message, setMessage] = useState('')
   const [groupId, setGroupId] = useState('')
   const [dedupId, setDedupId] = useState('')
-  const [attributes, setAttributes] = useState<Array<{ key: string; value: string }>>([])
+  const [attributes, setAttributes] = useState<Array<{ key: string; value: string; type: string }>>([])
   const [sending, setSending] = useState(false)
+
+  // FIFO topics without content-based deduplication require an explicit deduplication ID
+  const needsDedupId = topic.fifo && !topic.contentBasedDeduplication
 
   const submit = async () => {
     setSending(true)
@@ -129,7 +138,7 @@ function PublishModal({ topic, onClose }: { topic: SNSTopicDetail; onClose: () =
       const messageAttributes = Object.fromEntries(
         attributes
           .filter((a) => a.key.trim())
-          .map((a) => [a.key.trim(), { dataType: 'String', stringValue: a.value }]),
+          .map((a) => [a.key.trim(), { dataType: a.type, stringValue: a.value }]),
       )
       const result = await publishSNSMessage(
         topic.arn,
@@ -163,7 +172,7 @@ function PublishModal({ topic, onClose }: { topic: SNSTopicDetail; onClose: () =
               variant="primary"
               onClick={submit}
               loading={sending}
-              disabled={!message.trim() || (topic.fifo && !groupId.trim())}
+              disabled={!message.trim() || (topic.fifo && !groupId.trim()) || (needsDedupId && !dedupId.trim())}
               data-testid="publish-submit"
             >
               Publish message
@@ -183,7 +192,14 @@ function PublishModal({ topic, onClose }: { topic: SNSTopicDetail; onClose: () =
               <FormField label="Message group ID" description="Required for FIFO topics">
                 <Input value={groupId} onChange={({ detail }) => setGroupId(detail.value)} />
               </FormField>
-              <FormField label="Message deduplication ID" description="Optional if content-based deduplication is enabled">
+              <FormField
+                label="Message deduplication ID"
+                description={
+                  needsDedupId
+                    ? 'Required: this FIFO topic has content-based deduplication disabled'
+                    : 'Optional: content-based deduplication is enabled'
+                }
+              >
                 <Input value={dedupId} onChange={({ detail }) => setDedupId(detail.value)} />
               </FormField>
             </>
@@ -191,7 +207,7 @@ function PublishModal({ topic, onClose }: { topic: SNSTopicDetail; onClose: () =
           <ExpandableSection headerText="Message attributes">
             <SpaceBetween size="s">
               {attributes.map((attr, index) => (
-                <ColumnLayout key={index} columns={3}>
+                <ColumnLayout key={index} columns={4}>
                   <Input
                     value={attr.key}
                     onChange={({ detail }) => setAttributes(attributes.map((a, i) => (i === index ? { ...a, key: detail.value } : a)))}
@@ -201,8 +217,16 @@ function PublishModal({ topic, onClose }: { topic: SNSTopicDetail; onClose: () =
                   <Input
                     value={attr.value}
                     onChange={({ detail }) => setAttributes(attributes.map((a, i) => (i === index ? { ...a, value: detail.value } : a)))}
-                    placeholder="Value"
+                    placeholder={attr.type === 'String.Array' ? '["a", "b"]' : 'Value'}
                     ariaLabel={`Attribute ${index + 1} value`}
+                  />
+                  <Select
+                    selectedOption={ATTRIBUTE_TYPE_OPTIONS.find((o) => o.value === attr.type) ?? ATTRIBUTE_TYPE_OPTIONS[0]}
+                    onChange={({ detail }) =>
+                      setAttributes(attributes.map((a, i) => (i === index ? { ...a, type: detail.selectedOption.value as string } : a)))
+                    }
+                    options={ATTRIBUTE_TYPE_OPTIONS}
+                    ariaLabel={`Attribute ${index + 1} type`}
                   />
                   <Button
                     variant="icon"
@@ -212,7 +236,7 @@ function PublishModal({ topic, onClose }: { topic: SNSTopicDetail; onClose: () =
                   />
                 </ColumnLayout>
               ))}
-              <Button iconName="add-plus" onClick={() => setAttributes([...attributes, { key: '', value: '' }])}>
+              <Button iconName="add-plus" onClick={() => setAttributes([...attributes, { key: '', value: '', type: 'String' }])}>
                 Add attribute
               </Button>
             </SpaceBetween>
@@ -230,6 +254,7 @@ function SubscribeModal({ topic, onClose, onDone }: { topic: SNSTopicDetail; onC
   const [protocol, setProtocol] = useState('sqs')
   const [target, setTarget] = useState('')
   const [filterPolicy, setFilterPolicy] = useState('')
+  const [rawDelivery, setRawDelivery] = useState(false)
   const [suggestions, setSuggestions] = useState<Array<{ value: string; label?: string; description?: string }>>([])
   const [saving, setSaving] = useState(false)
 
@@ -282,7 +307,16 @@ function SubscribeModal({ topic, onClose, onDone }: { topic: SNSTopicDetail; onC
     }
     setSaving(true)
     try {
-      await subscribeSNSTopic(topic.arn, { protocol, endpoint: target.trim(), filterPolicy: parsedPolicy }, activeEndpoint)
+      await subscribeSNSTopic(
+        topic.arn,
+        {
+          protocol,
+          endpoint: target.trim(),
+          filterPolicy: parsedPolicy,
+          rawMessageDelivery: ['sqs', 'http', 'https'].includes(protocol) ? rawDelivery : undefined,
+        },
+        activeEndpoint,
+      )
       toast.success('Subscription created')
       onDone()
     } catch (error) {
@@ -336,6 +370,11 @@ function SubscribeModal({ topic, onClose, onDone }: { topic: SNSTopicDetail; onC
           <FormField label="Filter policy" description="Optional JSON, e.g. {&quot;type&quot;: [&quot;order&quot;]}">
             <Textarea value={filterPolicy} onChange={({ detail }) => setFilterPolicy(detail.value)} rows={4} spellcheck={false} />
           </FormField>
+          {['sqs', 'http', 'https'].includes(protocol) && (
+            <Checkbox checked={rawDelivery} onChange={({ detail }) => setRawDelivery(detail.checked)}>
+              Raw message delivery (deliver the message body without the SNS envelope)
+            </Checkbox>
+          )}
         </SpaceBetween>
       </Form>
     </Modal>

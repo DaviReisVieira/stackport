@@ -1300,7 +1300,7 @@ export async function deleteSNSTopic(arn: string, endpoint?: string | null): Pro
 
 export async function subscribeSNSTopic(
   arn: string,
-  body: { protocol: string; endpoint: string; filterPolicy?: Record<string, unknown> },
+  body: { protocol: string; endpoint: string; filterPolicy?: Record<string, unknown>; rawMessageDelivery?: boolean },
   endpoint?: string | null,
 ): Promise<{ subscriptionArn: string }> {
   const url = buildUrl(`/sns/topics/${encodeURIComponent(arn)}/subscriptions`, endpoint)

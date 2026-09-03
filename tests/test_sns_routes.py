@@ -56,6 +56,21 @@ class TestTopics:
         assert topic["subscriptionsConfirmed"] == 2
 
     @patch("backend.routes.sns.get_client")
+    def test_list_topics_follows_pagination(self, mock_client, client):
+        sns = _mock_sns()
+        sns.list_topics.side_effect = [
+            {"Topics": [{"TopicArn": ARN}], "NextToken": "t1"},
+            {"Topics": [{"TopicArn": f"{ARN}-2"}]},
+        ]
+        mock_client.return_value = sns
+
+        response = client.get("/api/sns/topics")
+        assert response.status_code == 200
+        assert len(response.json()["topics"]) == 2
+        assert sns.list_topics.call_count == 2
+        assert sns.list_topics.call_args_list[1].kwargs == {"NextToken": "t1"}
+
+    @patch("backend.routes.sns.get_client")
     def test_get_topic_with_subscriptions(self, mock_client, client):
         mock_client.return_value = _mock_sns()
         response = client.get(f"/api/sns/topics/{ARN}")
@@ -121,6 +136,19 @@ class TestSubscriptions:
         assert kwargs["Protocol"] == "sqs"
         assert kwargs["Attributes"] == {"FilterPolicy": '{"type": ["order"]}'}
         assert kwargs["ReturnSubscriptionArn"] is True
+
+    @patch("backend.routes.sns.get_client")
+    def test_subscribe_with_raw_message_delivery(self, mock_client, client):
+        sns = _mock_sns()
+        sns.subscribe.return_value = {"SubscriptionArn": f"{ARN}:sub-3"}
+        mock_client.return_value = sns
+
+        response = client.post(
+            f"/api/sns/topics/{ARN}/subscriptions",
+            json={"protocol": "sqs", "endpoint": "arn:aws:sqs:us-east-1:0:q", "rawMessageDelivery": True},
+        )
+        assert response.status_code == 201
+        assert sns.subscribe.call_args.kwargs["Attributes"] == {"RawMessageDelivery": "true"}
 
     @patch("backend.routes.sns.get_client")
     def test_unsubscribe(self, mock_client, client):
