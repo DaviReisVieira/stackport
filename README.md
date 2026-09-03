@@ -297,16 +297,6 @@ ui/src/
   lib/             API client, types, service icons, utils
 ```
 
-## Star History
-
-<a href="https://star-history.com/#DaviReisVieira/stackport&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=DaviReisVieira/stackport&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=DaviReisVieira/stackport&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=DaviReisVieira/stackport&type=Date" width="100%" />
- </picture>
-</a>
-
 ## Contributors
 
 <a href="https://github.com/DaviReisVieira/stackport/graphs/contributors">
