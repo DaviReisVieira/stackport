@@ -76,8 +76,8 @@ export function CloudscapeShell({
     [
       { sequence: ['g', 'd'], handler: () => navigate('/cloudscape') },
       { sequence: ['g', 'r'], handler: () => navigate('/cloudscape/resources') },
-      { sequence: ['g', 's'], handler: () => navigate('/settings') },
-      { sequence: ['g', 'a'], handler: () => navigate('/about') },
+      { sequence: ['g', 's'], handler: () => navigate('/cloudscape/settings') },
+      { sequence: ['g', 'a'], handler: () => navigate('/cloudscape/about') },
     ],
   )
 
@@ -216,8 +216,8 @@ export function CloudscapeShell({
               { type: 'link', text: 'Dashboard', href: '/cloudscape' },
               { type: 'link', text: 'Resources', href: '/cloudscape/resources' },
               ...extraNavItems,
-              { type: 'link', text: 'Settings', href: '/settings' },
-              { type: 'link', text: 'About', href: '/about' },
+              { type: 'link', text: 'Settings', href: '/cloudscape/settings' },
+              { type: 'link', text: 'About', href: '/cloudscape/about' },
               { type: 'divider' },
               { type: 'link', text: 'Back to current UI', href: '/' },
               {

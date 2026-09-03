@@ -10,6 +10,8 @@ import { Skeleton } from './components/ui/skeleton'
 
 const CloudscapeDashboard = lazy(() => import('./pages/CloudscapeDashboard'))
 const CloudscapeResourceBrowser = lazy(() => import('./pages/CloudscapeResourceBrowser'))
+const CloudscapeSettings = lazy(() => import('./pages/CloudscapeSettings'))
+const CloudscapeAbout = lazy(() => import('./pages/CloudscapeAbout'))
 
 function MainApp() {
   return (
@@ -52,6 +54,22 @@ export default function App() {
           element={
             <Suspense fallback={<div className="p-6"><Skeleton className="h-64 w-full" /></div>}>
               <CloudscapeResourceBrowser />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/cloudscape/settings"
+          element={
+            <Suspense fallback={<div className="p-6"><Skeleton className="h-64 w-full" /></div>}>
+              <CloudscapeSettings />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/cloudscape/about"
+          element={
+            <Suspense fallback={<div className="p-6"><Skeleton className="h-64 w-full" /></div>}>
+              <CloudscapeAbout />
             </Suspense>
           }
         />
