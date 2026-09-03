@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react'
+import { CloudscapeDynamoDBBrowser } from './DynamoDBBrowser'
 import { CloudscapeSecretsManagerBrowser } from './SecretsManagerBrowser'
 import { CloudscapeSQSBrowser } from './SQSBrowser'
 
@@ -10,6 +11,7 @@ import { CloudscapeSQSBrowser } from './SQSBrowser'
  * Add each service browser here as its migration issue (#137-#146) lands.
  */
 export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {
+  dynamodb: CloudscapeDynamoDBBrowser,
   secretsmanager: CloudscapeSecretsManagerBrowser,
   sqs: CloudscapeSQSBrowser,
 }
