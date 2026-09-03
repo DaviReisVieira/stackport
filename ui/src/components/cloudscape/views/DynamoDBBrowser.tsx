@@ -231,7 +231,6 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
 
   useEffect(() => {
     if (mode === 'scan') scan()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, scan])
 
   const columns = useMemo(() => {
