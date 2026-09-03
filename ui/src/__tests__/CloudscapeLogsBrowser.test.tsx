@@ -128,7 +128,7 @@ describe('CloudscapeLogsBrowser (via registry dispatch)', () => {
   it('lists log groups with retention and size', async () => {
     renderLogs()
     expect(await screen.findByText('/aws/lambda/orders')).toBeInTheDocument()
-    expect(await screen.findByText('14d')).toBeInTheDocument()
+    expect(await screen.findByText('14 days')).toBeInTheDocument()
     expect(await screen.findByText('4 KB')).toBeInTheDocument()
   })
 
@@ -160,7 +160,7 @@ describe('CloudscapeLogsBrowser (via registry dispatch)', () => {
   it('creates a log group with retention and tags', async () => {
     renderLogs()
     await screen.findByText('/aws/lambda/orders')
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create log group' })[0])
 
     const nameInput = await screen.findByPlaceholderText('/aws/lambda/my-function')
     fireEvent.change(nameInput, { target: { value: 'new-group' } })

@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useCollection } from '@cloudscape-design/collection-hooks'
 import Alert from '@cloudscape-design/components/alert'
 import AttributeEditor from '@cloudscape-design/components/attribute-editor'
 import Badge from '@cloudscape-design/components/badge'
 import Box from '@cloudscape-design/components/box'
+import BreadcrumbGroup from '@cloudscape-design/components/breadcrumb-group'
 import Button from '@cloudscape-design/components/button'
 import ButtonDropdown from '@cloudscape-design/components/button-dropdown'
 import Container from '@cloudscape-design/components/container'
 import ExpandableSection from '@cloudscape-design/components/expandable-section'
 import Form from '@cloudscape-design/components/form'
 import FormField from '@cloudscape-design/components/form-field'
-import Grid from '@cloudscape-design/components/grid'
 import Header from '@cloudscape-design/components/header'
+import Pagination from '@cloudscape-design/components/pagination'
 import Input from '@cloudscape-design/components/input'
 import Link from '@cloudscape-design/components/link'
 import Modal from '@cloudscape-design/components/modal'
@@ -554,6 +556,204 @@ function EventsPanel({ group, stream }: { group: string; stream: string }) {
   )
 }
 
+// --- Tables ----------------------------------------------------------------------
+
+function GroupsTable({
+  groups,
+  loading,
+  counter,
+  search,
+  onSearch,
+  onRefresh,
+  onCreate,
+  onOpen,
+  onEditRetention,
+  onDelete,
+}: {
+  groups: LogGroup[]
+  loading: boolean
+  counter?: string
+  search: string
+  onSearch: (value: string) => void
+  onRefresh: () => void
+  onCreate: () => void
+  onOpen: (name: string) => void
+  onEditRetention: (group: LogGroup) => void
+  onDelete: (name: string) => void
+}) {
+  const { items, collectionProps, paginationProps } = useCollection(groups, {
+    pagination: { pageSize: 25 },
+    sorting: {},
+  })
+
+  return (
+    <Table
+      {...collectionProps}
+      items={items}
+      trackBy="name"
+      loading={loading && groups.length === 0}
+      loadingText="Loading log groups"
+      variant="borderless"
+      stickyHeader
+      header={
+        <Header
+          variant="h2"
+          counter={counter}
+          actions={
+            <SpaceBetween direction="horizontal" size="xs">
+              <Button iconName="refresh" onClick={onRefresh} loading={loading} ariaLabel="Refresh log groups" />
+              <Button variant="primary" iconName="add-plus" onClick={onCreate}>
+                Create log group
+              </Button>
+            </SpaceBetween>
+          }
+        >
+          Log groups
+        </Header>
+      }
+      filter={
+        <Input
+          type="search"
+          value={search}
+          onChange={({ detail }) => onSearch(detail.value)}
+          placeholder="Search log groups..."
+          ariaLabel="Search log groups"
+        />
+      }
+      pagination={<Pagination {...paginationProps} />}
+      empty={
+        <Box textAlign="center" padding="l" color="text-status-inactive">
+          No log groups found
+        </Box>
+      }
+      columnDefinitions={[
+        {
+          id: 'name',
+          header: 'Name',
+          sortingField: 'name',
+          cell: (g) => (
+            <Link
+              href={`?group=${encodeURIComponent(g.name)}`}
+              onFollow={(event) => {
+                event.preventDefault()
+                onOpen(g.name)
+              }}
+            >
+              {g.name}
+            </Link>
+          ),
+        },
+        { id: 'size', header: 'Stored', sortingField: 'stored_bytes', cell: (g) => formatBytes(g.stored_bytes) },
+        {
+          id: 'retention',
+          header: 'Retention',
+          sortingField: 'retention_days',
+          cell: (g) => (g.retention_days ? `${g.retention_days} days` : 'Never expire'),
+        },
+        { id: 'created', header: 'Created', sortingField: 'creation_time', cell: (g) => formatDate(g.creation_time) },
+        {
+          id: 'actions',
+          header: 'Actions',
+          cell: (g) => (
+            <SpaceBetween direction="horizontal" size="xxs">
+              <Button variant="icon" iconName="settings" ariaLabel={`Edit retention for ${g.name}`} onClick={() => onEditRetention(g)} />
+              <Button variant="icon" iconName="remove" ariaLabel={`Delete log group ${g.name}`} onClick={() => onDelete(g.name)} />
+            </SpaceBetween>
+          ),
+        },
+      ]}
+    />
+  )
+}
+
+function StreamsTable({
+  group,
+  streams,
+  loading,
+  search,
+  onSearch,
+  onRefresh,
+  onOpen,
+  onDelete,
+}: {
+  group: string
+  streams: LogStream[]
+  loading: boolean
+  search: string
+  onSearch: (value: string) => void
+  onRefresh: () => void
+  onOpen: (name: string) => void
+  onDelete: (name: string) => void
+}) {
+  const { items, collectionProps, paginationProps } = useCollection(streams, {
+    pagination: { pageSize: 25 },
+    sorting: {},
+  })
+
+  return (
+    <Table
+      {...collectionProps}
+      items={items}
+      trackBy="name"
+      loading={loading && streams.length === 0}
+      loadingText="Loading log streams"
+      variant="borderless"
+      stickyHeader
+      header={
+        <Header
+          variant="h3"
+          counter={`(${streams.length})`}
+          actions={<Button iconName="refresh" onClick={onRefresh} loading={loading} ariaLabel="Refresh log streams" />}
+        >
+          Log streams
+        </Header>
+      }
+      filter={
+        <Input
+          type="search"
+          value={search}
+          onChange={({ detail }) => onSearch(detail.value)}
+          placeholder="Search streams..."
+          ariaLabel="Search log streams"
+        />
+      }
+      pagination={<Pagination {...paginationProps} />}
+      empty={
+        <Box textAlign="center" padding="l" color="text-status-inactive">
+          No log streams found in this group
+        </Box>
+      }
+      columnDefinitions={[
+        {
+          id: 'name',
+          header: 'Stream name',
+          sortingField: 'name',
+          cell: (s) => (
+            <Link
+              href={`?group=${encodeURIComponent(group)}&stream=${encodeURIComponent(s.name)}`}
+              onFollow={(event) => {
+                event.preventDefault()
+                onOpen(s.name)
+              }}
+            >
+              {s.name}
+            </Link>
+          ),
+        },
+        { id: 'lastEvent', header: 'Last event', sortingField: 'last_event_time', cell: (s) => formatRelativeTime(s.last_event_time) },
+        { id: 'size', header: 'Size', sortingField: 'stored_bytes', cell: (s) => formatBytes(s.stored_bytes) },
+        {
+          id: 'actions',
+          header: 'Actions',
+          cell: (s) => (
+            <Button variant="icon" iconName="remove" ariaLabel={`Delete stream ${s.name}`} onClick={() => onDelete(s.name)} />
+          ),
+        },
+      ]}
+    />
+  )
+}
+
 // --- Root ----------------------------------------------------------------------
 
 export function CloudscapeLogsBrowser() {
@@ -622,161 +822,128 @@ export function CloudscapeLogsBrowser() {
     }
   }
 
-  const logsPane = (
-    <Grid gridDefinition={[{ colspan: { default: 12, s: 4 } }, { colspan: { default: 12, s: 8 } }]}>
-      <Table
-        items={groups}
-        trackBy="name"
-        loading={groupsLoading && groups.length === 0}
-        loadingText="Loading log groups"
-        variant="borderless"
-        header={
-          <Header
-            variant="h3"
-            counter={groupsData ? `(${groups.length})` : undefined}
-            actions={
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button iconName="refresh" onClick={() => refreshGroups()} loading={groupsLoading} ariaLabel="Refresh log groups" />
-                <Button iconName="add-plus" onClick={() => setCreating(true)}>
-                  Create
-                </Button>
-              </SpaceBetween>
-            }
-          >
-            Log groups
-          </Header>
-        }
-        filter={
-          <Input
-            type="search"
-            value={groupSearch}
-            onChange={({ detail }) => setGroupSearch(detail.value)}
-            placeholder="Search log groups..."
-            ariaLabel="Search log groups"
-          />
-        }
-        empty={
-          <Box textAlign="center" padding="l" color="text-status-inactive">
-            No log groups found
-          </Box>
-        }
-        columnDefinitions={[
-          {
-            id: 'name',
-            header: 'Name',
-            cell: (g) => (
-              <Link
-                href={`?group=${encodeURIComponent(g.name)}`}
-                onFollow={(event) => {
-                  event.preventDefault()
-                  openGroup(g.name)
-                }}
-              >
-                {selectedGroup === g.name ? <strong>{g.name}</strong> : g.name}
-              </Link>
-            ),
-          },
-          { id: 'size', header: 'Stored', cell: (g) => formatBytes(g.stored_bytes) },
-          {
-            id: 'retention',
-            header: 'Retention',
-            cell: (g) => (g.retention_days ? `${g.retention_days}d` : 'Never'),
-          },
-          {
-            id: 'actions',
-            header: '',
-            cell: (g) => (
-              <SpaceBetween direction="horizontal" size="xxs">
-                <Button
-                  variant="icon"
-                  iconName="settings"
-                  ariaLabel={`Edit retention for ${g.name}`}
-                  onClick={() => setRetentionTarget(g)}
-                />
-                <Button
-                  variant="icon"
-                  iconName="remove"
-                  ariaLabel={`Delete log group ${g.name}`}
-                  onClick={() => setGroupToDelete(g.name)}
-                />
-              </SpaceBetween>
-            ),
-          },
-        ]}
-      />
-
-      <SpaceBetween size="m">
-        {selectedGroup ? (
-          <Table
-            items={streams}
-            trackBy="name"
-            loading={streamsLoading && streams.length === 0}
-            loadingText="Loading log streams"
-            variant="borderless"
-            header={
-              <Header variant="h3" counter={streamsData ? `(${streams.length})` : undefined}>
-                Log streams
-              </Header>
-            }
-            filter={
-              <Input
-                type="search"
-                value={streamSearch}
-                onChange={({ detail }) => setStreamSearch(detail.value)}
-                placeholder="Search streams..."
-                ariaLabel="Search log streams"
-              />
-            }
-            empty={
-              <Box textAlign="center" padding="l" color="text-status-inactive">
-                No log streams found in this group
-              </Box>
-            }
-            columnDefinitions={[
-              {
-                id: 'name',
-                header: 'Stream name',
-                cell: (s: LogStream) => (
-                  <Link
-                    href={`?group=${encodeURIComponent(selectedGroup)}&stream=${encodeURIComponent(s.name)}`}
-                    onFollow={(event) => {
-                      event.preventDefault()
-                      openStream(s.name)
-                    }}
-                  >
-                    {selectedStream === s.name ? <strong>{s.name}</strong> : s.name}
-                  </Link>
-                ),
-              },
-              { id: 'lastEvent', header: 'Last event', cell: (s: LogStream) => formatRelativeTime(s.last_event_time) },
-              { id: 'size', header: 'Size', cell: (s: LogStream) => formatBytes(s.stored_bytes) },
-              {
-                id: 'actions',
-                header: '',
-                cell: (s: LogStream) => (
-                  <Button
-                    variant="icon"
-                    iconName="remove"
-                    ariaLabel={`Delete stream ${s.name}`}
-                    onClick={() => setStreamToDelete(s.name)}
-                  />
-                ),
-              },
-            ]}
-          />
-        ) : (
-          <Container>
-            <Box textAlign="center" padding="l" color="text-status-inactive">
-              Select a log group to view streams
-            </Box>
-          </Container>
-        )}
-
-        {selectedGroup && selectedStream && <EventsPanel group={selectedGroup} stream={selectedStream} />}
-      </SpaceBetween>
-    </Grid>
+  const breadcrumbs = selectedGroup && (
+    <BreadcrumbGroup
+      ariaLabel="Log group path"
+      items={[
+        { text: 'Log groups', href: '?' },
+        { text: selectedGroup, href: `?group=${encodeURIComponent(selectedGroup)}` },
+        ...(selectedStream
+          ? [{ text: selectedStream, href: `?group=${encodeURIComponent(selectedGroup)}&stream=${encodeURIComponent(selectedStream)}` }]
+          : []),
+      ]}
+      onFollow={(event) => {
+        event.preventDefault()
+        const url = new URL(event.detail.href, window.location.origin)
+        const group = url.searchParams.get('group')
+        if (!group) openGroup(null)
+        else openStream(url.searchParams.get('stream'))
+      }}
+    />
   )
 
+  // Level 3: a stream's events, full width
+  if (selectedGroup && selectedStream) {
+    return (
+      <SpaceBetween size="m">
+        {breadcrumbs}
+        <EventsPanel group={selectedGroup} stream={selectedStream} />
+      </SpaceBetween>
+    )
+  }
+
+  // Level 2: a group's streams and tags, full width
+  if (selectedGroup) {
+    return (
+      <SpaceBetween size="m">
+        {breadcrumbs}
+        <Header
+          variant="h2"
+          description={
+            currentGroup
+              ? `${formatBytes(currentGroup.stored_bytes)} stored · retention ${currentGroup.retention_days ? `${currentGroup.retention_days} days` : 'never expires'}`
+              : undefined
+          }
+          actions={
+            <SpaceBetween direction="horizontal" size="xs">
+              <Button iconName="settings" disabled={!currentGroup} onClick={() => currentGroup && setRetentionTarget(currentGroup)}>
+                Edit retention
+              </Button>
+              <Button iconName="remove" onClick={() => setGroupToDelete(selectedGroup)}>
+                Delete group
+              </Button>
+            </SpaceBetween>
+          }
+        >
+          {selectedGroup}
+        </Header>
+
+        <Tabs
+          tabs={[
+            {
+              id: 'streams',
+              label: `Streams (${streams.length})`,
+              content: (
+                <StreamsTable
+                  group={selectedGroup}
+                  streams={streams}
+                  loading={streamsLoading}
+                  search={streamSearch}
+                  onSearch={setStreamSearch}
+                  onRefresh={() => refreshStreams()}
+                  onOpen={openStream}
+                  onDelete={setStreamToDelete}
+                />
+              ),
+            },
+            {
+              id: 'tags',
+              label: 'Tags',
+              content: currentGroup ? (
+                <LogGroupTagsPanel group={currentGroup} />
+              ) : (
+                <StatusIndicator type="loading">Loading group</StatusIndicator>
+              ),
+            },
+          ]}
+        />
+
+        {retentionTarget && (
+          <SetRetentionModal
+            logGroupName={retentionTarget.name}
+            currentRetention={retentionTarget.retention_days}
+            onClose={() => setRetentionTarget(null)}
+            onDone={() => {
+              setRetentionTarget(null)
+              refreshGroups()
+            }}
+          />
+        )}
+        {groupToDelete && (
+          <TypeNameDeleteModal
+            header="Delete log group"
+            targetName={groupToDelete}
+            warning="Deleting a log group permanently removes all of its streams and events. This cannot be undone."
+            testId="confirm-delete-group"
+            onClose={() => setGroupToDelete(null)}
+            onConfirm={confirmDeleteGroup}
+          />
+        )}
+        {streamToDelete && (
+          <TypeNameDeleteModal
+            header="Delete log stream"
+            targetName={streamToDelete}
+            warning="Deleting a log stream permanently removes all of its events. This cannot be undone."
+            testId="confirm-delete-stream"
+            onClose={() => setStreamToDelete(null)}
+            onConfirm={confirmDeleteStream}
+          />
+        )}
+      </SpaceBetween>
+    )
+  }
+
+  // Level 1: all log groups, full width
   return (
     <SpaceBetween size="l">
       {!groupsLoading && groupsError && (
@@ -785,21 +952,17 @@ export function CloudscapeLogsBrowser() {
         </Alert>
       )}
 
-      <Tabs
-        tabs={[
-          { id: 'logs', label: 'Logs', content: logsPane },
-          {
-            id: 'tags',
-            label: 'Tags',
-            content: currentGroup ? (
-              <LogGroupTagsPanel group={currentGroup} />
-            ) : (
-              <Box textAlign="center" padding="l" color="text-status-inactive">
-                Select a log group to view and manage tags
-              </Box>
-            ),
-          },
-        ]}
+      <GroupsTable
+        groups={groups}
+        loading={groupsLoading}
+        counter={groupsData ? `(${groups.length})` : undefined}
+        search={groupSearch}
+        onSearch={setGroupSearch}
+        onRefresh={() => refreshGroups()}
+        onCreate={() => setCreating(true)}
+        onOpen={openGroup}
+        onEditRetention={setRetentionTarget}
+        onDelete={setGroupToDelete}
       />
 
       {creating && (
