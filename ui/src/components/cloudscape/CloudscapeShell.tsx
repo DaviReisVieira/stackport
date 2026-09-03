@@ -157,6 +157,7 @@ export function CloudscapeShell({
           identity={{
             href: '/',
             title: 'StackPort',
+            logo: { src: '/stackport-logo.svg', alt: 'StackPort' },
             onFollow: (event) => {
               event.preventDefault()
               navigate('/')
