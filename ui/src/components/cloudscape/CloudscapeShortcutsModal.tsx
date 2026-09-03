@@ -2,10 +2,11 @@ import Box from '@cloudscape-design/components/box'
 import ColumnLayout from '@cloudscape-design/components/column-layout'
 import Modal from '@cloudscape-design/components/modal'
 import SpaceBetween from '@cloudscape-design/components/space-between'
+import { SEARCH_SHORTCUT_LABEL } from '@/components/cloudscape/platform'
 
 const GLOBAL_SHORTCUTS: Array<[string, string]> = [
   ['?', 'Show keyboard shortcuts'],
-  ['Alt+S', 'Focus service search'],
+  [SEARCH_SHORTCUT_LABEL, 'Focus service search'],
   ['b', 'Toggle sidebar'],
   ['t', 'Toggle theme'],
   ['g then d', 'Go to Dashboard'],

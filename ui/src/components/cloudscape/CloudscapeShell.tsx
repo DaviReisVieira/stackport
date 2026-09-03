@@ -24,6 +24,7 @@ import { useHealth } from '@/hooks/useHealth'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTheme } from '@/hooks/useTheme'
 import { getServiceIcon } from '@/lib/service-icons'
+import { SEARCH_SHORTCUT_LABEL } from '@/components/cloudscape/platform'
 
 /**
  * Shared shell for Cloudscape-migrated views (launch PR #149).
@@ -64,8 +65,8 @@ export function CloudscapeShell({
     setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')
   }, [theme, setTheme])
 
-  // Alt+S focuses the service search, mirroring the AWS console shortcut.
-  // e.code is used because on macOS Option+S types "ß" into e.key.
+  // Alt+S (Option+S on macOS) focuses the service search, mirroring the AWS
+  // console shortcut. e.code is used because on macOS Option+S types "ß" into e.key.
   const searchRef = useRef<AutosuggestProps.Ref>(null)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -187,7 +188,7 @@ export function CloudscapeShell({
                 if (detail.value) goToService(detail.value)
               }}
               options={searchOptions}
-              placeholder="Search services (Alt+S)"
+              placeholder={`Search services (${SEARCH_SHORTCUT_LABEL})`}
               ariaLabel="Search services"
               empty="No services found"
             />
