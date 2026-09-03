@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import { CloudscapeDynamoDBBrowser } from './DynamoDBBrowser'
+import { CloudscapeEC2Browser } from './EC2Browser'
 import { CloudscapeIAMBrowser } from './IAMBrowser'
 import { CloudscapeLambdaBrowser } from './LambdaBrowser'
 import { CloudscapeRDSBrowser } from './RDSBrowser'
@@ -16,6 +17,7 @@ import { CloudscapeSQSBrowser } from './SQSBrowser'
  */
 export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {
   dynamodb: CloudscapeDynamoDBBrowser,
+  ec2: CloudscapeEC2Browser,
   iam: CloudscapeIAMBrowser,
   lambda: CloudscapeLambdaBrowser,
   rds: CloudscapeRDSBrowser,
