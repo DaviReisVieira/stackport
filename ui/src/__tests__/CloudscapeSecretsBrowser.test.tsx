@@ -89,9 +89,9 @@ function mockFetchByUrl() {
 
 function renderSecrets() {
   return render(
-    <MemoryRouter initialEntries={['/cloudscape/resources/secretsmanager']}>
+    <MemoryRouter initialEntries={['/resources/secretsmanager']}>
       <Routes>
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )

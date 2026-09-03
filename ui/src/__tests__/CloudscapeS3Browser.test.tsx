@@ -152,11 +152,11 @@ function mockFetchByUrl() {
   globalThis.fetch = fetchMock as unknown as typeof fetch
 }
 
-function renderS3(path = '/cloudscape/resources/s3') {
+function renderS3(path = '/resources/s3') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -183,7 +183,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
   })
 
   it('opens a bucket via deep link and lists folders and files', async () => {
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     expect(await screen.findByText('images/')).toBeInTheDocument()
     expect(await screen.findByText('readme.md')).toBeInTheDocument()
     expect(await screen.findByText('text/markdown')).toBeInTheDocument()
@@ -191,7 +191,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
   })
 
   it('navigates into a folder updating the prefix query', async () => {
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     fireEvent.click(await screen.findByRole('link', { name: 'images/' }))
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(([url]) => String(url).includes('prefix=images%2F'))
@@ -200,7 +200,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
   })
 
   it('opens the object detail with metadata and preserved headers', async () => {
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     fireEvent.click(await screen.findByRole('link', { name: 'readme.md' }))
     expect(await screen.findByText('v-abc')).toBeInTheDocument()
     expect(await screen.findByText('author')).toBeInTheDocument()
@@ -213,7 +213,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
   })
 
   it('creates a folder sending the full prefix', async () => {
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     fireEvent.click(await screen.findByRole('button', { name: 'New folder' }))
     const input = await screen.findByPlaceholderText('my-folder')
     fireEvent.change(input, { target: { value: 'incoming' } })
@@ -229,7 +229,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
   })
 
   it('deletes selected objects through the batch endpoint after confirmation', async () => {
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     await screen.findByText('readme.md')
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select readme.md' }))
     fireEvent.click(screen.getByRole('button', { name: 'Delete selected' }))
@@ -269,7 +269,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
     }
     vi.stubGlobal('XMLHttpRequest', FakeXHR as unknown as typeof XMLHttpRequest)
 
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     await screen.findByText('readme.md')
 
     const file = new File(['data'], 'notes.txt', { type: 'text/plain' })
@@ -283,7 +283,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
   })
 
   it('edits bucket tags from the Tags tab', async () => {
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     await screen.findByText('readme.md')
     fireEvent.click(screen.getByText('Tags'))
 
@@ -304,7 +304,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
   })
 
   it('shows bucket settings and saves an edited lifecycle rule', async () => {
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     await screen.findByText('readme.md')
     fireEvent.click(screen.getByRole('tab', { name: 'Settings' }))
 
@@ -330,7 +330,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
   })
 
   it('toggles bucket versioning', async () => {
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     await screen.findByText('readme.md')
     fireEvent.click(screen.getByRole('tab', { name: 'Settings' }))
 
@@ -352,7 +352,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
   })
 
   it('saves notifications with the camelCase payload', async () => {
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     await screen.findByText('readme.md')
     fireEvent.click(screen.getByRole('tab', { name: 'Settings' }))
 
@@ -384,7 +384,7 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
   })
 
   it('saves CORS rules with the camelCase payload', async () => {
-    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    renderS3('/resources/s3?bucket=app-assets')
     await screen.findByText('readme.md')
     fireEvent.click(screen.getByRole('tab', { name: 'Settings' }))
 

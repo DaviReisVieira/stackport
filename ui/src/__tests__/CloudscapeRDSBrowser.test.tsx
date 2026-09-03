@@ -163,11 +163,11 @@ function mockFetchByUrl() {
   globalThis.fetch = fetchMock as unknown as typeof fetch
 }
 
-function renderRDS(path = '/cloudscape/resources/rds') {
+function renderRDS(path = '/resources/rds') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )

@@ -92,11 +92,11 @@ function mockFetchByUrl() {
   }) as unknown as typeof fetch
 }
 
-function renderIAM(path = '/cloudscape/resources/iam') {
+function renderIAM(path = '/resources/iam') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -152,7 +152,7 @@ describe('CloudscapeIAMBrowser (via registry dispatch)', () => {
   })
 
   it('deep-links straight into an entity detail', async () => {
-    renderIAM('/cloudscape/resources/iam?type=user&name=alice')
+    renderIAM('/resources/iam?type=user&name=alice')
     expect(await screen.findByText('AID1')).toBeInTheDocument()
   })
 })

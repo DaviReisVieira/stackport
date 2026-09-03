@@ -30,10 +30,7 @@ import { getServiceIcon } from '@/lib/service-icons'
  * AWS-console style chrome: a TopNavigation with a unified service search,
  * pinned favorite services, endpoint selector, theme toggle, and keyboard
  * shortcuts, plus the side navigation and a warning banner when connected to
- * real AWS. Each migrated view renders inside this AppLayout. The side nav
- * below is the single source of truth for what has been migrated: point an
- * entry at its /cloudscape route once the view lands, and leave it pointing at
- * the legacy route until then.
+ * real AWS. Every page renders inside this AppLayout.
  */
 export function CloudscapeShell({
   activeHref,
@@ -74,10 +71,10 @@ export function CloudscapeShell({
       { key: 't', handler: cycleTheme },
     ],
     [
-      { sequence: ['g', 'd'], handler: () => navigate('/cloudscape') },
-      { sequence: ['g', 'r'], handler: () => navigate('/cloudscape/resources') },
-      { sequence: ['g', 's'], handler: () => navigate('/cloudscape/settings') },
-      { sequence: ['g', 'a'], handler: () => navigate('/cloudscape/about') },
+      { sequence: ['g', 'd'], handler: () => navigate('/') },
+      { sequence: ['g', 'r'], handler: () => navigate('/resources') },
+      { sequence: ['g', 's'], handler: () => navigate('/settings') },
+      { sequence: ['g', 'a'], handler: () => navigate('/about') },
     ],
   )
 
@@ -89,7 +86,7 @@ export function CloudscapeShell({
   const goToService = useCallback(
     (service: string) => {
       setSearchValue('')
-      navigate(`/cloudscape/resources/${service}`)
+      navigate(`/resources/${service}`)
     },
     [navigate],
   )
@@ -158,11 +155,11 @@ export function CloudscapeShell({
       <div id="stackport-top-nav" style={{ position: 'sticky', top: 0, zIndex: 1002 }}>
         <TopNavigation
           identity={{
-            href: '/cloudscape',
+            href: '/',
             title: 'StackPort',
             onFollow: (event) => {
               event.preventDefault()
-              navigate('/cloudscape')
+              navigate('/')
             },
           }}
           search={
@@ -204,7 +201,7 @@ export function CloudscapeShell({
         onNavigationChange={({ detail }) => setNavOpen(detail.open)}
         navigation={
           <SideNavigation
-            header={{ text: 'StackPort', href: '/cloudscape' }}
+            header={{ text: 'StackPort', href: '/' }}
             activeHref={activeHref}
             onFollow={(event) => {
               if (!event.detail.external) {
@@ -213,19 +210,11 @@ export function CloudscapeShell({
               }
             }}
             items={[
-              { type: 'link', text: 'Dashboard', href: '/cloudscape' },
-              { type: 'link', text: 'Resources', href: '/cloudscape/resources' },
+              { type: 'link', text: 'Dashboard', href: '/' },
+              { type: 'link', text: 'Resources', href: '/resources' },
               ...extraNavItems,
-              { type: 'link', text: 'Settings', href: '/cloudscape/settings' },
-              { type: 'link', text: 'About', href: '/cloudscape/about' },
-              { type: 'divider' },
-              { type: 'link', text: 'Back to current UI', href: '/' },
-              {
-                type: 'link',
-                text: 'Migration progress',
-                href: 'https://github.com/DaviReisVieira/stackport/issues/148',
-                external: true,
-              },
+              { type: 'link', text: 'Settings', href: '/settings' },
+              { type: 'link', text: 'About', href: '/about' },
             ]}
           />
         }

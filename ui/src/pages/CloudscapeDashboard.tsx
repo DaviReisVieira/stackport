@@ -46,7 +46,7 @@ function renderServiceName(item: ServiceItem, onNavigate: (service: string) => v
       <Icon className="h-5 w-5 flex-shrink-0" />
       <Link
         fontSize="heading-m"
-        href={`/cloudscape/resources/${item.name}`}
+        href={`/resources/${item.name}`}
         onFollow={(event) => {
           event.preventDefault()
           onNavigate(item.name)
@@ -115,7 +115,7 @@ export default function CloudscapeDashboard() {
   }, [stats, filterText, isFavorite])
 
   const availableCount = stats ? Object.values(stats.services).filter((s) => s.status === 'available').length : 0
-  const goToService = useCallback((service: string) => navigate(`/cloudscape/resources/${service}`), [navigate])
+  const goToService = useCallback((service: string) => navigate(`/resources/${service}`), [navigate])
 
   const favoriteButton = (item: ServiceItem) => (
     <Button
@@ -155,7 +155,7 @@ export default function CloudscapeDashboard() {
   )
 
   return (
-    <CloudscapeShell activeHref="/cloudscape">
+    <CloudscapeShell activeHref="/">
       <ContentLayout
         header={
           <Header

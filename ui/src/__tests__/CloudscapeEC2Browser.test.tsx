@@ -193,11 +193,11 @@ function mockFetchByUrl() {
   globalThis.fetch = fetchMock as unknown as typeof fetch
 }
 
-function renderEC2(path = '/cloudscape/resources/ec2') {
+function renderEC2(path = '/resources/ec2') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -232,7 +232,7 @@ describe('CloudscapeEC2Browser (via registry dispatch)', () => {
   })
 
   it('starts a stopped instance via the start endpoint', async () => {
-    renderEC2('/cloudscape/resources/ec2?instance=i-0def')
+    renderEC2('/resources/ec2?instance=i-0def')
     const startButton = await screen.findByTestId('instance-start')
     await waitFor(() => expect(startButton).toBeEnabled())
     fireEvent.click(startButton)
@@ -246,7 +246,7 @@ describe('CloudscapeEC2Browser (via registry dispatch)', () => {
   })
 
   it('terminates only after the confirmation modal', async () => {
-    renderEC2('/cloudscape/resources/ec2?instance=i-0abc')
+    renderEC2('/resources/ec2?instance=i-0abc')
     fireEvent.click(await screen.findByTestId('instance-terminate'))
     expect(fetchMock.mock.calls.find(([url]) => String(url).includes('/terminate'))).toBeFalsy()
 
@@ -260,7 +260,7 @@ describe('CloudscapeEC2Browser (via registry dispatch)', () => {
   })
 
   it('saves instance tags from the detail Tags tab', async () => {
-    renderEC2('/cloudscape/resources/ec2?instance=i-0abc')
+    renderEC2('/resources/ec2?instance=i-0abc')
     await screen.findByText(/echo hello/)
     fireEvent.click(screen.getByText('Tags'))
 

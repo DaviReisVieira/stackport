@@ -36,7 +36,7 @@ export default function CloudscapeAbout() {
   const { data: health, error, refresh } = useFetch<HealthResponse>(healthFetcher, 10000)
 
   return (
-    <CloudscapeShell activeHref="/cloudscape/about">
+    <CloudscapeShell activeHref="/about">
       <SpaceBetween size="l">
         <Header
           variant="h1"

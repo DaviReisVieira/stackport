@@ -95,9 +95,9 @@ function mockFetchByUrl() {
 
 function renderLambda() {
   return render(
-    <MemoryRouter initialEntries={['/cloudscape/resources/lambda']}>
+    <MemoryRouter initialEntries={['/resources/lambda']}>
       <Routes>
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )

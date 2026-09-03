@@ -81,8 +81,8 @@ function renderBrowser(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/cloudscape/resources" element={<CloudscapeResourceBrowser />} />
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -95,14 +95,14 @@ beforeEach(() => {
 
 describe('CloudscapeResourceBrowser', () => {
   it('shows the service picker when no service is selected', async () => {
-    renderBrowser('/cloudscape/resources')
+    renderBrowser('/resources')
     expect(await screen.findByText('Pick a service')).toBeInTheDocument()
     expect((await screen.findAllByText('kms')).length).toBeGreaterThan(0)
     expect(await screen.findByText('3 resources')).toBeInTheDocument()
   })
 
   it('renders one tab per resource type with counts', async () => {
-    renderBrowser('/cloudscape/resources/kms')
+    renderBrowser('/resources/kms')
     expect(await screen.findByText('aliases (1)')).toBeInTheDocument()
     fireEvent.click(await screen.findByText('keys (2)'))
     expect(await screen.findByText('alice')).toBeInTheDocument()
@@ -110,20 +110,20 @@ describe('CloudscapeResourceBrowser', () => {
   })
 
   it('opens the detail modal with the raw JSON', async () => {
-    renderBrowser('/cloudscape/resources/kms')
+    renderBrowser('/resources/kms')
     fireEvent.click(await screen.findByText('keys (2)'))
     fireEvent.click(await screen.findByText('alice'))
     expect(await screen.findByText(/"UserName": "alice"/)).toBeInTheDocument()
   })
 
   it('offers export and filtering controls', async () => {
-    renderBrowser('/cloudscape/resources/kms')
+    renderBrowser('/resources/kms')
     expect((await screen.findAllByText('Export')).length).toBeGreaterThan(0)
     expect(await screen.findByPlaceholderText('Filter aliases')).toBeInTheDocument()
   })
 
   it('edits tags from the detail modal when the type supports them', async () => {
-    renderBrowser('/cloudscape/resources/kms')
+    renderBrowser('/resources/kms')
     fireEvent.click(await screen.findByText('keys (2)'))
     fireEvent.click(await screen.findByText('alice'))
     await screen.findByText(/"UserName": "alice"/)
@@ -146,7 +146,7 @@ describe('CloudscapeResourceBrowser', () => {
   })
 
   it('navigates rows with j/k and opens the detail with Enter', async () => {
-    renderBrowser('/cloudscape/resources/kms')
+    renderBrowser('/resources/kms')
     fireEvent.click(await screen.findByText('keys (2)'))
     await screen.findByText('alice')
 

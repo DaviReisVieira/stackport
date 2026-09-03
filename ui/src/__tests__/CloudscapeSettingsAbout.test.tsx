@@ -95,9 +95,9 @@ function mockFetchByUrl() {
 
 function renderSettings() {
   return render(
-    <MemoryRouter initialEntries={['/cloudscape/settings']}>
+    <MemoryRouter initialEntries={['/settings']}>
       <Routes>
-        <Route path="/cloudscape/settings" element={<CloudscapeSettings />} />
+        <Route path="/settings" element={<CloudscapeSettings />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -105,9 +105,9 @@ function renderSettings() {
 
 function renderAbout() {
   return render(
-    <MemoryRouter initialEntries={['/cloudscape/about']}>
+    <MemoryRouter initialEntries={['/about']}>
       <Routes>
-        <Route path="/cloudscape/about" element={<CloudscapeAbout />} />
+        <Route path="/about" element={<CloudscapeAbout />} />
       </Routes>
     </MemoryRouter>,
   )

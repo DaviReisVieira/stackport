@@ -436,7 +436,7 @@ function EndpointsPanel() {
 
 export default function CloudscapeSettings() {
   return (
-    <CloudscapeShell activeHref="/cloudscape/settings">
+    <CloudscapeShell activeHref="/settings">
       <SpaceBetween size="l">
         <Header variant="h1" description="Manage StackPort configuration and preferences">
           Settings

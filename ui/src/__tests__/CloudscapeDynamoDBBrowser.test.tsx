@@ -100,11 +100,11 @@ function mockFetchByUrl() {
   globalThis.fetch = fetchMock as unknown as typeof fetch
 }
 
-function renderDynamo(path = '/cloudscape/resources/dynamodb') {
+function renderDynamo(path = '/resources/dynamodb') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )

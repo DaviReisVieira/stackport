@@ -1,7 +1,5 @@
 import { Component } from 'react'
 import type { ReactNode, ErrorInfo } from 'react'
-import { Button } from '@/components/ui/button'
-import { AlertTriangle } from 'lucide-react'
 
 interface Props {
   children: ReactNode
@@ -19,22 +17,28 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error }
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('ErrorBoundary caught:', error, info.componentStack)
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Unhandled UI error:', error, errorInfo)
+  }
+
+  handleReload = () => {
+    this.setState({ hasError: false, error: null })
+    window.location.reload()
   }
 
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex items-center justify-center h-screen bg-background">
-          <div className="text-center space-y-4">
-            <AlertTriangle className="h-12 w-12 text-destructive mx-auto" />
-            <h2 className="text-lg font-semibold">Something went wrong</h2>
-            <p className="text-sm text-muted-foreground max-w-sm">
-              {this.state.error?.message || 'An unexpected error occurred.'}
-            </p>
-            <Button onClick={() => window.location.reload()}>Reload page</Button>
-          </div>
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
+          <h1 className="text-xl font-semibold">Something went wrong</h1>
+          <p className="max-w-md break-all text-sm opacity-70">{this.state.error?.message ?? 'Unexpected error'}</p>
+          <button
+            type="button"
+            onClick={this.handleReload}
+            className="rounded border px-4 py-2 text-sm font-medium hover:opacity-80"
+          >
+            Reload page
+          </button>
         </div>
       )
     }

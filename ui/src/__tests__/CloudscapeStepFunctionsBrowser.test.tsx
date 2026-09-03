@@ -126,11 +126,11 @@ function mockFetchByUrl() {
   globalThis.fetch = fetchMock as unknown as typeof fetch
 }
 
-function renderSFN(path = '/cloudscape/resources/stepfunctions') {
+function renderSFN(path = '/resources/stepfunctions') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -150,7 +150,7 @@ describe('CloudscapeStepFunctionsBrowser (via registry dispatch)', () => {
   })
 
   it('opens the machine detail with executions and status filter', async () => {
-    renderSFN(`/cloudscape/resources/stepfunctions?machine=${encodeURIComponent(MACHINE_ARN)}`)
+    renderSFN(`/resources/stepfunctions?machine=${encodeURIComponent(MACHINE_ARN)}`)
     expect(await screen.findByText('Executions (1)')).toBeInTheDocument()
     expect(await screen.findByText('run-1')).toBeInTheDocument()
     expect(await screen.findByText('SUCCEEDED')).toBeInTheDocument()
@@ -158,7 +158,7 @@ describe('CloudscapeStepFunctionsBrowser (via registry dispatch)', () => {
   })
 
   it('renders the definition tab with the state machine graph and JSON', async () => {
-    renderSFN(`/cloudscape/resources/stepfunctions?machine=${encodeURIComponent(MACHINE_ARN)}`)
+    renderSFN(`/resources/stepfunctions?machine=${encodeURIComponent(MACHINE_ARN)}`)
     await screen.findByText('run-1')
     fireEvent.click(screen.getByRole('tab', { name: 'Definition' }))
 
@@ -169,7 +169,7 @@ describe('CloudscapeStepFunctionsBrowser (via registry dispatch)', () => {
   })
 
   it('starts an execution with a JSON payload', async () => {
-    renderSFN(`/cloudscape/resources/stepfunctions?machine=${encodeURIComponent(MACHINE_ARN)}`)
+    renderSFN(`/resources/stepfunctions?machine=${encodeURIComponent(MACHINE_ARN)}`)
     await screen.findByText('run-1')
     fireEvent.click(screen.getByRole('button', { name: 'Start execution' }))
 
@@ -189,7 +189,7 @@ describe('CloudscapeStepFunctionsBrowser (via registry dispatch)', () => {
   })
 
   it('rejects invalid JSON input before sending anything', async () => {
-    renderSFN(`/cloudscape/resources/stepfunctions?machine=${encodeURIComponent(MACHINE_ARN)}`)
+    renderSFN(`/resources/stepfunctions?machine=${encodeURIComponent(MACHINE_ARN)}`)
     await screen.findByText('run-1')
     fireEvent.click(screen.getByRole('button', { name: 'Start execution' }))
 
@@ -202,7 +202,7 @@ describe('CloudscapeStepFunctionsBrowser (via registry dispatch)', () => {
   })
 
   it('opens the execution detail with input, output, graph trace and timeline', async () => {
-    renderSFN(`/cloudscape/resources/stepfunctions?machine=${encodeURIComponent(MACHINE_ARN)}`)
+    renderSFN(`/resources/stepfunctions?machine=${encodeURIComponent(MACHINE_ARN)}`)
     fireEvent.click(await screen.findByRole('link', { name: 'run-1' }))
 
     expect(await screen.findByText(/"orderId": 42/)).toBeInTheDocument()

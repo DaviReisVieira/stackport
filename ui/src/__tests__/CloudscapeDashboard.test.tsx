@@ -71,7 +71,7 @@ import CloudscapeDashboard from '@/pages/CloudscapeDashboard'
 
 function renderDashboard() {
   return render(
-    <MemoryRouter initialEntries={['/cloudscape']}>
+    <MemoryRouter initialEntries={['/']}>
       <CloudscapeDashboard />
     </MemoryRouter>,
   )

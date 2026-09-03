@@ -109,11 +109,11 @@ function mockFetchByUrl() {
   globalThis.fetch = fetchMock as unknown as typeof fetch
 }
 
-function renderLogs(path = '/cloudscape/resources/logs') {
+function renderLogs(path = '/resources/logs') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -133,7 +133,7 @@ describe('CloudscapeLogsBrowser (via registry dispatch)', () => {
   })
 
   it('deep-links into a group and stream showing events with JSON detection', async () => {
-    renderLogs('/cloudscape/resources/logs?group=%2Faws%2Flambda%2Forders&stream=2026%2F03%2F01%2F%5B%24LATEST%5Dabc')
+    renderLogs('/resources/logs?group=%2Faws%2Flambda%2Forders&stream=2026%2F03%2F01%2F%5B%24LATEST%5Dabc')
     expect(await screen.findByText(/START RequestId/)).toBeInTheDocument()
     expect(await screen.findByText('JSON')).toBeInTheDocument()
     expect(await screen.findByText(/"order processed"/)).toBeInTheDocument()
@@ -143,7 +143,7 @@ describe('CloudscapeLogsBrowser (via registry dispatch)', () => {
   })
 
   it('applies a filter pattern to the events query', async () => {
-    renderLogs('/cloudscape/resources/logs?group=%2Faws%2Flambda%2Forders&stream=2026%2F03%2F01%2F%5B%24LATEST%5Dabc')
+    renderLogs('/resources/logs?group=%2Faws%2Flambda%2Forders&stream=2026%2F03%2F01%2F%5B%24LATEST%5Dabc')
     await screen.findByText(/START RequestId/)
 
     fireEvent.click(screen.getByText('Filters'))
@@ -226,7 +226,7 @@ describe('CloudscapeLogsBrowser (via registry dispatch)', () => {
   })
 
   it('deletes a stream after name confirmation', async () => {
-    renderLogs('/cloudscape/resources/logs?group=%2Faws%2Flambda%2Forders')
+    renderLogs('/resources/logs?group=%2Faws%2Flambda%2Forders')
     await screen.findByText('2026/03/01/[$LATEST]abc')
     fireEvent.click(screen.getByRole('button', { name: 'Delete stream 2026/03/01/[$LATEST]abc' }))
 
@@ -243,7 +243,7 @@ describe('CloudscapeLogsBrowser (via registry dispatch)', () => {
   })
 
   it('edits log group tags via the group ARN', async () => {
-    renderLogs('/cloudscape/resources/logs?group=%2Faws%2Flambda%2Forders')
+    renderLogs('/resources/logs?group=%2Faws%2Flambda%2Forders')
     await screen.findByText('2026/03/01/[$LATEST]abc')
     fireEvent.click(screen.getByRole('tab', { name: 'Tags' }))
 

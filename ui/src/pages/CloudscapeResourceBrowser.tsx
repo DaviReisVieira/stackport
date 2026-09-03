@@ -383,7 +383,7 @@ function ServicePicker({ stats, onSelect }: { stats: StatsResponse | null; onSel
             <div className="flex items-center gap-2">
               <Icon className="h-4 w-4 flex-shrink-0" />
               <Link
-                href={`/cloudscape/resources/${item.name}`}
+                href={`/resources/${item.name}`}
                 onFollow={(event) => {
                   event.preventDefault()
                   onSelect(item.name)
@@ -441,7 +441,7 @@ export default function CloudscapeResourceBrowser() {
           .map((name) => ({
             type: 'link' as const,
             text: name,
-            href: `/cloudscape/resources/${name}`,
+            href: `/resources/${name}`,
           })),
       },
     ],
@@ -459,7 +459,7 @@ export default function CloudscapeResourceBrowser() {
 
   return (
     <CloudscapeShell
-      activeHref={service ? `/cloudscape/resources/${service}` : '/cloudscape/resources'}
+      activeHref={service ? `/resources/${service}` : '/resources'}
       extraNavItems={servicesNav}
     >
       <ContentLayout
@@ -481,7 +481,7 @@ export default function CloudscapeResourceBrowser() {
           </Header>
         }
       >
-        {!service && <ServicePicker stats={stats} onSelect={(name) => navigate(`/cloudscape/resources/${name}`)} />}
+        {!service && <ServicePicker stats={stats} onSelect={(name) => navigate(`/resources/${name}`)} />}
 
         {service && CustomView && <CustomView />}
 

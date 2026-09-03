@@ -115,9 +115,9 @@ function mockFetchByUrl() {
 
 function renderSQS() {
   return render(
-    <MemoryRouter initialEntries={['/cloudscape/resources/sqs']}>
+    <MemoryRouter initialEntries={['/resources/sqs']}>
       <Routes>
-        <Route path="/cloudscape/resources/:service" element={<CloudscapeResourceBrowser />} />
+        <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
     </MemoryRouter>,
   )

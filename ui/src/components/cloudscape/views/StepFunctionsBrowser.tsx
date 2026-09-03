@@ -43,10 +43,10 @@ import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
 // The ASL graph and timeline are framework-agnostic (SVG + dagre); they move
 // under cloudscape/ when the legacy UI is removed in the flip (#147).
-import { buildExecutionTrace, calculateDuration, formatDate } from '@/components/service-views/stepfunctions'
-import { ExecutionTimeline } from '@/components/service-views/stepfunctions/ExecutionTimeline'
+import { buildExecutionTrace, calculateDuration, formatDate } from './stepfunctions'
+import { ExecutionTimeline } from './stepfunctions/ExecutionTimeline'
 
-const StateMachineGraph = lazy(() => import('@/components/service-views/stepfunctions/StateMachineGraph'))
+const StateMachineGraph = lazy(() => import('./stepfunctions/StateMachineGraph'))
 
 const STATUS_OPTIONS = [
   { label: 'All statuses', value: 'ALL' },
