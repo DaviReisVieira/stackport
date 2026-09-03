@@ -81,6 +81,11 @@ import type {
   StopExecutionRequest,
   StopExecutionResponse,
   TagsSupportedResponse,
+  CloudWatchAlarm,
+  CloudWatchDashboardDetail,
+  CloudWatchDashboardEntry,
+  MetricDataQueryInput,
+  MetricSeries,
 } from './types'
 
 const API_BASE = '/api'
@@ -1223,4 +1228,33 @@ export async function fetchRDSParameterGroupDetail(
   const params = new URLSearchParams()
   if (source) params.set('source', source)
   return fetchJSON<RDSParameterGroupDetail>(buildUrl(`/rds/parameter-groups/${encodeURIComponent(groupName)}`, endpoint, params))
+}
+
+// --- CloudWatch Monitoring (#123) ---
+
+export async function fetchCloudWatchDashboards(endpoint?: string | null): Promise<{ dashboards: CloudWatchDashboardEntry[] }> {
+  return fetchJSON<{ dashboards: CloudWatchDashboardEntry[] }>(buildUrl('/monitoring/dashboards', endpoint))
+}
+
+export async function fetchCloudWatchDashboard(name: string, endpoint?: string | null): Promise<CloudWatchDashboardDetail> {
+  return fetchJSON<CloudWatchDashboardDetail>(buildUrl(`/monitoring/dashboards/${encodeURIComponent(name)}`, endpoint))
+}
+
+export async function fetchCloudWatchAlarms(endpoint?: string | null): Promise<{ alarms: CloudWatchAlarm[] }> {
+  return fetchJSON<{ alarms: CloudWatchAlarm[] }>(buildUrl('/monitoring/alarms', endpoint))
+}
+
+export async function fetchMetricData(
+  queries: MetricDataQueryInput[],
+  startMinutes: number,
+  endpoint?: string | null,
+): Promise<{ results: MetricSeries[] }> {
+  const url = buildUrl('/monitoring/metric-data', endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ queries, startMinutes }),
+  })
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  return res.json()
 }

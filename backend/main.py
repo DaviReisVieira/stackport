@@ -17,7 +17,7 @@ from botocore.exceptions import (
 )
 
 from backend.config import LOG_LEVEL, STACKPORT_ALLOW_WRITES, STACKPORT_PORT
-from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, resources, rds, s3, secretsmanager, sqs, stats, stepfunctions, tags
+from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, monitoring, resources, rds, s3, secretsmanager, sqs, stats, stepfunctions, tags
 from backend.websocket import probe_loop, websocket_endpoint
 
 
@@ -70,6 +70,8 @@ class ReadOnlyMiddleware(BaseHTTPMiddleware):
         if path.startswith("/api/dynamodb/tables/") and path.endswith("/query"):
             return True
         if path.startswith("/api/lambda/functions/") and path.endswith("/invoke"):
+            return True
+        if path == "/api/monitoring/metric-data":
             return True
         # Step Functions start/stop execution are writes, not reads
         return False
@@ -127,6 +129,7 @@ app.include_router(stepfunctions.router, prefix="/api/stepfunctions", tags=["ste
 app.include_router(tags.router, prefix="/api", tags=["tags"])
 app.include_router(resources.router, prefix="/api")
 app.include_router(rds.router, prefix="/api/rds", tags=["rds"])
+app.include_router(monitoring.router, prefix="/api/monitoring", tags=["monitoring"])
 
 
 # WebSocket endpoint for real-time updates
