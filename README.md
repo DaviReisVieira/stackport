@@ -19,13 +19,13 @@
 ## Screenshots
 
 **Dashboard** — Service overview with resource counts and health status
-![StackPort Dashboard](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/dashboard.jpeg?v=2.0)
+![StackPort Dashboard](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/dashboard.jpeg?v=2.1)
 
 **Lambda Browser** — Function list with config, aliases, versions, event sources, and invocation panel
-![Lambda Resources](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/lambda.jpeg?v=2.0)
+![Lambda Resources](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/lambda.jpeg?v=2.1)
 
 **S3 Browser** — File browser with upload, download, folder navigation, and tagging
-![S3 Browser](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/s3.jpeg?v=2.0)
+![S3 Browser](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/s3.jpeg?v=2.1)
 
 ## Features
 
