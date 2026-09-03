@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCollection } from '@cloudscape-design/collection-hooks'
 import Alert from '@cloudscape-design/components/alert'
@@ -432,28 +432,86 @@ function EventsPanel({ group, stream }: { group: string; stream: string }) {
     if (group && stream) void loadEvents()
   }, [group, stream, loadEvents])
 
-  // Tail mode: poll for events newer than the last one every 3 seconds.
+  // Latest event timestamp, used as the tail cursor without retriggering effects.
+  const lastMillisRef = useRef(0)
+  useEffect(() => {
+    if (events.length > 0) {
+      lastMillisRef.current = Math.max(lastMillisRef.current, events[events.length - 1].timestamp_millis)
+    }
+  }, [events])
+
+  const appendEvents = useCallback((incoming: LogEvent[]) => {
+    if (incoming.length === 0) return
+    setEvents((prev) => [...prev, ...incoming])
+    setTimeout(() => {
+      const container = document.getElementById('cloudscape-log-events')
+      if (container) container.scrollTop = container.scrollHeight
+    }, 100)
+  }, [])
+
+  // Tail mode (#85): live events over WebSocket, with a 3s polling fallback
+  // when the socket cannot be established.
   useEffect(() => {
     if (!tailMode) return
-    const interval = setInterval(() => {
-      if (events.length === 0) return
-      const lastEventTime = events[events.length - 1].timestamp_millis
-      fetchLogEvents(group, stream, lastEventTime + 1, 0, appliedFilterPattern, 100, '', activeEndpoint)
-        .then((res) => {
-          if (res.events.length > 0) {
-            setEvents((prev) => [...prev, ...res.events])
-            setTimeout(() => {
-              const container = document.getElementById('cloudscape-log-events')
-              if (container) container.scrollTop = container.scrollHeight
-            }, 100)
-          }
-        })
-        .catch(() => {
-          // transient poll failure; next tick retries
-        })
-    }, 3000)
-    return () => clearInterval(interval)
-  }, [tailMode, events, group, stream, appliedFilterPattern, activeEndpoint])
+    let closedByUs = false
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null
+
+    const startPollingFallback = () => {
+      if (fallbackInterval) return
+      fallbackInterval = setInterval(() => {
+        const since = lastMillisRef.current
+        if (since === 0) return
+        fetchLogEvents(group, stream, since + 1, 0, appliedFilterPattern, 100, '', activeEndpoint)
+          .then((res) => appendEvents(res.events))
+          .catch(() => {
+            // transient poll failure; next tick retries
+          })
+      }, 3000)
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    let ws: WebSocket | null = null
+    try {
+      ws = new WebSocket(`${protocol}://${window.location.host}/ws/logs/tail`)
+    } catch {
+      startPollingFallback()
+    }
+    if (ws) {
+      ws.onopen = () => {
+        ws?.send(
+          JSON.stringify({
+            type: 'tail',
+            group,
+            stream,
+            endpoint: activeEndpoint,
+            filterPattern: appliedFilterPattern,
+            since: lastMillisRef.current || undefined,
+          }),
+        )
+      }
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data as string)
+          if (msg.type === 'events') appendEvents(msg.data.events as LogEvent[])
+        } catch {
+          // ignore malformed frames
+        }
+      }
+      ws.onerror = () => startPollingFallback()
+      ws.onclose = () => {
+        if (!closedByUs) startPollingFallback()
+      }
+    }
+
+    return () => {
+      closedByUs = true
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'stop' }))
+      }
+      ws?.close()
+      if (fallbackInterval) clearInterval(fallbackInterval)
+    }
+  }, [tailMode, group, stream, appliedFilterPattern, activeEndpoint, appendEvents])
 
   const setRelativeTimeRange = (hours: number) => {
     setStartTime(Date.now() - hours * 60 * 60 * 1000)
