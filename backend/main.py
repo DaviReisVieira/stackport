@@ -17,7 +17,7 @@ from botocore.exceptions import (
 )
 
 from backend.config import LOG_LEVEL, STACKPORT_ALLOW_WRITES, STACKPORT_PORT
-from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, monitoring, resources, rds, s3, secretsmanager, sqs, stats, stepfunctions, tags
+from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags
 from backend.websocket import logs_tail_endpoint, probe_loop, websocket_endpoint
 
 
@@ -130,6 +130,7 @@ app.include_router(tags.router, prefix="/api", tags=["tags"])
 app.include_router(resources.router, prefix="/api")
 app.include_router(rds.router, prefix="/api/rds", tags=["rds"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["monitoring"])
+app.include_router(sns.router, prefix="/api/sns", tags=["sns"])
 
 
 # WebSocket endpoint for real-time updates

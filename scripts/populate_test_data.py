@@ -523,25 +523,59 @@ def populate_sns():
     topic_count = random.randint(2, 5)
     subscriptions_per_topic = random.randint(1, 3)
 
+    # SQS queue ARNs to fan out to, so SNS -> SQS delivery is demonstrable
+    sqs_client = get_client("sqs")
+    queue_arns = []
+    try:
+        for queue_url in sqs_client.list_queues().get("QueueUrls", [])[:5]:
+            attrs = sqs_client.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["QueueArn"])
+            queue_arns.append(attrs["Attributes"]["QueueArn"])
+    except Exception:
+        pass
+
     try:
         for i in range(topic_count):
             topic_name = cool_name("topic", funny=True)
             try:
-                response = client.create_topic(Name=topic_name)
+                display_name = topic_name.replace("-", " ").title()
+                response = client.create_topic(Name=topic_name, Attributes={"DisplayName": display_name})
                 topic_arn = response["TopicArn"]
 
                 for j in range(subscriptions_per_topic):
-                    client.subscribe(
-                        TopicArn=topic_arn,
-                        Protocol="email",
-                        Endpoint=f"notify-{cool_name().replace('-', '')}@example.com",
-                    )
+                    if queue_arns and random.random() > 0.4:
+                        queue_arn = random.choice(queue_arns)
+                        sub = client.subscribe(
+                            TopicArn=topic_arn,
+                            Protocol="sqs",
+                            Endpoint=queue_arn,
+                            ReturnSubscriptionArn=True,
+                        )
+                        if random.random() > 0.5:
+                            client.set_subscription_attributes(
+                                SubscriptionArn=sub["SubscriptionArn"],
+                                AttributeName="FilterPolicy",
+                                AttributeValue=json.dumps({"type": [random.choice(["order", "payment", "shipment"])]}),
+                            )
+                    else:
+                        client.subscribe(
+                            TopicArn=topic_arn,
+                            Protocol="email",
+                            Endpoint=f"notify-{cool_name().replace('-', '')}@example.com",
+                        )
 
                 print(f"  ✓ {topic_name} ({subscriptions_per_topic} subscriptions)")
             except Exception as e:
                 print(f"  ✗ Error: {e}")
 
-        print(f"Created {topic_count} SNS topics")
+        # One FIFO topic for the type badge and FIFO publish fields
+        fifo_name = f"{cool_name('topic', funny=True)}.fifo"
+        try:
+            client.create_topic(Name=fifo_name, Attributes={"FifoTopic": "true", "ContentBasedDeduplication": "true"})
+            print(f"  ✓ {fifo_name} (FIFO)")
+        except Exception as e:
+            print(f"  ✗ Error creating FIFO topic {fifo_name}: {e}")
+
+        print(f"Created {topic_count + 1} SNS topics")
     except Exception as e:
         print(f"SNS error: {e}")
 

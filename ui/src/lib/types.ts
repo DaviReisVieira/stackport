@@ -1143,3 +1143,32 @@ export interface MetricSeries {
   timestamps: string[]
   values: number[]
 }
+
+// --- SNS (#75) ---
+
+export interface SNSTopic {
+  arn: string
+  name: string
+  displayName: string | null
+  fifo: boolean
+  contentBasedDeduplication: boolean
+  subscriptionsConfirmed: number
+  subscriptionsPending: number
+  owner: string | null
+  kmsMasterKeyId: string | null
+}
+
+export interface SNSSubscription {
+  arn: string
+  protocol: string
+  endpoint: string
+  owner: string
+  pending: boolean
+  filterPolicy: Record<string, unknown> | string | null
+  rawMessageDelivery: boolean
+}
+
+export interface SNSTopicDetail extends SNSTopic {
+  attributes: Record<string, string>
+  subscriptions: SNSSubscription[]
+}
