@@ -49,14 +49,14 @@ Requires a running AWS-compatible emulator (MiniStack on :4566 by default).
 - `_METHOD_KWARGS` (stats.py) — extra params for APIs that require them (cognito `MaxResults`, wafv2 `Scope`).
 
 **Frontend** (`ui/src/`):
-- React 18 + Vite 5 + TypeScript + Tailwind CSS 3 + shadcn/ui (Radix-based)
-- `main.tsx` — BrowserRouter basename `/`, TooltipProvider, Sonner Toaster
-- `App.tsx` — Routes: `/` (Dashboard), `/resources/:service?` (ResourceBrowser), `*` → redirect
-- `components/Layout.tsx` — Sidebar nav (Dashboard, Resources)
-- `pages/Dashboard.tsx` — Service grid with status badges, resource counts, links to browser
-- `pages/ResourceBrowser.tsx` — Service sidebar + resource table + detail Sheet. Renders `SERVICE_VIEWS[service]` when available, falls back to generic table.
-- `components/service-views/index.ts` — Registry: `{ s3: S3Browser }`. Add new service UIs here.
-- `components/service-views/S3Browser.tsx` — Full S3 file browser: bucket list, folder navigation, object detail, search, pagination, download.
+- React 18 + Vite 5 + TypeScript + Cloudscape Design System (`@cloudscape-design/components`), Tailwind CSS 3 kept as a small utility layer
+- `main.tsx` — BrowserRouter basename `/`, Sonner Toaster, EndpointProvider
+- `App.tsx` — Lazy routes: `/` (Dashboard), `/resources/:service?` (ResourceBrowser), `/settings`, `/about`; old `/cloudscape/*` paths redirect
+- `components/cloudscape/CloudscapeShell.tsx` — Shared AppLayout shell: TopNavigation (service search, pinned favorites, theme toggle, endpoint menu), SideNavigation, keyboard shortcuts (`g d/r/s/a`, `?`)
+- `pages/CloudscapeDashboard.tsx` — Service Cards/Table grid, live stats over WebSocket, favorites-first sort
+- `pages/CloudscapeResourceBrowser.tsx` — Service picker + per-type tabs with PropertyFilter tables, detail modal with tag editing, j/k/Enter navigation. Renders `CLOUDSCAPE_SERVICE_VIEWS[service]` when available, falls back to the generic table.
+- `components/cloudscape/views/index.ts` — Registry of service-specific views (`s3`, `sqs`, `dynamodb`, `lambda`, `iam`, `rds`, `ec2`, `logs`, `secretsmanager`, `stepfunctions`). Add new service UIs here.
+- `components/cloudscape/views/stepfunctions/` — Framework-agnostic ASL graph (dagre + SVG) and execution timeline shared by the Step Functions view
 - `lib/api.ts` — `API_BASE = '/api'`, fetch functions for all endpoints
 - `lib/types.ts` — `ServiceStats`, `StatsResponse`
 - `lib/service-icons.ts` — 35+ service → lucide icon mappings, fallback to `Server`
@@ -93,20 +93,23 @@ For services that need richer UX than the generic resource table (like S3's file
 1. If the service has write endpoints, add Pydantic request models in `backend/schemas/{service}.py`
 2. Add backend endpoints in a new `backend/routes/{service}.py`, register in `main.py`
 3. Add fetch functions in `ui/src/lib/api.ts` and TypeScript types in `ui/src/lib/types.ts`
-4. Create `ui/src/components/service-views/{Service}Browser.tsx` — for complex views, extract sub-components into `ui/src/components/service-views/{service}/`
-5. Register in `SERVICE_VIEWS` in `ui/src/components/service-views/index.ts`
+4. Create `ui/src/components/cloudscape/views/{Service}Browser.tsx` — for complex views, extract sub-components into `ui/src/components/cloudscape/views/{service}/`
+5. Register in `CLOUDSCAPE_SERVICE_VIEWS` in `ui/src/components/cloudscape/views/index.ts`
 
-ResourceBrowser renders `SERVICE_VIEWS[service]` when available, falls back to generic table.
+CloudscapeResourceBrowser renders `CLOUDSCAPE_SERVICE_VIEWS[service]` when available, falls back to the generic table.
+
+View conventions (match the existing views): deep links via query params (`?queue=`, `?bucket=&prefix=`, ...), `useCollection` for filtering/pagination/sorting, Cloudscape `Modal` for detail/forms, destructive actions confirmed (type-the-name for purge/delete), export via `exportData` from `@/lib/export`, and an integration test in `ui/src/__tests__/` that renders the real route and asserts real request payloads.
 
 ## UI Conventions
 
-- shadcn components are in `src/components/ui/` — **Radix-based** (not Base UI). Do NOT use `npx shadcn@latest` as it installs v4/Base UI incompatible with Tailwind v3. Copy classic Radix-based component code instead.
-- Dark theme only — CSS variables under `.dark` class in `index.css`, HSL format.
+- UI kit is **Cloudscape Design System** — import components individually (`import Table from '@cloudscape-design/components/table'`). No shadcn/Radix.
+- Light/dark/system theme — `useTheme` applies the Cloudscape `Mode` via `applyMode` and toggles the `dark` class for the Tailwind token utilities used by the ASL graph.
+- Tailwind stays as a utility layer only (code blocks, the SVG graph, small layout tweaks); prefer Cloudscape components and their props for anything structural.
 - Toast notifications via `sonner` — `import { toast } from 'sonner'`.
-- `<TooltipProvider>` wraps the app in `main.tsx`.
 - Service icons: `import { getServiceIcon } from '@/lib/service-icons'` returns a `LucideIcon`.
 - `@/*` path alias maps to `./src/*`.
 - `cn()` helper from `@/lib/utils` for conditional class merging (clsx + tailwind-merge).
+- Tests use Testing Library against real routes with URL-routed fetch mocks; Cloudscape Selects need `createWrapper()` from `@cloudscape-design/components/test-utils/dom`; Tabs render only the active tab.
 
 ## Code Conventions
 

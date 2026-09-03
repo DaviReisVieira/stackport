@@ -290,10 +290,9 @@ backend/
     secretsmanager.py  Secret value retrieval
 
 ui/src/
-  pages/           Dashboard, ResourceBrowser, About
+  pages/           CloudscapeDashboard, CloudscapeResourceBrowser, CloudscapeSettings, CloudscapeAbout
   components/
-    service-views/ S3Browser, DynamoDBBrowser, LambdaBrowser, ...
-    ui/            shadcn/ui components (Radix-based)
+    cloudscape/    AppLayout shell + service views (Cloudscape Design System)
   hooks/           useFetch, useWebSocket, useKeyboardShortcuts, ...
   lib/             API client, types, service icons, utils
 ```
