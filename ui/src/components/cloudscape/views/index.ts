@@ -3,6 +3,7 @@ import { CloudscapeDynamoDBBrowser } from './DynamoDBBrowser'
 import { CloudscapeIAMBrowser } from './IAMBrowser'
 import { CloudscapeLambdaBrowser } from './LambdaBrowser'
 import { CloudscapeRDSBrowser } from './RDSBrowser'
+import { CloudscapeS3Browser } from './S3Browser'
 import { CloudscapeSecretsManagerBrowser } from './SecretsManagerBrowser'
 import { CloudscapeSQSBrowser } from './SQSBrowser'
 
@@ -18,6 +19,7 @@ export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {
   iam: CloudscapeIAMBrowser,
   lambda: CloudscapeLambdaBrowser,
   rds: CloudscapeRDSBrowser,
+  s3: CloudscapeS3Browser,
   secretsmanager: CloudscapeSecretsManagerBrowser,
   sqs: CloudscapeSQSBrowser,
 }
