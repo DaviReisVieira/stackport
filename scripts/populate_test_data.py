@@ -547,7 +547,7 @@ def populate_sns():
 
 
 def populate_ec2():
-    """Populate EC2 with test security groups."""
+    """Populate EC2 with test security groups, instances and volumes."""
     print("\n=== EC2 ===")
     client = get_client("ec2")
 
@@ -567,6 +567,74 @@ def populate_ec2():
         print(f"Created {sg_count} EC2 security groups")
     except Exception as e:
         print(f"EC2 error: {e}")
+
+    instance_count = random.randint(2, 3)
+    try:
+        for i in range(instance_count):
+            name = cool_name("srv", include_env=True, funny=True)
+            try:
+                response = client.run_instances(
+                    ImageId="ami-0abcdef1234567890",
+                    MinCount=1,
+                    MaxCount=1,
+                    InstanceType=random.choice(["t3.micro", "t3.small", "m5.large"]),
+                    TagSpecifications=[
+                        {
+                            "ResourceType": "instance",
+                            "Tags": [
+                                {"Key": "Name", "Value": name},
+                                {"Key": "Environment", "Value": random.choice(ENVIRONMENTS)},
+                            ],
+                        }
+                    ],
+                )
+                instance_id = response["Instances"][0]["InstanceId"]
+                print(f"  ✓ Instance: {name} ({instance_id})")
+            except Exception as e:
+                print(f"  ✗ Error creating instance {name}: {e}")
+
+        print(f"Created {instance_count} EC2 instances")
+    except Exception as e:
+        print(f"EC2 instances error: {e}")
+
+    volume_count = random.randint(1, 2)
+    try:
+        for i in range(volume_count):
+            try:
+                response = client.create_volume(
+                    AvailabilityZone="us-east-1a",
+                    Size=random.choice([8, 20, 50]),
+                    VolumeType="gp3",
+                )
+                print(f"  ✓ Volume: {response['VolumeId']} ({response['Size']} GiB)")
+            except Exception as e:
+                print(f"  ✗ Error creating volume: {e}")
+
+        print(f"Created {volume_count} EBS volumes")
+    except Exception as e:
+        print(f"EC2 volumes error: {e}")
+
+    # Auto Scaling group backed by a launch configuration
+    asg_client = get_client("autoscaling")
+    asg_name = cool_name("asg", include_env=True, funny=True)
+    lc_name = f"{asg_name}-lc"
+    try:
+        asg_client.create_launch_configuration(
+            LaunchConfigurationName=lc_name,
+            ImageId="ami-0abcdef1234567890",
+            InstanceType="t3.micro",
+        )
+        asg_client.create_auto_scaling_group(
+            AutoScalingGroupName=asg_name,
+            LaunchConfigurationName=lc_name,
+            MinSize=1,
+            MaxSize=4,
+            DesiredCapacity=2,
+            AvailabilityZones=["us-east-1a"],
+        )
+        print(f"  ✓ Auto Scaling group: {asg_name}")
+    except Exception as e:
+        print(f"  ✗ Error creating Auto Scaling group {asg_name}: {e}")
 
 
 def populate_iam():
@@ -602,6 +670,80 @@ def populate_iam():
         print(f"Created {role_count} IAM roles")
     except Exception as e:
         print(f"IAM error: {e}")
+
+    # Customer-managed policies (the UI lists Scope=Local, so these are what shows up)
+    policy_arns = []
+    policy_count = random.randint(2, 3)
+    try:
+        for i in range(policy_count):
+            policy_name = cool_name("policy", funny=True)
+            document = {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": random.choice(
+                            [["s3:GetObject", "s3:ListBucket"], ["sqs:SendMessage"], ["dynamodb:Query", "dynamodb:GetItem"]]
+                        ),
+                        "Resource": "*",
+                    }
+                ],
+            }
+            try:
+                response = client.create_policy(
+                    PolicyName=policy_name,
+                    PolicyDocument=json.dumps(document),
+                    Description=f"Policy: {policy_name}",
+                )
+                policy_arns.append(response["Policy"]["Arn"])
+                print(f"  ✓ Policy: {policy_name}")
+            except Exception as e:
+                print(f"  ✗ Error creating policy {policy_name}: {e}")
+
+        print(f"Created {policy_count} IAM customer-managed policies")
+    except Exception as e:
+        print(f"IAM policies error: {e}")
+
+    # Groups
+    group_names = []
+    group_count = random.randint(1, 2)
+    try:
+        for i in range(group_count):
+            group_name = cool_name("team", funny=True)
+            try:
+                client.create_group(GroupName=group_name)
+                group_names.append(group_name)
+                print(f"  ✓ Group: {group_name}")
+            except Exception as e:
+                print(f"  ✗ Error creating group {group_name}: {e}")
+
+        print(f"Created {group_count} IAM groups")
+    except Exception as e:
+        print(f"IAM groups error: {e}")
+
+    # Users with attached policies, group membership and access keys
+    user_count = random.randint(2, 3)
+    try:
+        for i in range(user_count):
+            user_name = cool_name("user", funny=True)
+            try:
+                client.create_user(
+                    UserName=user_name,
+                    Tags=[{"Key": "Team", "Value": random.choice(["platform", "data", "growth"])}],
+                )
+                if policy_arns:
+                    client.attach_user_policy(UserName=user_name, PolicyArn=random.choice(policy_arns))
+                if group_names:
+                    client.add_user_to_group(GroupName=random.choice(group_names), UserName=user_name)
+                if random.random() > 0.5:
+                    client.create_access_key(UserName=user_name)
+                print(f"  ✓ User: {user_name}")
+            except Exception as e:
+                print(f"  ✗ Error creating user {user_name}: {e}")
+
+        print(f"Created {user_count} IAM users")
+    except Exception as e:
+        print(f"IAM users error: {e}")
 
 
 def populate_rds():
@@ -673,6 +815,29 @@ def populate_rds():
                 print(f"  ✗ Error creating cluster {cluster_name}: {e}")
 
         print(f"Created {len(created_instances)} RDS instances and {cluster_count} clusters")
+
+        # Snapshot of the first instance and a custom parameter group
+        if created_instances:
+            snapshot_name = cool_name("snap", funny=True)
+            try:
+                client.create_db_snapshot(
+                    DBSnapshotIdentifier=snapshot_name,
+                    DBInstanceIdentifier=created_instances[0],
+                )
+                print(f"  ✓ Snapshot: {snapshot_name} (from {created_instances[0]})")
+            except Exception as e:
+                print(f"  ✗ Error creating snapshot {snapshot_name}: {e}")
+
+        pg_name = cool_name("pg", funny=True)
+        try:
+            client.create_db_parameter_group(
+                DBParameterGroupName=pg_name,
+                DBParameterGroupFamily="postgres15",
+                Description=f"Parameter group: {pg_name}",
+            )
+            print(f"  ✓ Parameter group: {pg_name}")
+        except Exception as e:
+            print(f"  ✗ Error creating parameter group {pg_name}: {e}")
     except Exception as e:
         print(f"RDS error: {e}")
 
@@ -768,6 +933,30 @@ def populate_ecs():
         print(f"Created {cluster_count} ECS clusters")
     except Exception as e:
         print(f"ECS error: {e}")
+
+    task_def_count = random.randint(2, 3)
+    try:
+        for i in range(task_def_count):
+            family = cool_name("task", funny=True)
+            try:
+                client.register_task_definition(
+                    family=family,
+                    containerDefinitions=[
+                        {
+                            "name": "app",
+                            "image": random.choice(["nginx:alpine", "redis:7", "python:3.12-slim"]),
+                            "memory": random.choice([128, 256, 512]),
+                            "essential": True,
+                        }
+                    ],
+                )
+                print(f"  ✓ Task definition: {family}")
+            except Exception as e:
+                print(f"  ✗ Error registering task definition {family}: {e}")
+
+        print(f"Registered {task_def_count} ECS task definitions")
+    except Exception as e:
+        print(f"ECS task definitions error: {e}")
 
 
 def populate_elasticache():
@@ -1779,6 +1968,79 @@ def populate_cloudwatch():
     except Exception as e:
         print(f"CloudWatch error: {e}")
 
+    dashboard_count = random.randint(1, 2)
+    try:
+        for i in range(dashboard_count):
+            dashboard_name = cool_name("dash", funny=True)
+            body = {
+                "widgets": [
+                    {
+                        "type": "metric",
+                        "x": 0,
+                        "y": 0,
+                        "width": 12,
+                        "height": 6,
+                        "properties": {
+                            "metrics": [["AWS/EC2", "CPUUtilization"]],
+                            "period": 300,
+                            "stat": "Average",
+                            "region": "us-east-1",
+                            "title": "CPU",
+                        },
+                    }
+                ]
+            }
+            try:
+                client.put_dashboard(DashboardName=dashboard_name, DashboardBody=json.dumps(body))
+                print(f"  ✓ Dashboard: {dashboard_name}")
+            except Exception as e:
+                print(f"  ✗ Error creating dashboard {dashboard_name}: {e}")
+
+        print(f"Created {dashboard_count} CloudWatch dashboards")
+    except Exception as e:
+        print(f"CloudWatch dashboards error: {e}")
+
+
+def populate_eventbridge():
+    """Populate EventBridge with a custom bus and rules."""
+    print("\n=== EventBridge ===")
+    client = get_client("events")
+
+    bus_name = cool_name("bus", funny=True)
+    try:
+        client.create_event_bus(Name=bus_name)
+        print(f"  ✓ Event bus: {bus_name}")
+    except Exception as e:
+        print(f"  ✗ Error creating event bus {bus_name}: {e}")
+        bus_name = "default"
+
+    rule_count = random.randint(2, 3)
+    try:
+        for i in range(rule_count):
+            rule_name = cool_name("rule", funny=True)
+            try:
+                if random.random() > 0.5:
+                    client.put_rule(
+                        Name=rule_name,
+                        ScheduleExpression=random.choice(["rate(5 minutes)", "rate(1 hour)", "cron(0 12 * * ? *)"]),
+                        State="ENABLED",
+                        Description=f"Scheduled rule: {rule_name}",
+                    )
+                else:
+                    client.put_rule(
+                        Name=rule_name,
+                        EventPattern=json.dumps({"source": ["aws.s3"], "detail-type": ["Object Created"]}),
+                        State=random.choice(["ENABLED", "DISABLED"]),
+                        Description=f"Pattern rule: {rule_name}",
+                    )
+                print(f"  ✓ Rule: {rule_name}")
+            except Exception as e:
+                print(f"  ✗ Error creating rule {rule_name}: {e}")
+
+        print(f"Created {rule_count} EventBridge rules")
+    except Exception as e:
+        print(f"EventBridge error: {e}")
+
 
 def populate_route53():
     """Populate Route 53 with test hosted zones and records."""
@@ -2270,6 +2532,7 @@ def main():
         "apigateway": populate_apigateway,
         "acm": populate_acm,
         "cloudwatch": populate_cloudwatch,
+        "events": populate_eventbridge,
         "route53": populate_route53,
         "appsync": populate_appsync,
         "cloudfront": populate_cloudfront,
