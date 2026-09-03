@@ -19,13 +19,13 @@
 ## Screenshots
 
 **Dashboard** — Service overview with resource counts and health status
-![StackPort Dashboard](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/dashboard.jpeg?v=1.0)
+![StackPort Dashboard](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/dashboard.jpeg?v=2.1)
 
 **Lambda Browser** — Function list with config, aliases, versions, event sources, and invocation panel
-![Lambda Resources](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/lambda.jpeg?v=1.0)
+![Lambda Resources](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/lambda.jpeg?v=2.1)
 
 **S3 Browser** — File browser with upload, download, folder navigation, and tagging
-![S3 Browser](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/s3.jpeg?v=1.0)
+![S3 Browser](https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/s3.jpeg?v=2.1)
 
 ## Features
 
@@ -290,23 +290,12 @@ backend/
     secretsmanager.py  Secret value retrieval
 
 ui/src/
-  pages/           Dashboard, ResourceBrowser, About
+  pages/           CloudscapeDashboard, CloudscapeResourceBrowser, CloudscapeSettings, CloudscapeAbout
   components/
-    service-views/ S3Browser, DynamoDBBrowser, LambdaBrowser, ...
-    ui/            shadcn/ui components (Radix-based)
+    cloudscape/    AppLayout shell + service views (Cloudscape Design System)
   hooks/           useFetch, useWebSocket, useKeyboardShortcuts, ...
   lib/             API client, types, service icons, utils
 ```
-
-## Star History
-
-<a href="https://star-history.com/#DaviReisVieira/stackport&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=DaviReisVieira/stackport&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=DaviReisVieira/stackport&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=DaviReisVieira/stackport&type=Date" width="100%" />
- </picture>
-</a>
 
 ## Contributors
 
