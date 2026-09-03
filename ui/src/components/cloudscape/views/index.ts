@@ -8,6 +8,7 @@ import { CloudscapeRDSBrowser } from './RDSBrowser'
 import { CloudscapeS3Browser } from './S3Browser'
 import { CloudscapeSecretsManagerBrowser } from './SecretsManagerBrowser'
 import { CloudscapeSQSBrowser } from './SQSBrowser'
+import { CloudscapeStepFunctionsBrowser } from './StepFunctionsBrowser'
 
 /**
  * Registry of Cloudscape service-specific views (launch PR #149).
@@ -26,4 +27,5 @@ export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {
   s3: CloudscapeS3Browser,
   secretsmanager: CloudscapeSecretsManagerBrowser,
   sqs: CloudscapeSQSBrowser,
+  stepfunctions: CloudscapeStepFunctionsBrowser,
 }
