@@ -8,10 +8,14 @@ import time
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from backend.aws_client import get_client
 from backend.config import endpoint_store, STACKPORT_SERVICES
+from backend.routes.logs import _epoch_millis_to_iso
 from backend.routes.stats import _probe_service, _start_time
 
 logger = logging.getLogger(__name__)
+
+TAIL_POLL_SECONDS = 1.0
 
 
 class ConnectionManager:
@@ -144,6 +148,135 @@ async def websocket_endpoint(websocket: WebSocket):
                 pass
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+def _client_kwargs_for(endpoint_name_or_url: str | None) -> dict:
+    """Build get_client kwargs (endpoint URL, region, auth) for an endpoint name or URL."""
+    url = endpoint_store.resolve(endpoint_name_or_url)
+    entry = _find_entry_for_url(url)
+    return {
+        "endpoint_url": url,
+        "region": entry.get("region") if entry else None,
+        "auth_type": entry.get("auth_type", "default") if entry else "default",
+        "auth_profile": entry.get("auth_profile") if entry else None,
+        "auth_access_key_id": entry.get("auth_access_key_id") if entry else None,
+        "auth_secret_access_key": entry.get("auth_secret_access_key") if entry else None,
+    }
+
+
+def _fetch_new_events(
+    group: str,
+    stream: str,
+    since_millis: int,
+    filter_pattern: str,
+    client_kwargs: dict,
+) -> list[dict]:
+    """Fetch log events newer than since_millis; errors degrade to an empty batch."""
+    try:
+        logs = get_client("logs", **client_kwargs)
+        if filter_pattern:
+            params: dict = {
+                "logGroupName": group,
+                "logStreamNames": [stream],
+                "limit": 500,
+                "filterPattern": filter_pattern,
+            }
+            if since_millis > 0:
+                params["startTime"] = since_millis
+            raw = logs.filter_log_events(**params).get("events", [])
+        else:
+            params = {
+                "logGroupName": group,
+                "logStreamName": stream,
+                "limit": 500,
+                "startFromHead": True,
+            }
+            if since_millis > 0:
+                params["startTime"] = since_millis
+            raw = logs.get_log_events(**params).get("events", [])
+    except Exception:
+        logger.debug("Tail fetch failed for %s/%s", group, stream, exc_info=True)
+        return []
+
+    return [
+        {
+            "timestamp": _epoch_millis_to_iso(event["timestamp"]),
+            "timestamp_millis": event["timestamp"],
+            "message": event["message"],
+            "ingestion_time": _epoch_millis_to_iso(event.get("ingestionTime")),
+            "event_id": event.get("eventId", ""),
+        }
+        for event in raw
+    ]
+
+
+async def logs_tail_endpoint(websocket: WebSocket):
+    """Tail a log stream over WebSocket.
+
+    The client opens the socket and sends one configuration message:
+      {"type": "tail", "group": ..., "stream": ..., "endpoint": ...,
+       "filterPattern": ..., "since": <epoch millis of the newest event it has>}
+
+    The server then polls the emulator and pushes {"type": "events", "data": {"events": [...]}}
+    batches until the client sends {"type": "stop"} or disconnects.
+    """
+    await websocket.accept()
+    try:
+        raw = await websocket.receive_text()
+        try:
+            cfg = json.loads(raw)
+        except json.JSONDecodeError:
+            cfg = {}
+        group = cfg.get("group")
+        stream = cfg.get("stream")
+        if cfg.get("type") != "tail" or not group or not stream:
+            await websocket.send_text(json.dumps({"type": "error", "message": "expected a tail message with group and stream"}))
+            await websocket.close()
+            return
+
+        filter_pattern = cfg.get("filterPattern") or ""
+        since = int(cfg.get("since") or time.time() * 1000)
+        client_kwargs = _client_kwargs_for(cfg.get("endpoint"))
+
+        stop = asyncio.Event()
+
+        async def reader():
+            try:
+                while True:
+                    msg = await websocket.receive_text()
+                    try:
+                        if json.loads(msg).get("type") == "stop":
+                            break
+                    except json.JSONDecodeError:
+                        pass
+            except WebSocketDisconnect:
+                pass
+            finally:
+                stop.set()
+
+        reader_task = asyncio.create_task(reader())
+        loop = asyncio.get_event_loop()
+        try:
+            while not stop.is_set():
+                events = await loop.run_in_executor(
+                    None,
+                    functools.partial(_fetch_new_events, group, stream, since, filter_pattern, client_kwargs),
+                )
+                if stop.is_set():
+                    break
+                if events:
+                    since = max(e["timestamp_millis"] for e in events) + 1
+                    await websocket.send_text(json.dumps({"type": "events", "data": {"events": events}}))
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=TAIL_POLL_SECONDS)
+                except asyncio.TimeoutError:
+                    pass
+        finally:
+            reader_task.cancel()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.debug("logs tail connection ended with error", exc_info=True)
 
 
 async def broadcast_endpoints_changed():

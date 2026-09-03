@@ -18,7 +18,7 @@ from botocore.exceptions import (
 
 from backend.config import LOG_LEVEL, STACKPORT_ALLOW_WRITES, STACKPORT_PORT
 from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, resources, rds, s3, secretsmanager, sqs, stats, stepfunctions, tags
-from backend.websocket import probe_loop, websocket_endpoint
+from backend.websocket import logs_tail_endpoint, probe_loop, websocket_endpoint
 
 
 class HealthcheckFilter(logging.Filter):
@@ -133,6 +133,12 @@ app.include_router(rds.router, prefix="/api/rds", tags=["rds"])
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
     await websocket_endpoint(websocket)
+
+
+# WebSocket endpoint for live log tailing (#85)
+@app.websocket("/ws/logs/tail")
+async def ws_logs_tail(websocket: WebSocket):
+    await logs_tail_endpoint(websocket)
 
 
 # Serve UI static files — mount assets under /assets, SPA fallback for everything else

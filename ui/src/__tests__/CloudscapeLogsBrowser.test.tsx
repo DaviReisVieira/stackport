@@ -242,6 +242,66 @@ describe('CloudscapeLogsBrowser (via registry dispatch)', () => {
     })
   })
 
+  it('tails a stream over WebSocket and renders pushed events', async () => {
+    const sockets: FakeWebSocket[] = []
+    class FakeWebSocket {
+      static OPEN = 1
+      readyState = 1
+      url: string
+      sent: string[] = []
+      onopen: (() => void) | null = null
+      onmessage: ((e: { data: string }) => void) | null = null
+      onerror: (() => void) | null = null
+      onclose: (() => void) | null = null
+      constructor(url: string) {
+        this.url = url
+        sockets.push(this)
+        setTimeout(() => this.onopen?.(), 0)
+      }
+      send(data: string) {
+        this.sent.push(data)
+      }
+      close() {
+        this.readyState = 3
+      }
+    }
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket)
+
+    renderLogs('/resources/logs?group=%2Faws%2Flambda%2Forders&stream=2026%2F03%2F01%2F%5B%24LATEST%5Dabc')
+    await screen.findByText(/START RequestId/)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Tail mode/i }))
+
+    await waitFor(() => expect(sockets.length).toBe(1))
+    expect(sockets[0].url).toContain('/ws/logs/tail')
+    await waitFor(() => expect(sockets[0].sent.length).toBe(1))
+    const payload = JSON.parse(sockets[0].sent[0])
+    expect(payload.type).toBe('tail')
+    expect(payload.group).toBe('/aws/lambda/orders')
+    expect(payload.stream).toBe('2026/03/01/[$LATEST]abc')
+    expect(payload.since).toBe(1772359202000)
+
+    sockets[0].onmessage?.({
+      data: JSON.stringify({
+        type: 'events',
+        data: {
+          events: [
+            {
+              timestamp: '2026-03-01T10:00:05Z',
+              timestamp_millis: 1772359205000,
+              message: 'LIVE tailed event',
+              ingestion_time: null,
+              event_id: 'e9',
+            },
+          ],
+        },
+      }),
+    })
+    expect(await screen.findByText(/LIVE tailed event/)).toBeInTheDocument()
+
+    vi.unstubAllGlobals()
+  })
+
   it('edits log group tags via the group ARN', async () => {
     renderLogs('/resources/logs?group=%2Faws%2Flambda%2Forders')
     await screen.findByText('2026/03/01/[$LATEST]abc')
