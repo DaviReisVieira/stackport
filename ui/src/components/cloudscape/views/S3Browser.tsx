@@ -41,6 +41,7 @@ import type { S3Bucket, S3File, S3ObjectDetail, S3ObjectsResponse } from '@/lib/
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
 import { exportData } from '@/lib/export'
+import { S3BucketSettingsPanel } from './s3/S3BucketSettingsPanel'
 
 const DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
@@ -767,6 +768,11 @@ function ObjectBrowser({ bucket, prefix }: { bucket: string; prefix: string }) {
             id: 'tags',
             label: 'Tags',
             content: <BucketTagsPanel bucket={bucket} />,
+          },
+          {
+            id: 'settings',
+            label: 'Settings',
+            content: <S3BucketSettingsPanel bucket={bucket} />,
           },
         ]}
       />

@@ -92,6 +92,39 @@ const objectDetail = {
   tags: { kind: 'docs' },
 }
 
+const lifecyclePayload = {
+  bucket: 'app-assets',
+  rules: [{ id: 'expire-tmp', prefix: 'tmp/', expiration_days: 7, enabled: true }],
+}
+
+const notificationsPayload = {
+  bucket: 'app-assets',
+  configurations: [
+    {
+      id: 'notif-1',
+      destination_type: 'SQS',
+      destination_arn: 'arn:aws:sqs:us-east-1:000000000000:events',
+      events: ['s3:ObjectCreated:*'],
+      filter_prefix: '',
+      filter_suffix: '',
+    },
+  ],
+}
+
+const corsPayload = {
+  bucket: 'app-assets',
+  rules: [
+    {
+      id: 'cors-1',
+      allowed_origins: ['https://app.example.com'],
+      allowed_methods: ['GET', 'PUT'],
+      allowed_headers: ['*'],
+      expose_headers: [],
+      max_age_seconds: 3600,
+    },
+  ],
+}
+
 let fetchMock: ReturnType<typeof vi.fn>
 
 function mockFetchByUrl() {
@@ -100,6 +133,11 @@ function mockFetchByUrl() {
     const method = init?.method ?? 'GET'
     let payload: unknown = statsPayload
     if (url.includes('/api/s3/upload-config')) payload = { max_upload_bytes: 100 * 1024 * 1024 }
+    else if (url.includes('/versioning')) payload = { bucket: 'app-assets', status: 'Enabled', mfa_delete: 'Disabled' }
+    else if (url.includes('/lifecycle')) payload = method === 'PUT' ? { bucket: 'app-assets', rules_count: 1 } : lifecyclePayload
+    else if (url.includes('/notifications'))
+      payload = method === 'PUT' ? { bucket: 'app-assets', configurations_count: 1 } : notificationsPayload
+    else if (url.includes('/cors')) payload = method === 'PUT' ? { bucket: 'app-assets', rules_count: 1 } : corsPayload
     else if (url.includes('/objects/delete-batch')) payload = { deleted: 1, errors: [] }
     else if (url.includes('/api/s3/buckets/app-assets/folders')) payload = { bucket: 'app-assets', prefix: 'incoming/' }
     else if (url.includes('/api/s3/buckets/app-assets/objects/readme.md') && method === 'DELETE')
@@ -263,5 +301,118 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
     expect(String(call![0])).toContain('/api/tags/s3/buckets/app-assets')
     const body = JSON.parse((call![1] as RequestInit).body as string)
     expect(body).toEqual({ tags: { env: 'prod' } })
+  })
+
+  it('shows bucket settings and saves an edited lifecycle rule', async () => {
+    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    await screen.findByText('readme.md')
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }))
+
+    expect(await screen.findByText('Bucket versioning')).toBeInTheDocument()
+    expect(await screen.findByText('SQS: arn:aws:sqs:us-east-1:000000000000:events')).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('https://app.example.com')).toBeInTheDocument()
+
+    const prefixInput = await screen.findByDisplayValue('tmp/')
+    fireEvent.change(prefixInput, { target: { value: 'scratch/' } })
+    fireEvent.click(screen.getByTestId('save-lifecycle'))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) => String(url).includes('/lifecycle') && (init as RequestInit)?.method === 'PUT',
+      )
+      expect(call).toBeTruthy()
+    })
+    const call = fetchMock.mock.calls.find(
+      ([url, init]) => String(url).includes('/lifecycle') && (init as RequestInit)?.method === 'PUT',
+    )
+    const body = JSON.parse((call![1] as RequestInit).body as string)
+    expect(body).toEqual({ rules: [{ id: 'expire-tmp', prefix: 'scratch/', expirationDays: 7, enabled: true }] })
+  })
+
+  it('toggles bucket versioning', async () => {
+    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    await screen.findByText('readme.md')
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }))
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Bucket versioning' })
+    expect(toggle).toBeChecked()
+    fireEvent.click(toggle)
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) => String(url).includes('/versioning') && (init as RequestInit)?.method === 'PUT',
+      )
+      expect(call).toBeTruthy()
+    })
+    const call = fetchMock.mock.calls.find(
+      ([url, init]) => String(url).includes('/versioning') && (init as RequestInit)?.method === 'PUT',
+    )
+    const body = JSON.parse((call![1] as RequestInit).body as string)
+    expect(body).toEqual({ status: 'Suspended' })
+  })
+
+  it('saves notifications with the camelCase payload', async () => {
+    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    await screen.findByText('readme.md')
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }))
+
+    await screen.findByText('SQS: arn:aws:sqs:us-east-1:000000000000:events')
+    fireEvent.click(screen.getByTestId('save-notifications'))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) => String(url).includes('/notifications') && (init as RequestInit)?.method === 'PUT',
+      )
+      expect(call).toBeTruthy()
+    })
+    const call = fetchMock.mock.calls.find(
+      ([url, init]) => String(url).includes('/notifications') && (init as RequestInit)?.method === 'PUT',
+    )
+    const body = JSON.parse((call![1] as RequestInit).body as string)
+    expect(body).toEqual({
+      configurations: [
+        {
+          id: 'notif-1',
+          destinationType: 'SQS',
+          destinationArn: 'arn:aws:sqs:us-east-1:000000000000:events',
+          events: ['s3:ObjectCreated:*'],
+          filterPrefix: '',
+          filterSuffix: '',
+        },
+      ],
+    })
+  })
+
+  it('saves CORS rules with the camelCase payload', async () => {
+    renderS3('/cloudscape/resources/s3?bucket=app-assets')
+    await screen.findByText('readme.md')
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }))
+
+    const originsInput = await screen.findByDisplayValue('https://app.example.com')
+    fireEvent.change(originsInput, { target: { value: 'https://app.example.com, https://admin.example.com' } })
+    fireEvent.click(screen.getByTestId('save-cors'))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) => String(url).includes('/cors') && (init as RequestInit)?.method === 'PUT',
+      )
+      expect(call).toBeTruthy()
+    })
+    const call = fetchMock.mock.calls.find(
+      ([url, init]) => String(url).includes('/cors') && (init as RequestInit)?.method === 'PUT',
+    )
+    const body = JSON.parse((call![1] as RequestInit).body as string)
+    expect(body).toEqual({
+      rules: [
+        {
+          id: 'cors-1',
+          allowedOrigins: ['https://app.example.com', 'https://admin.example.com'],
+          allowedMethods: ['GET', 'PUT'],
+          allowedHeaders: ['*'],
+          exposeHeaders: [],
+          maxAgeSeconds: 3600,
+        },
+      ],
+    })
   })
 })
