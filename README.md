@@ -38,15 +38,15 @@
 - **CLI** — `stackport status`, `list`, `describe`, `export` with JSON/CSV/table output
 - **Real-time dashboard** with WebSocket-powered live updates
 - **Keyboard shortcuts** — 16 shortcuts for fast navigation (press `?` to view)
-- Single Docker image, works with MiniStack, LocalStack, Moto, or any AWS-compatible endpoint
+- Single Docker image, works with [Floci](https://github.com/floci-io/floci), MiniStack, LocalStack, Moto, or any AWS-compatible endpoint
 
 ## Quick Start
 
 ### With a local emulator (recommended)
 
 ```bash
-# Start MiniStack (or LocalStack, Moto, etc.)
-pip install ministack && ministack
+# Start Floci (or MiniStack, LocalStack, Moto, etc.)
+docker run -p 4566:4566 floci/floci
 
 # Start StackPort
 pip install stackport
@@ -70,6 +70,18 @@ STACKPORT_ALLOW_WRITES=false AWS_PROFILE=my-profile stackport
 You can also configure per-endpoint authentication from the Settings UI — select a profile, enter static credentials, or use the default credential chain per endpoint. See [Per-endpoint authentication](#per-endpoint-authentication) below.
 
 When connected to real AWS, StackPort shows a warning banner and operates in read-only mode unless writes are explicitly enabled.
+
+### Docker Compose (Floci + StackPort)
+
+[Floci](https://github.com/floci-io/floci) serves its whole AWS surface on port 4566, so StackPort only needs `AWS_ENDPOINT_URL` pointed at it. This example also seeds a few resources (S3, SQS, SNS, DynamoDB, Secrets Manager, IAM, Logs, Step Functions) so the dashboard has something to show on first load.
+
+```bash
+curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.floci.yml
+docker compose -f docker-compose.floci.yml up -d
+# Open http://localhost:8080
+```
+
+See [`examples/docker-compose.floci.yml`](examples/docker-compose.floci.yml). It sets `FLOCI_HOSTNAME=floci` so the URLs Floci returns (SQS queue URLs, pre-signed URLs) resolve from inside the StackPort container — from the host, reach the same resources through `http://localhost:4566`.
 
 ### Docker Compose (MiniStack + StackPort)
 
