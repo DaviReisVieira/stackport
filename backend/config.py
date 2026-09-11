@@ -16,6 +16,9 @@ AWS_ACCESS_KEY_ID: str | None = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY: str | None = os.environ.get("AWS_SECRET_ACCESS_KEY")
 STACKPORT_ALLOW_WRITES: bool = os.environ.get("STACKPORT_ALLOW_WRITES", "true").lower() in ("1", "true", "yes")
 STACKPORT_PORT: int = int(os.environ.get("STACKPORT_PORT", "8080"))
+# Guided tutorials. Set to false to drop the Learn routes and every trace of
+# the tutorial UI, for anyone who wants StackPort as a resource browser only.
+STACKPORT_LEARN: bool = os.environ.get("STACKPORT_LEARN", "true").lower() in ("1", "true", "yes")
 STACKPORT_SERVICES: str = os.environ.get(
     "STACKPORT_SERVICES",
     "s3,sqs,sns,dynamodb,lambda,iam,logs,ssm,secretsmanager,kinesis,events,ec2,"

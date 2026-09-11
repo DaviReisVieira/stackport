@@ -49,6 +49,7 @@ include = ["backend*"]
 
 [tool.setuptools.package-data]
 backend = ["../ui/dist/**/*"]
+"backend.learn" = ["trails/*.json"]
 
 [project.scripts]
 stackport = "backend.main:cli"

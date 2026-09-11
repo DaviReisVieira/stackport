@@ -9,3 +9,6 @@ os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
 
 # Enable writes for all tests (except test_readonly_middleware which overrides this)
 os.environ.setdefault("STACKPORT_ALLOW_WRITES", "true")
+
+# Guided tutorials on, so the Learn routes are mounted for their tests
+os.environ.setdefault("STACKPORT_LEARN", "true")

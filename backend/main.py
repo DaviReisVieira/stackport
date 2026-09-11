@@ -16,8 +16,8 @@ from botocore.exceptions import (
     UnauthorizedSSOTokenError,
 )
 
-from backend.config import LOG_LEVEL, STACKPORT_ALLOW_WRITES, STACKPORT_PORT
-from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags
+from backend.config import LOG_LEVEL, STACKPORT_ALLOW_WRITES, STACKPORT_LEARN, STACKPORT_PORT
+from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, learn, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags
 from backend.websocket import logs_tail_endpoint, probe_loop, websocket_endpoint
 
 
@@ -89,6 +89,12 @@ class ReadOnlyMiddleware(BaseHTTPMiddleware):
         if path.startswith("/api/endpoints"):
             return await call_next(request)
 
+        # Learn progress is local state, not an AWS write. Lessons still can't
+        # create anything in read-only mode, but they remain readable and
+        # steps whose resources already exist still verify.
+        if path.startswith("/api/learn"):
+            return await call_next(request)
+
         # Allow read-only POST operations (query, invoke)
         if request.method == "POST" and self._is_read_only_post(path):
             return await call_next(request)
@@ -131,6 +137,8 @@ app.include_router(resources.router, prefix="/api")
 app.include_router(rds.router, prefix="/api/rds", tags=["rds"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["monitoring"])
 app.include_router(sns.router, prefix="/api/sns", tags=["sns"])
+if STACKPORT_LEARN:
+    app.include_router(learn.router, prefix="/api/learn", tags=["learn"])
 
 
 # WebSocket endpoint for real-time updates

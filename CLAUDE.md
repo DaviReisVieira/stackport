@@ -76,7 +76,32 @@ Requires a running AWS-compatible emulator (MiniStack on :4566 by default).
 | `STACKPORT_PROBE_TIMEOUT` | `5` | Seconds before a service probe times out |
 | `STACKPORT_CACHE_TTL` | `5` | Seconds to cache service stats |
 | `STACKPORT_PROBE_WORKERS` | `10` | ThreadPoolExecutor max workers for concurrent probing |
+| `STACKPORT_LEARN` | `true` | Mount the Learn routes and show the tutorial UI |
 | `LOG_LEVEL` | `INFO` | Python log level (DEBUG shows healthcheck logs) |
+
+## Learn Module
+
+Guided tutorials that run inside the console, built on Cloudscape's own onboarding trio (`AnnotationContext` + `Hotspot` + the tutorial data model). Gated on `STACKPORT_LEARN`, surfaced to the UI as `learn_enabled` in `GET /api/health`.
+
+**Backend** (`backend/learn/`, `backend/routes/learn.py`, `backend/learn_store.py`):
+- Trail content is JSON in `backend/learn/trails/`, validated at import by `backend/learn/content.py` — a bad `verify.type` or an unknown `console.hotspotId` fails in CI, not in front of a learner
+- `verify.py` holds the `CHECKS` registry: `(EndpointInfo, params) -> {status, passed, message}`, always with fresh boto3 calls (never the TTL cache), and `service_unreachable` kept distinct from "not done yet"
+- Content uses `{{variable}}` placeholders. Lesson-declared variables are generated once and persisted; `{{endpointUrl}}` is filled in by the server per request. Substitution happens when the trail is served and again on the verify path
+- `POST /api/learn/progress` with `force` records a skip, so verification is a record and never a gate
+- `/api/learn` is allowlisted in `ReadOnlyMiddleware` — progress is local state, not an AWS write
+
+**Frontend** (`ui/src/contexts/LearnContext.tsx`, `ui/src/components/cloudscape/learn/`):
+
+Four Cloudscape behaviours dictate the design. Changing any of these breaks a lesson silently:
+
+1. **`LearnProvider` must stay above the router** (in `main.tsx`, not in `CloudscapeShell`). Every page renders its own shell, so a shell-level `AnnotationContext` remounts on navigation and resets the step index
+2. **The tutorial object is built once per run.** `AnnotationContext` resets to step 0 whenever `currentTutorial` changes identity, so step `content` is a stable element (`LearnStepContent`) that reads live state from context. Moving to a step is done deliberately, by rebuilding the tutorial sliced from that step, with `run.offset` translating indices back
+3. **`completed: true` hides every hotspot.** The object handed to `AnnotationContext` always has `completed: false`; the finished state is rendered by the panel
+4. **Next is gated on the next step's hotspot being mounted**, not on app logic. `isHotspotActive` therefore only returns true up to the frontier (the first unfinished step), which is what makes Next wait for verification
+
+Also: `hotspotId` must be unique across the whole app and within a lesson (resolution is first-occurrence-wins), so never anchor inside a table cell or an `items.map`. `LearnHotspot` renders bare children when inactive, so the console is unchanged for anyone who never opens Learn. Handlers given to `AnnotationContext` are retained from mount, so anything reading `useLocation` inside them must go through a ref.
+
+Adding an anchor: add the id to **both** `backend/learn/hotspots.py` and `ui/src/components/cloudscape/learn/hotspots.ts` (a test reads both files and fails on drift), then render `LearnHotspot` or `LearnHotspotMarker` next to the control. Give table-header markers a `direction` that opens away from the column the step asks the learner to click.
 
 ## Adding a New Service to the Backend
 

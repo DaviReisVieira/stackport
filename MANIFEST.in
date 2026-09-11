@@ -1,1 +1,2 @@
 recursive-include ui/dist *
+recursive-include backend/learn/trails *.json

@@ -1,0 +1,171 @@
+{
+  "id": "aws-first-steps",
+  "title": "AWS first steps",
+  "description": "Learn core AWS services by building against your local emulator. You do the work in the console or the CLI, and StackPort checks the real resource state, so a step only turns green when the thing genuinely exists. Nothing here costs money or touches a real account.",
+  "lessons": [
+    {
+      "id": "s3-store-a-file",
+      "title": "Store a file",
+      "summary": "Create a bucket, put a file in it, and read back what S3 recorded about it.",
+      "service": "s3",
+      "level": "Beginner",
+      "durationMinutes": 6,
+      "docsUrl": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html",
+      "variables": [
+        {
+          "name": "bucket",
+          "label": "Your bucket name",
+          "default": "stackport-learn-{{suffix}}",
+          "description": "You will create this bucket, and every command in the lesson will use the name you pick.",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,40}[a-z0-9]$",
+          "patternMessage": "Bucket names use lowercase letters, numbers and hyphens, and must start and end with a letter or number."
+        }
+      ],
+      "steps": [
+        {
+          "id": "find-s3",
+          "title": "Find S3",
+          "instruction": "S3 is where AWS keeps files. Not a filesystem and not a disk you attach to a server: a service you send files to over HTTP, one file at a time, and it hands them back on request.\n\nOpen the S3 view. This is the same navigation you would use in the AWS console, and the list you are about to see is read live from your emulator.",
+          "console": {
+            "hotspotId": "nav-resources",
+            "route": "/resources/s3",
+            "label": "Resources, then S3 in the service list"
+          },
+          "commands": {
+            "cli": "aws --endpoint-url={{endpointUrl}} s3 ls"
+          },
+          "cliNotes": [
+            {
+              "flag": "--endpoint-url",
+              "note": "Points the CLI at your emulator instead of real AWS. Drop this one flag and the exact same command talks to a real account. It is worth staring at for a second, because it is the only difference."
+            },
+            {
+              "flag": "s3 ls",
+              "note": "With nothing after it, lists your buckets. With a bucket name after it, lists what is inside."
+            }
+          ],
+          "whyItMatters": "Every AWS API call goes to a URL. The CLI normally computes that URL from the service and the region, which is why you never see it. Overriding it is what makes local emulators possible, and also what makes a mistyped endpoint fail in confusing ways.",
+          "verify": null,
+          "hint": "Empty output is the correct answer if you have no buckets yet."
+        },
+        {
+          "id": "create-bucket",
+          "title": "Create your bucket",
+          "instruction": "A bucket is a named container, and the name is the part that matters. Bucket names live in one namespace shared by everyone using that AWS partition, which is why they are lowercase, DNS-shaped, and frequently already taken.\n\nCreate a bucket called {{bucket}}. Your emulator has no global namespace to collide with, but the naming rules are enforced anyway, because a name that works locally and is rejected in production is a bad lesson to learn twice.",
+          "console": {
+            "hotspotId": "s3-buckets-create",
+            "route": "/resources/s3",
+            "label": "Create bucket",
+            "fields": [
+              { "label": "Bucket name", "value": "{{bucket}}" }
+            ]
+          },
+          "commands": {
+            "cli": "aws --endpoint-url={{endpointUrl}} s3api create-bucket --bucket {{bucket}}"
+          },
+          "cliNotes": [
+            {
+              "flag": "s3api",
+              "note": "The one-to-one mapping onto the S3 API. `aws s3` is a friendlier layer on top with commands like cp and sync; `aws s3api` is what the API actually offers, which is what you want when you are learning what a service does."
+            },
+            {
+              "flag": "--bucket",
+              "note": "The name. In any region other than us-east-1 you would also need --create-bucket-configuration LocationConstraint=<region>, an old quirk of the API rather than a rule you can reason out."
+            }
+          ],
+          "whyItMatters": "Real S3 applies two defaults here that are worth knowing: server-side encryption with S3-managed keys is on and cannot be turned off, and Block Public Access is on for all four settings. If you ever find yourself switching that second one off, be certain you meant to.",
+          "verify": {
+            "type": "s3_bucket_exists",
+            "params": { "bucket": "{{bucket}}" }
+          },
+          "autoVerify": true,
+          "hint": "The name has to match {{bucket}} exactly, since that is what gets checked. If the command hangs instead of failing, your emulator is probably not running.",
+          "docsUrl": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html"
+        },
+        {
+          "id": "open-bucket",
+          "title": "Look inside it",
+          "instruction": "Open {{bucket}}. It is empty, which is the point worth pausing on: you created a container and paid for nothing, because S3 bills for the bytes you store and the requests you make, not for the bucket.\n\nA bucket is also flat. There are no directories inside it, only objects whose names happen to contain slashes.",
+          "console": {
+            "hotspotId": "s3-buckets-table",
+            "route": "/resources/s3",
+            "label": "Click {{bucket}} in the bucket list"
+          },
+          "commands": {
+            "cli": "aws --endpoint-url={{endpointUrl}} s3 ls s3://{{bucket}}"
+          },
+          "whyItMatters": "The flatness is not a detail. When a console shows you a folder called photos/, it is showing you every key beginning with \"photos/\" grouped under a heading it invented for the occasion. Listing 10,000 objects in one prefix costs the same as listing them across ten, and renaming a \"folder\" means copying every object to a new key.",
+          "verify": null,
+          "hint": "Nothing to see yet is the expected result. Mark this done and go put something in it."
+        },
+        {
+          "id": "upload-object",
+          "title": "Put a file in it",
+          "instruction": "Store a file called hello.txt in {{bucket}}. Its name inside the bucket is its key, and the key is the whole address: bucket plus key identifies exactly one object.\n\nIn the console, use the upload control. From the CLI, create a file first and copy it up.",
+          "console": {
+            "hotspotId": "s3-upload",
+            "route": "/resources/s3",
+            "label": "Upload, then pick any small text file and name it hello.txt",
+            "fields": [
+              { "label": "Key", "value": "hello.txt" }
+            ]
+          },
+          "commands": {
+            "cli": "echo \"hello from stackport\" > hello.txt\naws --endpoint-url={{endpointUrl}} s3 cp hello.txt s3://{{bucket}}/hello.txt"
+          },
+          "cliNotes": [
+            {
+              "flag": "s3 cp",
+              "note": "Copies one thing. Its sibling `s3 sync` compares a whole directory against a prefix and transfers only what differs, which is the one you want for deployments."
+            },
+            {
+              "flag": "s3://{{bucket}}/hello.txt",
+              "note": "Bucket and key. Change the last part and you have stored a different object: S3 has no rename, only copy and delete."
+            }
+          ],
+          "verify": {
+            "type": "s3_object_exists",
+            "params": { "bucket": "{{bucket}}", "key": "hello.txt" }
+          },
+          "autoVerify": true,
+          "hint": "The key must be exactly hello.txt, at the top of the bucket rather than inside a prefix.",
+          "docsUrl": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/upload-objects.html"
+        },
+        {
+          "id": "inspect-object",
+          "title": "Read what S3 recorded",
+          "instruction": "Open hello.txt and look at its metadata. Three fields are worth your attention.\n\n**Size** is what you are billed for, to the byte. **Content type** is what S3 will claim the file is when someone downloads it, and it is a guess made at upload time. **ETag** is a fingerprint of the content, which is how you can tell two objects apart without downloading either.",
+          "console": {
+            "hotspotId": "s3-objects-table",
+            "route": "/resources/s3",
+            "label": "Click hello.txt to open its details"
+          },
+          "commands": {
+            "cli": "aws --endpoint-url={{endpointUrl}} s3api head-object --bucket {{bucket}} --key hello.txt"
+          },
+          "cliNotes": [
+            {
+              "flag": "head-object",
+              "note": "Returns the metadata without the body, the same way an HTTP HEAD request does. Cheap, and the fastest way to answer \"is this object there and has it changed?\"."
+            }
+          ],
+          "whyItMatters": "Content type is the field that will eventually bite you. Upload an image with the wrong one and browsers download it instead of showing it; upload HTML as text/plain and visitors read your markup. S3 infers it from the file extension at upload time and never revisits that guess, so fixing it later means copying the object over itself with the right value.",
+          "verify": null,
+          "hint": "You are looking for size in bytes, content type, and ETag. Mark this done once you have found all three.",
+          "docsUrl": "https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html"
+        }
+      ],
+      "completion": {
+        "title": "You built something real",
+        "summary": "Your emulator now holds a bucket named {{bucket}} with hello.txt inside it. Not a simulation of one: the same API calls, the same naming rules, the same metadata you would get from real S3.",
+        "takeaways": [
+          "A bucket is a named container in a shared namespace, and the name is the hard part.",
+          "An object is addressed by bucket plus key, and there are no folders, only keys with slashes in them.",
+          "Metadata is data: size is your bill, content type is a guess, and ETag is a fingerprint.",
+          "One flag, --endpoint-url, is all that separates a local command from one that hits a real account."
+        ],
+        "nextHint": "Everything you just created is still there. Delete it with `aws --endpoint-url={{endpointUrl}} s3 rb s3://{{bucket}} --force`, or leave it and keep poking at it."
+      }
+    }
+  ]
+}

@@ -37,6 +37,11 @@ import type {
   LambdaInvokeResponse,
   LambdaUpdateConfigRequest,
   LambdaVersion,
+  LearnCompleted,
+  LearnProgressResponse,
+  LearnTrailResponse,
+  LearnTrailSummary,
+  LearnVerifyResponse,
   LogEventsResponse,
   LogGroupsResponse,
   LogStreamsResponse,
@@ -1402,4 +1407,58 @@ export async function publishSNSMessage(
     throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
   }
   return res.json()
+}
+
+// --- Learn ---
+
+async function postLearn<T>(path: string, body: Record<string, unknown>, endpoint?: string | null): Promise<T> {
+  const res = await fetch(buildUrl(path, endpoint), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(detailMessage(data) || `${res.status}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function fetchLearnTrails(): Promise<{ trails: LearnTrailSummary[] }> {
+  return fetchJSON<{ trails: LearnTrailSummary[] }>(`${API_BASE}/learn/trails`)
+}
+
+export async function fetchLearnTrail(trailId: string, endpoint?: string | null): Promise<LearnTrailResponse> {
+  return fetchJSON<LearnTrailResponse>(buildUrl(`/learn/trails/${encodeURIComponent(trailId)}`, endpoint))
+}
+
+export async function verifyLearnStep(
+  trailId: string,
+  lessonId: string,
+  stepId: string,
+  endpoint?: string | null,
+): Promise<LearnVerifyResponse> {
+  return postLearn<LearnVerifyResponse>('/learn/verify', { trailId, lessonId, stepId }, endpoint)
+}
+
+export async function markLearnStep(
+  trailId: string,
+  lessonId: string,
+  stepId: string,
+  force = false,
+): Promise<LearnProgressResponse> {
+  return postLearn<LearnProgressResponse>('/learn/progress', { trailId, lessonId, stepId, force })
+}
+
+export async function setLearnVariable(
+  trailId: string,
+  lessonId: string,
+  name: string,
+  value: string,
+): Promise<{ variables: Record<string, string> }> {
+  return postLearn<{ variables: Record<string, string> }>('/learn/variables', { trailId, lessonId, name, value })
+}
+
+export async function resetLearnProgress(trailId?: string): Promise<{ completed: Record<string, LearnCompleted> }> {
+  return postLearn<{ completed: Record<string, LearnCompleted> }>('/learn/progress/reset', { trailId: trailId ?? null })
 }

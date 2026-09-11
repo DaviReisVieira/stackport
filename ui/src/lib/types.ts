@@ -7,6 +7,7 @@ export interface HealthResponse {
   services_count: number
   connection_type: 'local' | 'aws'
   writes_enabled: boolean
+  learn_enabled?: boolean
 }
 
 export type AuthType = 'default' | 'profile' | 'credentials'
@@ -1171,4 +1172,113 @@ export interface SNSSubscription {
 export interface SNSTopicDetail extends SNSTopic {
   attributes: Record<string, string>
   subscriptions: SNSSubscription[]
+}
+
+// --- Learn ---
+
+export interface LearnStepCommands {
+  cli?: string
+}
+
+/** One flag of a command, explained. */
+export interface LearnCliNote {
+  flag: string
+  note: string
+}
+
+/** Where in StackPort this step is done, and what to type into it. */
+export interface LearnConsolePath {
+  hotspotId: string
+  route: string
+  label: string
+  fields?: { label: string; value: string }[]
+}
+
+export interface LearnVerifySpec {
+  type: string
+  params: Record<string, unknown>
+}
+
+export interface LearnStep {
+  id: string
+  title: string
+  instruction: string
+  console?: LearnConsolePath
+  commands?: LearnStepCommands
+  cliNotes?: LearnCliNote[]
+  verify: LearnVerifySpec | null
+  autoVerify?: boolean
+  hint?: string
+  whyItMatters?: string
+  docsUrl?: string
+}
+
+/** A resource name the learner picks, substituted into everything they see. */
+export interface LearnVariableSpec {
+  name: string
+  label: string
+  default: string
+  description?: string
+  pattern?: string
+  patternMessage?: string
+}
+
+export interface LearnCompletion {
+  title?: string
+  summary: string
+  takeaways?: string[]
+  nextHint?: string
+}
+
+export interface LearnLesson {
+  id: string
+  title: string
+  summary: string
+  service?: string
+  level?: string
+  durationMinutes?: number
+  docsUrl?: string
+  variables?: LearnVariableSpec[]
+  steps: LearnStep[]
+  completion?: LearnCompletion
+}
+
+export interface LearnTrail {
+  id: string
+  title: string
+  description: string
+  lessons: LearnLesson[]
+}
+
+export interface LearnTrailSummary {
+  id: string
+  title: string
+  description: string
+  lessonCount: number
+  totalSteps: number
+  completedSteps: number
+}
+
+/** lessonId -> step ids */
+export type LearnCompleted = Record<string, string[]>
+
+/** lessonId -> variable name -> value */
+export type LearnVariables = Record<string, Record<string, string>>
+
+export interface LearnTrailResponse {
+  trail: LearnTrail
+  completed: LearnCompleted
+  skipped: LearnCompleted
+  variables: LearnVariables
+}
+
+export interface LearnProgressResponse {
+  completed: LearnCompleted
+  skipped: LearnCompleted
+}
+
+export interface LearnVerifyResponse extends LearnProgressResponse {
+  passed: boolean
+  verifyStatus: 'ok' | 'service_unreachable' | 'error'
+  message: string
 }

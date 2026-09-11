@@ -13,6 +13,7 @@ from backend.config import (
     AWS_ENDPOINT_URL,
     AWS_REGION,
     STACKPORT_ALLOW_WRITES,
+    STACKPORT_LEARN,
     STACKPORT_PROBE_WORKERS,
     STACKPORT_SERVICES,
     is_local_endpoint,
@@ -112,6 +113,7 @@ def health(ep: EndpointInfo = Depends(get_endpoint_info)):
         "services_count": len(enabled),
         "connection_type": connection_type,
         "writes_enabled": STACKPORT_ALLOW_WRITES,
+        "learn_enabled": STACKPORT_LEARN,
     }
 
 

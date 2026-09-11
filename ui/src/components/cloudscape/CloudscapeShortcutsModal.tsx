@@ -2,6 +2,7 @@ import Box from '@cloudscape-design/components/box'
 import Modal from '@cloudscape-design/components/modal'
 import SpaceBetween from '@cloudscape-design/components/space-between'
 import { IS_MAC } from '@/components/cloudscape/platform'
+import { useLearn } from '@/hooks/useLearn'
 
 interface Shortcut {
   keys: string[]
@@ -19,6 +20,8 @@ const GLOBAL_SHORTCUTS: Shortcut[] = [
   { keys: ['G', 'A'], label: 'Go to About' },
   { keys: ['Esc'], label: 'Close modal' },
 ]
+
+const LEARN_SHORTCUT: Shortcut = { keys: ['G', 'L'], label: 'Go to Learn' }
 
 const DASHBOARD_SHORTCUTS: Shortcut[] = [
   { keys: ['R'], label: 'Refresh' },
@@ -65,10 +68,15 @@ function ShortcutList({ title, shortcuts }: { title: string; shortcuts: Shortcut
 }
 
 export function CloudscapeShortcutsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { enabled: learnEnabled } = useLearn()
+  const globalShortcuts = learnEnabled
+    ? [...GLOBAL_SHORTCUTS.slice(0, -1), LEARN_SHORTCUT, GLOBAL_SHORTCUTS[GLOBAL_SHORTCUTS.length - 1]]
+    : GLOBAL_SHORTCUTS
+
   return (
     <Modal visible={open} onDismiss={onClose} header="Keyboard shortcuts" size="medium">
       <SpaceBetween size="l">
-        <ShortcutList title="Global" shortcuts={GLOBAL_SHORTCUTS} />
+        <ShortcutList title="Global" shortcuts={globalShortcuts} />
         <ShortcutList title="Dashboard" shortcuts={DASHBOARD_SHORTCUTS} />
         <ShortcutList title="Tables" shortcuts={BROWSER_SHORTCUTS} />
       </SpaceBetween>
