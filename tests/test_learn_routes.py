@@ -5,10 +5,6 @@ so authoring a new lesson can never break these tests. The shipped content has
 its own tests in test_learn_content.py.
 """
 
-import os
-
-os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
-
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,8 +14,11 @@ from fastapi.testclient import TestClient
 from backend.learn_store import LearnProgressStore
 from backend.main import app
 from backend.routes import learn as learn_routes
+from backend.routes.common import EndpointInfo, get_endpoint_info
 
 client = TestClient(app)
+
+ENDPOINT_URL = "http://emulator.test:4566"
 
 FIXTURE_TRAIL = {
     "id": "test-trail",
@@ -67,13 +66,21 @@ FIXTURE_TRAIL = {
 
 @pytest.fixture(autouse=True)
 def fixture_trail(tmp_path):
-    """Throwaway progress store and a trail catalogue containing only the fixture."""
+    """Throwaway progress store, a catalogue holding only the fixture, and a fixed endpoint.
+
+    The endpoint is pinned through FastAPI's dependency override so the tests
+    do not depend on whatever AWS_ENDPOINT_URL the machine running them has.
+    """
     store = LearnProgressStore(json_path=tmp_path / "progress.json")
-    with (
-        patch.object(learn_routes, "progress_store", store),
-        patch.dict(learn_routes.TRAILS, {"test-trail": FIXTURE_TRAIL}, clear=True),
-    ):
-        yield store
+    app.dependency_overrides[get_endpoint_info] = lambda: EndpointInfo(url=ENDPOINT_URL, region="us-east-1")
+    try:
+        with (
+            patch.object(learn_routes, "progress_store", store),
+            patch.dict(learn_routes.TRAILS, {"test-trail": FIXTURE_TRAIL}, clear=True),
+        ):
+            yield store
+    finally:
+        app.dependency_overrides.pop(get_endpoint_info, None)
 
 
 def _get_trail() -> dict:
@@ -111,7 +118,7 @@ class TestTrails:
         assert bucket.startswith("test-bucket-")
         assert "{{" not in step["instruction"]
         assert bucket in step["instruction"]
-        assert "http://localhost:4566" in step["commands"]["cli"]
+        assert f"--endpoint-url={ENDPOINT_URL}" in step["commands"]["cli"]
 
     def test_generated_variable_is_stable_across_requests(self):
         assert _bucket_name() == _bucket_name()
