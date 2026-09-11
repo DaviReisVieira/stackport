@@ -26,6 +26,8 @@ import Table from '@cloudscape-design/components/table'
 import Tabs from '@cloudscape-design/components/tabs'
 import TextFilter from '@cloudscape-design/components/text-filter'
 import { toast } from 'sonner'
+import { LearnHotspot, LearnHotspotMarker } from '@/components/cloudscape/learn/LearnHotspot'
+import { LEARN_HOTSPOTS } from '@/components/cloudscape/learn/hotspots'
 import {
   createS3Bucket,
   createS3Folder,
@@ -786,9 +788,11 @@ function ObjectBrowser({ bucket, prefix }: { bucket: string; prefix: string }) {
                         <SpaceBetween direction="horizontal" size="xs">
                           <Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh objects" />
                           {exportDropdown('objects', (objectsData?.files ?? []) as unknown as Record<string, unknown>[])}
-                          <Button iconName="upload" onClick={() => fileInputRef.current?.click()}>
-                            Upload
-                          </Button>
+                          <LearnHotspot hotspotId={LEARN_HOTSPOTS.s3Upload} side="left">
+                            <Button iconName="upload" onClick={() => fileInputRef.current?.click()}>
+                              Upload
+                            </Button>
+                          </LearnHotspot>
                           <Button iconName="folder" onClick={() => setFolderModalOpen(true)}>
                             New folder
                           </Button>
@@ -803,7 +807,7 @@ function ObjectBrowser({ bucket, prefix }: { bucket: string; prefix: string }) {
                         </SpaceBetween>
                       }
                     >
-                      {prefix || 'Root'}
+                      {prefix || 'Root'} <LearnHotspotMarker hotspotId={LEARN_HOTSPOTS.s3ObjectsTable} direction="right" />
                     </Header>
                   }
                   filter={
@@ -1029,13 +1033,15 @@ function BucketList({ onOpen }: { onOpen: (bucket: string) => void }) {
               <SpaceBetween direction="horizontal" size="xs">
                 <Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh buckets" />
                 {exportDropdown('buckets', buckets as unknown as Record<string, unknown>[])}
-                <Button variant="primary" onClick={() => setCreating(true)}>
-                  Create bucket
-                </Button>
+                <LearnHotspot hotspotId={LEARN_HOTSPOTS.s3BucketsCreate} side="left">
+                  <Button variant="primary" onClick={() => setCreating(true)}>
+                    Create bucket
+                  </Button>
+                </LearnHotspot>
               </SpaceBetween>
             }
           >
-            Buckets
+            Buckets <LearnHotspotMarker hotspotId={LEARN_HOTSPOTS.s3BucketsTable} direction="right" />
           </Header>
         }
         filter={

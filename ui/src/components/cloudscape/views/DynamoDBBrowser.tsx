@@ -22,6 +22,8 @@ import Table from '@cloudscape-design/components/table'
 import Textarea from '@cloudscape-design/components/textarea'
 import TextFilter from '@cloudscape-design/components/text-filter'
 import { toast } from 'sonner'
+import { LearnHotspot, LearnHotspotMarker } from '@/components/cloudscape/learn/LearnHotspot'
+import { LEARN_HOTSPOTS } from '@/components/cloudscape/learn/hotspots'
 import {
   batchWriteDynamoDBItems,
   createDynamoDBTable,
@@ -709,13 +711,15 @@ export function CloudscapeDynamoDBBrowser() {
             actions={
               <SpaceBetween direction="horizontal" size="xs">
                 <Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh tables" />
-                <Button variant="primary" onClick={() => setCreating(true)}>
-                  Create table
-                </Button>
+                <LearnHotspot hotspotId={LEARN_HOTSPOTS.dynamodbTablesCreate} side="left">
+                  <Button variant="primary" onClick={() => setCreating(true)}>
+                    Create table
+                  </Button>
+                </LearnHotspot>
               </SpaceBetween>
             }
           >
-            Tables
+            Tables <LearnHotspotMarker hotspotId={LEARN_HOTSPOTS.dynamodbTablesTable} direction="right" />
           </Header>
         }
         filter={

@@ -13,8 +13,11 @@ import enMessages from '@cloudscape-design/components/i18n/messages/all.en'
 import type { TopNavigationProps } from '@cloudscape-design/components/top-navigation'
 import { applyMode, Mode } from '@cloudscape-design/global-styles'
 import '@cloudscape-design/global-styles/index.css'
-import { Monitor, Moon, Sun } from 'lucide-react'
+import { GraduationCap, Monitor, Moon, Sun } from 'lucide-react'
 import { CloudscapeShortcutsModal } from '@/components/cloudscape/CloudscapeShortcutsModal'
+import { LearnDrawer } from '@/components/cloudscape/learn/LearnDrawer'
+import { LearnHotspotMarker } from '@/components/cloudscape/learn/LearnHotspot'
+import { LEARN_HOTSPOTS } from '@/components/cloudscape/learn/hotspots'
 import { fetchStats } from '@/lib/api'
 import type { StatsResponse } from '@/lib/types'
 import { useEndpoint } from '@/hooks/useEndpoint'
@@ -22,9 +25,12 @@ import { useFavorites } from '@/hooks/useFavorites'
 import { useFetch } from '@/hooks/useFetch'
 import { useHealth } from '@/hooks/useHealth'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useLearn } from '@/hooks/useLearn'
 import { useTheme } from '@/hooks/useTheme'
 import { getServiceIcon } from '@/lib/service-icons'
 import { SEARCH_SHORTCUT_LABEL } from '@/components/cloudscape/platform'
+
+const LEARN_DRAWER_ID = 'learn'
 
 /**
  * Shared shell for Cloudscape-migrated views (launch PR #149).
@@ -51,6 +57,7 @@ export function CloudscapeShell({
   const { data: health } = useHealth()
   const { favorites } = useFavorites()
   const { theme, setTheme, effectiveTheme } = useTheme()
+  const { enabled: learnEnabled, drawerOpen, setDrawerOpen, run: learnRun } = useLearn()
 
   // Service names for the top-nav search; a single cached fetch is enough
   const statsFetcher = useCallback(() => fetchStats(activeEndpoint), [activeEndpoint])
@@ -91,6 +98,7 @@ export function CloudscapeShell({
       { sequence: ['g', 'r'], handler: () => navigate('/resources') },
       { sequence: ['g', 's'], handler: () => navigate('/settings') },
       { sequence: ['g', 'a'], handler: () => navigate('/about') },
+      ...(learnEnabled ? [{ sequence: ['g', 'l'], handler: () => navigate('/learn') }] : []),
     ],
   )
 
@@ -198,7 +206,29 @@ export function CloudscapeShell({
       </div>
       <CloudscapeShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <AppLayout
-        toolsHide
+        {...(learnEnabled
+          ? {
+              drawers: [
+                {
+                  id: LEARN_DRAWER_ID,
+                  content: <LearnDrawer />,
+                  trigger: { iconSvg: <GraduationCap /> },
+                  ariaLabels: {
+                    drawerName: 'Learn',
+                    closeButton: 'Close the Learn panel',
+                    triggerButton: 'Open the Learn panel',
+                    resizeHandle: 'Resize the Learn panel',
+                  },
+                  badge: Boolean(learnRun),
+                  resizable: true,
+                  defaultSize: 400,
+                  preserveInactiveContent: true,
+                },
+              ],
+            }
+          : { toolsHide: true })}
+        activeDrawerId={drawerOpen && learnEnabled ? LEARN_DRAWER_ID : null}
+        onDrawerChange={({ detail }) => setDrawerOpen(detail.activeDrawerId === LEARN_DRAWER_ID)}
         headerSelector="#stackport-top-nav"
         stickyNotifications
         notifications={
@@ -229,8 +259,25 @@ export function CloudscapeShell({
             }}
             items={[
               { type: 'link', text: 'Dashboard', href: '/' },
-              { type: 'link', text: 'Resources', href: '/resources' },
+              {
+                type: 'link',
+                text: 'Resources',
+                href: '/resources',
+                info: <LearnHotspotMarker hotspotId={LEARN_HOTSPOTS.navResources} />,
+              },
               ...extraNavItems,
+              ...(learnEnabled
+                ? [
+                    {
+                      type: 'link' as const,
+                      text: 'Learn',
+                      href: '/learn',
+                      // always mounted while Learn is on, so a step whose anchor
+                      // cannot be resolved still gets a popover somewhere visible
+                      info: <LearnHotspotMarker hotspotId={LEARN_HOTSPOTS.panelAnchor} />,
+                    },
+                  ]
+                : []),
               { type: 'link', text: 'Settings', href: '/settings' },
               { type: 'link', text: 'About', href: '/about' },
             ]}

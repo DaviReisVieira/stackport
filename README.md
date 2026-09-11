@@ -34,6 +34,7 @@
 - **Write operations** — upload/delete S3 objects, query DynamoDB, invoke Lambda, send/receive SQS messages
 - **Real AWS support** — connect to real AWS accounts with read-only mode by default
 - **Per-endpoint authentication** — default credentials, AWS profiles (SSO/AssumeRole), or static keys per endpoint
+- **Guided lessons** — hands-on AWS tutorials that run inside the console and verify your real resource state
 - **Tag management** — unified tagging across 21 resource types
 - **CLI** — `stackport status`, `list`, `describe`, `export` with JSON/CSV/table output
 - **Real-time dashboard** with WebSocket-powered live updates
@@ -170,6 +171,21 @@ You can test connections before saving using the "Test Connection" button in the
 
 All other services use a searchable resource table with JSON detail view, pagination, and export (JSON/CSV).
 
+## Learn
+
+Guided lessons that run inside StackPort itself, against your own emulator. A panel walks you through a lesson step by step while hotspots point at the actual controls, and StackPort checks the live resource state, so a step only turns green when the thing genuinely exists.
+
+Open **Learn** in the sidebar (or press `g l`) and start a lesson. Every step gives you two ways through it:
+
+- **Do it here** — the popover points at the control to use, with the exact values to type, copyable.
+- **With the CLI** — the command, already filled in with your endpoint and your resource names, plus an explanation of what each flag does.
+
+Either way, verification is the same: StackPort calls the real API and reports what it found. Do the work in a terminal and the step turns green on its own within a few seconds, no clicking required. Nothing is a gate, either: any step can be skipped and re-checked later.
+
+You pick the names. A lesson generates something like `stackport-learn-k3xz` and every command and field on screen uses it, so the commands can be copied and run without editing. Change it under "Names used in this lesson" and everything follows.
+
+Lessons only run against a local emulator, since they create and delete resources. Progress is stored locally in `~/.stackport/learn_progress.json`. Set `STACKPORT_LEARN=false` to remove Learn entirely.
+
 ## Tag Management
 
 Unified tag read/write across 21 resource types:
@@ -208,6 +224,7 @@ Press `?` anywhere to see all shortcuts.
 | `b` | Toggle sidebar |
 | `g d` | Go to Dashboard |
 | `g r` | Go to Resources |
+| `g l` | Go to Learn |
 | `/` | Focus search |
 | `j` / `k` | Navigate up/down in resource list |
 | `[` / `]` | Previous/next service |
@@ -227,12 +244,13 @@ Press `?` anywhere to see all shortcuts.
 | `STACKPORT_PORT` | `8080` | StackPort server port |
 | `STACKPORT_ALLOW_WRITES` | `true` | Enable write operations (POST/PUT/DELETE) |
 | `STACKPORT_S3_MAX_UPLOAD_MB` | `100` | Max S3 upload size per object (MiB) |
+| `STACKPORT_LEARN` | `true` | Guided tutorials. `false` removes the Learn routes and UI |
 | `STACKPORT_SERVICES` | *(35 services)* | Comma-separated list of services to probe |
 | `STACKPORT_PROBE_TIMEOUT` | `5` | Seconds before a service probe times out |
 | `STACKPORT_CACHE_TTL` | `5` | Seconds to cache service stats |
 | `STACKPORT_PROBE_WORKERS` | `10` | Max concurrent workers for service probing |
 | `STACKPORT_ENDPOINTS` | *(unset)* | Multiple endpoints: `local=http://localhost:4566,staging=http://...` |
-| `STACKPORT_DATA_DIR` | `~/.stackport` | Directory for persistent config (endpoints.json) |
+| `STACKPORT_DATA_DIR` | `~/.stackport` | Directory for persistent config (endpoints.json, learn_progress.json) |
 | `LOG_LEVEL` | `INFO` | Python log level (`DEBUG` shows healthcheck logs) |
 
 ## Supported Services (35)
