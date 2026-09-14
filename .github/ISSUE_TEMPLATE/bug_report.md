@@ -20,5 +20,5 @@ What you expected to happen.
 **Environment**
 - StackPort version:
 - Python version:
-- Emulator (LocalStack/MiniStack/Moto):
+- Emulator (Floci/MiniStack/LocalStack/Moto):
 - Browser:

@@ -46,7 +46,7 @@
 
 ```bash
 # Start Floci (or MiniStack, LocalStack, Moto, etc.)
-docker run -p 4566:4566 floci/floci
+docker run -d -p 4566:4566 floci/floci
 
 # Start StackPort
 pip install stackport
@@ -85,7 +85,7 @@ See [`examples/docker-compose.floci.yml`](examples/docker-compose.floci.yml). It
 
 ### Docker Compose (MiniStack + StackPort)
 
-This example uses [MiniStack](https://github.com/Nahuel990/ministack) as the emulator, but you can swap it for LocalStack, Moto, or any AWS-compatible endpoint — just update `AWS_ENDPOINT_URL`.
+The same setup with [MiniStack](https://github.com/Nahuel990/ministack) as the emulator. Swap in LocalStack, Moto, or any AWS-compatible endpoint by updating `AWS_ENDPOINT_URL`.
 
 ```bash
 curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.yml
@@ -104,6 +104,10 @@ docker run -p 8080:8080 -e AWS_ENDPOINT_URL=http://host.docker.internal:4566 dav
 StackPort works with any AWS-compatible endpoint — just set `AWS_ENDPOINT_URL`:
 
 ```bash
+# MiniStack
+pip install ministack && ministack
+AWS_ENDPOINT_URL=http://localhost:4566 stackport
+
 # LocalStack
 AWS_ENDPOINT_URL=http://localhost:4566 stackport
 

@@ -11,8 +11,9 @@
 #
 # The `seed` service runs once at startup and creates a handful of resources
 # (S3, SQS, SNS, DynamoDB, Secrets Manager, IAM, Logs, Step Functions) so the
-# dashboard has something to show on the first load. Drop it once you are
-# pointing StackPort at your own stack.
+# dashboard has something to show on the first load. It is safe to re-run:
+# if the demo bucket already exists it exits without touching anything. Drop
+# it once you are pointing StackPort at your own stack.
 
 services:
   stackport:
@@ -36,20 +37,23 @@ services:
 
   floci:
     image: floci/floci:latest
-    user: root
     ports:
       - "4566:4566"
     environment:
       # Must match the Compose service name so URLs Floci hands back
       # (SQS QueueUrl, pre-signed URLs, SNS callbacks) resolve from other containers.
       FLOCI_HOSTNAME: floci
-      FLOCI_BASE_URL: http://floci:4566
-      # memory | persistent | hybrid | wal — hybrid keeps state across restarts.
+      # memory | persistent | hybrid | wal — hybrid keeps state across restarts
+      # in the `floci-data` volume below. Use `memory` for a throwaway stack.
       FLOCI_STORAGE_MODE: hybrid
     volumes:
-      # Required by the Docker-backed services (Lambda, RDS, ElastiCache, ECS, ...).
-      # Safe to drop if you only use the in-process ones.
-      - /var/run/docker.sock:/var/run/docker.sock
+      - floci-data:/app/data
+      # Only needed for the Docker-backed services (Lambda, RDS, ElastiCache,
+      # ECS, ...). Nothing the seed creates uses them, so the socket is off by
+      # default: handing it to a container is host-root-equivalent access.
+      # To opt in, uncomment the line below (the image's entrypoint fixes the
+      # socket permissions itself, no `user:` override needed).
+      # - /var/run/docker.sock:/var/run/docker.sock
     # No healthcheck block needed: the image ships its own HEALTHCHECK against
     # /_floci/health, which is what `service_healthy` below waits on.
 
@@ -68,6 +72,11 @@ services:
       - |
         set -eux
 
+        if aws s3api head-bucket --bucket stackport-demo >/dev/null 2>&1; then
+          echo "already seeded, skipping"
+          exit 0
+        fi
+
         aws s3api create-bucket --bucket stackport-demo
         echo '{"hello":"floci"}' > /tmp/hello.json
         aws s3 cp /tmp/hello.json s3://stackport-demo/data/hello.json
@@ -75,14 +84,17 @@ services:
 
         aws sqs create-queue --queue-name orders
         aws sqs create-queue --queue-name orders-dlq
-        aws sqs send-message --queue-url "$$(aws sqs get-queue-url --queue-name orders --output text)" \
+        QUEUE_URL="$$(aws sqs get-queue-url --queue-name orders --output text)"
+        QUEUE_ARN="$$(aws sqs get-queue-attributes --queue-url "$$QUEUE_URL" \
+          --attribute-names QueueArn --query Attributes.QueueArn --output text)"
+        aws sqs send-message --queue-url "$$QUEUE_URL" \
           --message-body '{"orderId":"1001","total":42}'
 
-        aws sns create-topic --name order-events
+        TOPIC_ARN="$$(aws sns create-topic --name order-events --output text)"
         aws sns subscribe \
-          --topic-arn "$$(aws sns create-topic --name order-events --output text)" \
+          --topic-arn "$$TOPIC_ARN" \
           --protocol sqs \
-          --notification-endpoint arn:aws:sqs:us-east-1:000000000000:orders
+          --notification-endpoint "$$QUEUE_ARN"
 
         aws dynamodb create-table --table-name Orders \
           --attribute-definitions AttributeName=pk,AttributeType=S \
@@ -96,11 +108,15 @@ services:
         aws logs create-log-group --log-group-name /stackport/demo
         aws logs create-log-stream --log-group-name /stackport/demo --log-stream-name run-1
 
-        aws iam create-role --role-name StackPortDemoRole \
-          --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"states.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+        ROLE_ARN="$$(aws iam create-role --role-name StackPortDemoRole \
+          --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"states.amazonaws.com"},"Action":"sts:AssumeRole"}]}' \
+          --query Role.Arn --output text)"
 
         aws stepfunctions create-state-machine --name order-flow \
-          --role-arn arn:aws:iam::000000000000:role/StackPortDemoRole \
+          --role-arn "$$ROLE_ARN" \
           --definition '{"Comment":"Demo flow","StartAt":"Validate","States":{"Validate":{"Type":"Pass","Next":"Charge"},"Charge":{"Type":"Pass","Next":"Done"},"Done":{"Type":"Succeed"}}}'
 
         echo "seed complete"
+
+volumes:
+  floci-data:
