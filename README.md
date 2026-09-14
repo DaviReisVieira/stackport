@@ -79,13 +79,14 @@ When connected to real AWS, StackPort shows a warning banner and operates in rea
 curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.floci.yml
 docker compose -f docker-compose.floci.yml up -d
 # Open http://localhost:8080
+# If the dashboard is empty: docker compose -f docker-compose.floci.yml logs seed
 ```
 
 See [`examples/docker-compose.floci.yml`](examples/docker-compose.floci.yml). It sets `FLOCI_HOSTNAME=floci` so the URLs Floci returns (SQS queue URLs, pre-signed URLs) resolve from inside the StackPort container — from the host, reach the same resources through `http://localhost:4566`.
 
 ### Docker Compose (MiniStack + StackPort)
 
-The same setup with [MiniStack](https://github.com/Nahuel990/ministack) as the emulator. Swap in LocalStack, Moto, or any AWS-compatible endpoint by updating `AWS_ENDPOINT_URL`.
+A minimal variant with [MiniStack](https://github.com/ministackorg/ministack) as the emulator and no seed container. Swap in LocalStack, Moto, or any AWS-compatible endpoint by updating `AWS_ENDPOINT_URL`.
 
 ```bash
 curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.yml

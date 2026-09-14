@@ -2,7 +2,7 @@
 
 **Universal AWS resource browser for local emulators.**
 
-Browse and inspect AWS resources running on [Floci](https://github.com/floci-io/floci), [MiniStack](https://github.com/DaviReisVieira/ministack), [LocalStack](https://github.com/localstack/localstack), [Moto](https://github.com/getmoto/moto), or any AWS-compatible endpoint — directly from VS Code.
+Browse and inspect AWS resources running on [Floci](https://github.com/floci-io/floci), [MiniStack](https://github.com/ministackorg/ministack), [LocalStack](https://github.com/localstack/localstack), [Moto](https://github.com/getmoto/moto), or any AWS-compatible endpoint — directly from VS Code.
 
 ## Status
 
