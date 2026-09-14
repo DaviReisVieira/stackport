@@ -80,4 +80,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: davireis/stackport
           readme-filepath: ./README.md
-          short-description: "Universal AWS resource browser for local emulators (MiniStack, LocalStack, Moto)"
+          short-description: "Universal AWS resource browser for local emulators (Floci, MiniStack, LocalStack, Moto)"
