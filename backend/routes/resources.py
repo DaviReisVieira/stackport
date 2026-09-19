@@ -84,6 +84,7 @@ _PREFERRED_ID_FIELD: dict[tuple[str, str], str] = {
     ("elasticmapreduce", "clusters"): "Id",
     ("cognito-idp", "user_pools"): "Id",
     ("apigateway", "rest_apis"): "id",
+    ("apigateway", "apis"): "ApiId",
 }
 
 # Known ID field names for extracting a resource identifier from list results

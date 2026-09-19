@@ -1,6 +1,12 @@
 """Validate SERVICE_REGISTRY, DESCRIBE_REGISTRY, and _METHOD_KWARGS consistency."""
 
-from backend.routes.resources import DESCRIBE_REGISTRY, _ID_FIELDS
+from backend.routes.resources import (
+    DESCRIBE_REGISTRY,
+    _ID_FIELDS,
+    _PREFERRED_ID_FIELD,
+    _extract_id,
+    _summarize_item,
+)
 from backend.routes.stats import SERVICE_REGISTRY, _METHOD_KWARGS
 
 
@@ -67,3 +73,13 @@ class TestIdFields:
 
     def test_no_duplicates(self):
         assert len(_ID_FIELDS) == len(set(_ID_FIELDS))
+
+
+class TestPreferredIdField:
+    def test_apigatewayv2_api_id_wins_over_name(self):
+        """get_api takes ApiId, but the list item also has Name, which ranks first
+        in _ID_FIELDS — without the override the detail lookup 404s."""
+        item = {"ApiId": "acf2a85b", "Name": "my-api", "ProtocolType": "HTTP"}
+        preferred = _PREFERRED_ID_FIELD.get(("apigateway", "apis"))
+        assert _extract_id(item, preferred) == "acf2a85b"
+        assert _summarize_item(item, preferred)["id"] == "acf2a85b"
