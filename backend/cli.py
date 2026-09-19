@@ -11,7 +11,12 @@ import uvicorn
 
 from backend.aws_client import get_client
 from backend.config import AWS_ENDPOINT_URL, AWS_REGION, LOG_LEVEL, STACKPORT_PORT, STACKPORT_SERVICES
-from backend.routes.resources import DESCRIBE_REGISTRY, _extract_id, _serialize
+from backend.routes.resources import (
+    DESCRIBE_REGISTRY,
+    _PREFERRED_ID_FIELD,
+    _extract_id,
+    _serialize,
+)
 from backend.routes.stats import SERVICE_REGISTRY, _METHOD_KWARGS, _count_items, _probe_service
 
 logger = logging.getLogger(__name__)
@@ -129,8 +134,9 @@ def list(service, endpoint, region, output):
         writer = csv.writer(sys.stdout)
         writer.writerow(["service", "resource_type", "resource_id", "name"])
         for resource_type, items in resources.items():
+            preferred = _PREFERRED_ID_FIELD.get((service, resource_type))
             for item in items:
-                resource_id = _extract_id(item)
+                resource_id = _extract_id(item, preferred)
                 name = item.get("Name", item.get("FunctionName", item.get("TableName", resource_id))) if isinstance(item, dict) else resource_id
                 writer.writerow([service, resource_type, resource_id, name])
     else:
@@ -139,8 +145,9 @@ def list(service, endpoint, region, output):
             if items:
                 click.echo(f"\n{resource_type.upper()} ({len(items)}):")
                 click.echo("-" * 60)
+                preferred = _PREFERRED_ID_FIELD.get((service, resource_type))
                 for item in items[:20]:  # Limit to first 20 for readability
-                    resource_id = _extract_id(item)
+                    resource_id = _extract_id(item, preferred)
                     if isinstance(item, dict):
                         name = item.get("Name", item.get("FunctionName", item.get("TableName", "")))
                         if name and name != resource_id:
