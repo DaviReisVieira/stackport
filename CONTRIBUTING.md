@@ -28,7 +28,7 @@ cd ui && npm run dev
 
 ## Supported emulators
 
-StackPort exists to give the local-AWS community one browser that works the same with every emulator. It talks to them only through the standard AWS API, and it treats them all the same way in the docs. In practice:
+StackPort only speaks the standard AWS API, so any emulator can sit behind it and there is no reason for the project to prefer one. A few ground rules keep the docs that way:
 
 - Supported emulators are documented side by side, with the same depth. If one gets a Compose example, a seed, or a Quick Start line, the others get the equivalent.
 - Lists follow one fixed order (MiniStack, Floci, LocalStack, Moto, then others). MiniStack goes first because the project grew out of a MiniStack pull request, not because it is preferred.
