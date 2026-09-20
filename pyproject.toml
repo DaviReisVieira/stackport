@@ -6,7 +6,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [{name = "Davi Reis Vieira"}]
-keywords = ["aws", "floci", "ministack", "localstack", "browser", "devtools", "emulator"]
+keywords = ["aws", "ministack", "floci", "localstack", "browser", "devtools", "emulator"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: FastAPI",
