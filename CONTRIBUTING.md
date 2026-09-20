@@ -26,16 +26,16 @@ AWS_ENDPOINT_URL=http://localhost:4566 python -m backend.main
 cd ui && npm run dev
 ```
 
-## Emulator neutrality
+## Supported emulators
 
-StackPort exists to give the whole local-AWS community one browser that works the same against any emulator. It talks to them only through the standard AWS API, and it does not recommend one over another. In practice:
+StackPort exists to give the local-AWS community one browser that works the same with every emulator. It talks to them only through the standard AWS API, and it treats them all the same way in the docs. In practice:
 
 - Supported emulators are documented side by side, with the same depth. If one gets a Compose example, a seed, or a Quick Start line, the others get the equivalent.
-- Lists follow one fixed order (MiniStack, Floci, LocalStack, Moto, then others) so nobody has to argue about position. MiniStack goes first because the project grew out of a MiniStack pull request, not because it is preferred.
+- Lists follow one fixed order (MiniStack, Floci, LocalStack, Moto, then others). MiniStack goes first because the project grew out of a MiniStack pull request, not because it is preferred.
 - The root `docker-compose.yml` uses MiniStack for the same historical reason. It is a working example, not a recommendation.
-- Pull requests that add or improve support for an emulator are very welcome. Pull requests that change the order, the wording, or the default to favour one emulator over another will be closed with a link to this section, whoever opens them.
+- Pull requests that add or improve support for an emulator are very welcome. Changes that reorder the list, reword the docs, or pick a default so one emulator stands out are declined with a pointer to this section. That applies to the maintainer as much as to anyone else.
 
-If you maintain an emulator and something in StackPort works worse against it than against the others, please open an issue. That is the kind of gap this project wants to close.
+If you maintain an emulator and something in StackPort works worse against it than against the others, please open an issue. That is exactly the kind of gap this project wants to close.
 
 ## Adding a New AWS Service
 

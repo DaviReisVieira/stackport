@@ -45,7 +45,7 @@
 
 ### With a local emulator
 
-StackPort is not tied to any emulator and does not recommend one (see [Emulator neutrality](CONTRIBUTING.md#emulator-neutrality)). Start whichever one you use, then point StackPort at it:
+StackPort works the same with every supported emulator (see [Supported emulators](CONTRIBUTING.md#supported-emulators)). Start whichever one you use, then point StackPort at it:
 
 ```bash
 # Start an emulator on :4566 (pick one)
