@@ -14,8 +14,8 @@ pip install -e .
 cd ui && npm install
 
 # Start an emulator (pick one)
-docker run -d -p 4566:4566 floci/floci
-# or: pip install ministack && ministack
+pip install ministack && ministack
+# or: docker run -d -p 4566:4566 floci/floci
 # or: docker run -p 4566:4566 localstack/localstack
 
 # Run StackPort
