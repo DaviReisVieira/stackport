@@ -13,10 +13,11 @@ pip install -e .
 # Frontend
 cd ui && npm install
 
-# Start an emulator (pick one)
-pip install ministack && ministack
+# Start an emulator on :4566 (pick one)
+docker run -d -p 4566:4566 ministackorg/ministack
 # or: docker run -d -p 4566:4566 floci/floci
-# or: docker run -p 4566:4566 localstack/localstack
+# or: pip install ministack && ministack
+# or: docker run -d -p 4566:4566 localstack/localstack
 
 # Run StackPort
 AWS_ENDPOINT_URL=http://localhost:4566 python -m backend.main
@@ -24,6 +25,17 @@ AWS_ENDPOINT_URL=http://localhost:4566 python -m backend.main
 # Frontend dev (hot reload, proxies to :8080)
 cd ui && npm run dev
 ```
+
+## Emulator neutrality
+
+StackPort exists to give the whole local-AWS community one browser that works the same against any emulator. It talks to them only through the standard AWS API, and it does not recommend one over another. In practice:
+
+- Supported emulators are documented side by side, with the same depth. If one gets a Compose example, a seed, or a Quick Start line, the others get the equivalent.
+- Lists follow one fixed order (MiniStack, Floci, LocalStack, Moto, then others) so nobody has to argue about position. MiniStack goes first because the project grew out of a MiniStack pull request, not because it is preferred.
+- The root `docker-compose.yml` uses MiniStack for the same historical reason. It is a working example, not a recommendation.
+- Pull requests that add or improve support for an emulator are very welcome. Pull requests that change the order, the wording, or the default to favour one emulator over another will be closed with a link to this section, whoever opens them.
+
+If you maintain an emulator and something in StackPort works worse against it than against the others, please open an issue. That is the kind of gap this project wants to close.
 
 ## Adding a New AWS Service
 

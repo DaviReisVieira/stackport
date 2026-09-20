@@ -23,7 +23,7 @@ cd ui && npx eslint .
 docker compose up                                        # StackPort + MiniStack
 ```
 
-Requires a running AWS-compatible emulator on :4566. StackPort is emulator-neutral: the root compose file uses MiniStack, `examples/docker-compose.floci.yml` uses Floci, and the docs present them side by side rather than naming a default.
+Requires a running AWS-compatible emulator on :4566. StackPort is emulator-neutral: the root compose file uses MiniStack, `examples/docker-compose.floci.yml` uses Floci, and the docs present them side by side rather than naming a default. The policy lives in `CONTRIBUTING.md#emulator-neutrality`; keep any emulator-related docs change consistent with it.
 
 ## Architecture
 
