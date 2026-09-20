@@ -39,15 +39,15 @@
 - **CLI** — `stackport status`, `list`, `describe`, `export` with JSON/CSV/table output
 - **Real-time dashboard** with WebSocket-powered live updates
 - **Keyboard shortcuts** — 16 shortcuts for fast navigation (press `?` to view)
-- Single Docker image, works with [Floci](https://github.com/floci-io/floci), MiniStack, LocalStack, Moto, or any AWS-compatible endpoint
+- Single Docker image, works with [MiniStack](https://github.com/ministackorg/ministack), LocalStack, Moto, or any AWS-compatible endpoint
 
 ## Quick Start
 
 ### With a local emulator (recommended)
 
 ```bash
-# Start Floci (or MiniStack, LocalStack, Moto, etc.)
-docker run -d -p 4566:4566 floci/floci
+# Start MiniStack (or LocalStack, Moto, etc.)
+docker run -d -p 4566:4566 ministackorg/ministack
 
 # Start StackPort
 pip install stackport
@@ -72,22 +72,9 @@ You can also configure per-endpoint authentication from the Settings UI — sele
 
 When connected to real AWS, StackPort shows a warning banner and operates in read-only mode unless writes are explicitly enabled.
 
-### Docker Compose (Floci + StackPort)
-
-[Floci](https://github.com/floci-io/floci) serves its whole AWS surface on port 4566, so StackPort only needs `AWS_ENDPOINT_URL` pointed at it. This example also seeds a few resources (S3, SQS, SNS, DynamoDB, Secrets Manager, IAM, Logs, Step Functions) so the dashboard has something to show on first load.
-
-```bash
-curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.floci.yml
-docker compose -f docker-compose.floci.yml up -d
-# Open http://localhost:8080
-# If the dashboard is empty: docker compose -f docker-compose.floci.yml logs seed
-```
-
-See [`examples/docker-compose.floci.yml`](examples/docker-compose.floci.yml). It sets `FLOCI_HOSTNAME=floci` so the URLs Floci returns (SQS queue URLs, pre-signed URLs) resolve from inside the StackPort container — from the host, reach the same resources through `http://localhost:4566`.
-
 ### Docker Compose (MiniStack + StackPort)
 
-A minimal variant with [MiniStack](https://github.com/ministackorg/ministack) as the emulator and no seed container. Swap in LocalStack, Moto, or any AWS-compatible endpoint by updating `AWS_ENDPOINT_URL`.
+[MiniStack](https://github.com/ministackorg/ministack) serves its whole AWS surface on port 4566, so StackPort only needs `AWS_ENDPOINT_URL` pointed at it. It derives the URLs it hands back (SQS queue URLs, pre-signed URLs) from the request `Host`, so the same resources resolve both from other containers and from the host with no extra configuration. Swap in LocalStack, Moto, or any AWS-compatible endpoint by updating `AWS_ENDPOINT_URL`.
 
 ```bash
 curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.yml

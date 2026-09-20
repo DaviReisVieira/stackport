@@ -4,7 +4,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - AWS_ENDPOINT_URL=http://floci:4566
+      - AWS_ENDPOINT_URL=http://ministack:4566
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
@@ -18,17 +18,15 @@ services:
       retries: 3
     restart: unless-stopped
     depends_on:
-      floci:
+      ministack:
         condition: service_healthy
 
-  floci:
-    image: floci/floci:latest
+  ministack:
+    image: ministackorg/ministack:latest
     ports:
       - "4566:4566"
-    environment:
-      # Must match the Compose service name so URLs Floci hands back
-      # (SQS QueueUrl, pre-signed URLs, SNS callbacks) resolve from other containers.
-      FLOCI_HOSTNAME: floci
-    # The image ships its own HEALTHCHECK against /_floci/health, which is
-    # what `service_healthy` above waits on. See examples/docker-compose.floci.yml
-    # for persistent storage, seeded demo resources, and the Docker socket opt-in.
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
