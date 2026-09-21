@@ -37,7 +37,7 @@ import {
   updateDynamoDBItem,
 } from '@/lib/api'
 import type { DynamoDBItem, DynamoDBTable, DynamoDBTableDetail } from '@/lib/types'
-import { extractKeyDynamo, plainItemToDynamoMap } from '@/lib/dynamodb-marshal'
+import { dynamoItemToPlainMap, extractKeyDynamo, plainItemToDynamoMap } from '@/lib/dynamodb-marshal'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
 
@@ -59,23 +59,6 @@ function formatAttribute(value: unknown): string {
   return String(value)
 }
 
-/** Unmarshal a DynamoDB-typed map back to plain JSON (inverse of plainItemToDynamoMap). */
-function dynamoMapToPlain(item: Record<string, unknown>): Record<string, unknown> {
-  const decode = (av: unknown): unknown => {
-    if (av === null || typeof av !== 'object') return av
-    const typed = av as Record<string, unknown>
-    if ('S' in typed) return typed.S
-    if ('N' in typed) return Number(typed.N)
-    if ('BOOL' in typed) return typed.BOOL
-    if ('NULL' in typed) return null
-    if ('L' in typed) return (typed.L as unknown[]).map(decode)
-    if ('M' in typed) return Object.fromEntries(Object.entries(typed.M as Record<string, unknown>).map(([k, v]) => [k, decode(v)]))
-    if ('SS' in typed || 'NS' in typed) return typed.SS ?? (typed.NS as string[]).map(Number)
-    return typed
-  }
-  return Object.fromEntries(Object.entries(item).map(([k, v]) => [k, decode(v)]))
-}
-
 function keySkeleton(detail: DynamoDBTableDetail): Record<string, unknown> {
   const skeleton: Record<string, unknown> = {}
   if (detail.partition_key) skeleton[detail.partition_key] = detail.partition_key_type === 'N' ? 0 : ''
@@ -86,19 +69,27 @@ function keySkeleton(detail: DynamoDBTableDetail): Record<string, unknown> {
 function ItemEditorModal({
   table,
   initialItem,
+  initialFormat,
   mode,
   onClose,
   onDone,
 }: {
   table: DynamoDBTableDetail
+  /** Plain JSON for a new item, or the DynamoDB-typed item as returned by the API when editing. */
   initialItem: Record<string, unknown>
+  initialFormat: 'plain' | 'dynamodb'
   mode: 'create' | 'edit'
   onClose: () => void
   onDone: () => void
 }) {
   const { activeEndpoint } = useEndpoint()
   const [format, setFormat] = useState<'plain' | 'dynamodb'>('plain')
-  const [text, setText] = useState(JSON.stringify(initialItem, null, 2))
+  // Items from the API are DynamoDB-typed; show them as plain JSON first (like the AWS console).
+  const initialPlain = useMemo(
+    () => JSON.stringify(initialFormat === 'dynamodb' ? dynamoItemToPlainMap(initialItem) : initialItem, null, 2),
+    [initialItem, initialFormat],
+  )
+  const [text, setText] = useState(initialPlain)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -106,9 +97,12 @@ function ItemEditorModal({
     try {
       const parsed = JSON.parse(text) as Record<string, unknown>
       if (next === 'dynamodb' && format === 'plain') {
-        setText(JSON.stringify(plainItemToDynamoMap(parsed), null, 2))
+        // Untouched edit: reuse the original typed item so sets and binary keep their exact types.
+        const typed =
+          initialFormat === 'dynamodb' && text === initialPlain ? initialItem : plainItemToDynamoMap(parsed)
+        setText(JSON.stringify(typed, null, 2))
       } else if (next === 'plain' && format === 'dynamodb') {
-        setText(JSON.stringify(dynamoMapToPlain(parsed), null, 2))
+        setText(JSON.stringify(dynamoItemToPlainMap(parsed), null, 2))
       }
       setFormat(next)
       setError(null)
@@ -186,7 +180,7 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
   const [querySk, setQuerySk] = useState('')
   const [querySkOp, setQuerySkOp] = useState('=')
   const [selected, setSelected] = useState<DynamoDBItem[]>([])
-  const [editor, setEditor] = useState<{ mode: 'create' | 'edit'; item: Record<string, unknown> } | null>(null)
+  const [editor, setEditor] = useState<{ mode: 'create' | 'edit'; item: Record<string, unknown>; format: 'plain' | 'dynamodb' } | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   const scan = useCallback(
@@ -250,7 +244,7 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
     try {
       const operations = selected.map((item) => ({
         op: 'delete' as const,
-        key: extractKeyDynamo(plainItemToDynamoMap(item as Record<string, unknown>), detail.partition_key ?? '', detail.sort_key),
+        key: extractKeyDynamo(item, detail.partition_key ?? '', detail.sort_key),
       }))
       await batchWriteDynamoDBItems(detail.name, operations, 'dynamodb', activeEndpoint)
       toast.success(`Deleted ${selected.length} item(s)`)
@@ -266,11 +260,7 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
 
   const deleteOne = async (item: DynamoDBItem) => {
     try {
-      const key = extractKeyDynamo(
-        plainItemToDynamoMap(item as Record<string, unknown>),
-        detail.partition_key ?? '',
-        detail.sort_key,
-      )
+      const key = extractKeyDynamo(item, detail.partition_key ?? '', detail.sort_key)
       await deleteDynamoDBItem(detail.name, key, 'dynamodb', activeEndpoint)
       toast.success('Item deleted')
       if (mode === 'scan') scan()
@@ -346,7 +336,7 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
                 <Button disabled={selected.length === 0} loading={deleting} onClick={deleteSelected}>
                   Delete selected ({selected.length})
                 </Button>
-                <Button variant="primary" onClick={() => setEditor({ mode: 'create', item: keySkeleton(detail) })}>
+                <Button variant="primary" onClick={() => setEditor({ mode: 'create', item: keySkeleton(detail), format: 'plain' })}>
                   Create item
                 </Button>
               </SpaceBetween>
@@ -360,7 +350,7 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
           ...columns.map((key) => ({
             id: key,
             header: key,
-            cell: (item: DynamoDBItem) => formatAttribute(item[key]),
+            cell: (item: DynamoDBItem) => formatAttribute(dynamoItemToPlainMap(item)[key]),
           })),
           {
             id: 'actions',
@@ -368,7 +358,7 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
             width: 140,
             cell: (item: DynamoDBItem) => (
               <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="inline-link" onClick={() => setEditor({ mode: 'edit', item: item as Record<string, unknown> })}>
+                <Button variant="inline-link" onClick={() => setEditor({ mode: 'edit', item: item as Record<string, unknown>, format: 'dynamodb' })}>
                   Edit
                 </Button>
                 <Button variant="inline-link" onClick={() => deleteOne(item)}>
@@ -394,6 +384,7 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
           table={detail}
           mode={editor.mode}
           initialItem={editor.item}
+          initialFormat={editor.format}
           onClose={() => setEditor(null)}
           onDone={() => {
             setEditor(null)
