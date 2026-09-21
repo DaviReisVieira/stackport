@@ -66,8 +66,8 @@ const tableDetail = {
 const scanPayload = {
   table: 'learners',
   items: [
-    { id: '1', name: 'Ada', score: 95 },
-    { id: '2', name: 'Grace', score: 98 },
+    { id: { S: '1' }, name: { S: 'Ada' }, score: { N: '95' }, tags: { SS: ['a', 'b'] } },
+    { id: { S: '2' }, name: { S: 'Grace' }, score: { N: '98' } },
   ],
   count: 2,
   scanned_count: 2,
@@ -76,7 +76,7 @@ const scanPayload = {
 
 const queryPayload = {
   table: 'learners',
-  items: [{ id: '1', name: 'Ada', score: 95 }],
+  items: [{ id: { S: '1' }, name: { S: 'Ada' }, score: { N: '95' } }],
   count: 1,
   scanned_count: 1,
 }
@@ -175,6 +175,57 @@ describe('CloudscapeDynamoDBBrowser (via registry dispatch)', () => {
       const body = JSON.parse((postCall![1] as RequestInit).body as string)
       expect(body.item_format).toBe('dynamodb')
       expect(body.item.name.S).toBe('Alan')
+    })
+  })
+
+  it('renders scanned items as plain values, not DynamoDB-typed JSON', async () => {
+    renderDynamo()
+    fireEvent.click(await screen.findByRole('link', { name: 'learners' }))
+    expect(await screen.findByText('Ada')).toBeInTheDocument()
+    expect(screen.getByText('95')).toBeInTheDocument()
+    expect(screen.queryByText(/"S":/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/"N":/)).not.toBeInTheDocument()
+  })
+
+  it('opens an existing item as plain JSON and shows exact DynamoDB JSON on switch', async () => {
+    renderDynamo()
+    fireEvent.click(await screen.findByRole('link', { name: 'learners' }))
+    await screen.findByText('Ada')
+    fireEvent.click(screen.getAllByText('Edit')[0])
+
+    const getTextarea = () =>
+      screen.getAllByRole('textbox').find((el) => el.tagName === 'TEXTAREA') as HTMLTextAreaElement
+    await waitFor(() => expect(JSON.parse(getTextarea().value)).toEqual({ id: '1', name: 'Ada', score: 95, tags: ['a', 'b'] }))
+
+    fireEvent.click(screen.getByText('DynamoDB JSON'))
+    await waitFor(() =>
+      expect(JSON.parse(getTextarea().value)).toEqual({
+        id: { S: '1' },
+        name: { S: 'Ada' },
+        score: { N: '95' },
+        tags: { SS: ['a', 'b'] },
+      }),
+    )
+
+    fireEvent.click(screen.getByText('Plain JSON'))
+    await waitFor(() => expect(JSON.parse(getTextarea().value)).toEqual({ id: '1', name: 'Ada', score: 95, tags: ['a', 'b'] }))
+  })
+
+  it('saves an edited item without double-encoding it', async () => {
+    renderDynamo()
+    fireEvent.click(await screen.findByRole('link', { name: 'learners' }))
+    await screen.findByText('Ada')
+    fireEvent.click(screen.getAllByText('Edit')[1])
+    fireEvent.click(await screen.findByRole('button', { name: 'Save item' }))
+
+    await waitFor(() => {
+      const putCall = fetchMock.mock.calls.find(
+        ([url, init]) => String(url).includes('/items?') && (init as RequestInit)?.method === 'PUT',
+      )
+      expect(putCall).toBeTruthy()
+      const body = JSON.parse((putCall![1] as RequestInit).body as string)
+      expect(body.item_format).toBe('plain')
+      expect(body.item).toEqual({ id: '2', name: 'Grace', score: 98 })
     })
   })
 
