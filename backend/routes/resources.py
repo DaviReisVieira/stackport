@@ -85,6 +85,11 @@ _PREFERRED_ID_FIELD: dict[tuple[str, str], str] = {
     ("cognito-idp", "user_pools"): "Id",
     ("apigateway", "rest_apis"): "id",
     ("apigateway", "apis"): "ApiId",
+    ("iam", "policies"): "Arn",
+    ("ec2", "subnets"): "SubnetId",
+    ("ec2", "security_groups"): "GroupId",
+    ("elasticfilesystem", "file_systems"): "FileSystemId",
+    ("rds", "db_clusters"): "DBClusterIdentifier",
 }
 
 # Known ID field names for extracting a resource identifier from list results
