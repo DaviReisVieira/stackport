@@ -10,7 +10,14 @@ import click
 import uvicorn
 
 from backend.aws_client import get_client
-from backend.config import AWS_ENDPOINT_URL, AWS_REGION, LOG_LEVEL, STACKPORT_PORT, STACKPORT_SERVICES
+from backend.config import (
+    AWS_ENDPOINT_URL,
+    AWS_REGION,
+    LOG_LEVEL,
+    STACKPORT_PORT,
+    STACKPORT_SERVICES,
+    endpoint_store,
+)
 from backend.routes.resources import (
     DESCRIBE_REGISTRY,
     _PREFERRED_ID_FIELD,
@@ -20,6 +27,18 @@ from backend.routes.resources import (
 from backend.routes.stats import SERVICE_REGISTRY, _METHOD_KWARGS, _count_items, _probe_service
 
 logger = logging.getLogger(__name__)
+
+
+def _client_kwargs(endpoint: str | None, region: str | None) -> dict:
+    """Resolve where a CLI command talks to.
+
+    An explicit --endpoint (or AWS_ENDPOINT_URL at startup) wins. Without one,
+    fall back to the saved default endpoint, the same one the web UI uses.
+    Passing the result to get_client explicitly is what makes the flag work
+    once ~/.stackport/endpoints.json exists.
+    """
+    url = endpoint if endpoint is not None else endpoint_store.get_default_url()
+    return {"endpoint_url": url, "region": region}
 
 
 @click.group(invoke_without_command=True)
@@ -44,22 +63,14 @@ def serve(port):
 @click.option("--output", type=click.Choice(["json", "table"]), default="table", help="Output format")
 def status(endpoint, region, output):
     """Show all services with availability and resource counts."""
-    # Override endpoint/region if provided
-    if endpoint != AWS_ENDPOINT_URL:
-        import os
-
-        os.environ["AWS_ENDPOINT_URL"] = endpoint
-    if region != AWS_REGION:
-        import os
-
-        os.environ["AWS_REGION"] = region
+    client_kwargs = _client_kwargs(endpoint, region)
 
     enabled_services = [s.strip() for s in STACKPORT_SERVICES.split(",") if s.strip()]
     services = {}
 
     try:
         with ThreadPoolExecutor(max_workers=min(len(enabled_services), 10)) as executor:
-            futures = {executor.submit(_probe_service, svc): svc for svc in enabled_services}
+            futures = {executor.submit(_probe_service, svc, **client_kwargs): svc for svc in enabled_services}
             for future in as_completed(futures):
                 svc_name, result = future.result()
                 services[svc_name] = result
@@ -94,15 +105,7 @@ def status(endpoint, region, output):
 @click.option("--output", type=click.Choice(["json", "table", "csv"]), default="table", help="Output format")
 def list(service, endpoint, region, output):
     """List resources for a service."""
-    # Override endpoint/region if provided
-    if endpoint != AWS_ENDPOINT_URL:
-        import os
-
-        os.environ["AWS_ENDPOINT_URL"] = endpoint
-    if region != AWS_REGION:
-        import os
-
-        os.environ["AWS_REGION"] = region
+    client_kwargs = _client_kwargs(endpoint, region)
 
     registry_entries = SERVICE_REGISTRY.get(service)
     if not registry_entries:
@@ -114,7 +117,7 @@ def list(service, endpoint, region, output):
     resources = {}
     for resource_type, boto3_service, method_name, response_key in registry_entries:
         try:
-            client = get_client(boto3_service)
+            client = get_client(boto3_service, **client_kwargs)
             method = getattr(client, method_name)
             kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
             resp = method(**kwargs)
@@ -171,20 +174,12 @@ def list(service, endpoint, region, output):
 @click.option("--output", type=click.Choice(["json", "table"]), default="json", help="Output format")
 def describe(service, resource_type, resource_id, endpoint, region, output):
     """Describe a specific resource."""
-    # Override endpoint/region if provided
-    if endpoint != AWS_ENDPOINT_URL:
-        import os
-
-        os.environ["AWS_ENDPOINT_URL"] = endpoint
-    if region != AWS_REGION:
-        import os
-
-        os.environ["AWS_REGION"] = region
+    client_kwargs = _client_kwargs(endpoint, region)
 
     # Special case for WAFv2
     if (service, resource_type) == ("wafv2", "web_acls"):
         try:
-            client = get_client("wafv2")
+            client = get_client("wafv2", **client_kwargs)
             acls = client.list_web_acls(Scope="REGIONAL").get("WebACLs", [])
             match = next((a for a in acls if a.get("Name") == resource_id), None)
             if not match:
@@ -218,7 +213,7 @@ def describe(service, resource_type, resource_id, endpoint, region, output):
         }
 
         try:
-            client = get_client(boto3_service)
+            client = get_client(boto3_service, **client_kwargs)
             method = getattr(client, method_name)
             if id_param in _LIST_PARAMS:
                 resp = method(**{id_param: [resource_id]})
