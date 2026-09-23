@@ -1,13 +1,22 @@
 """Validate SERVICE_REGISTRY, DESCRIBE_REGISTRY, and _METHOD_KWARGS consistency."""
 
+import csv
+import io
+from unittest.mock import MagicMock
+
+import boto3
+import pytest
+from click.testing import CliRunner
+
+from backend.cli import cli
 from backend.routes.resources import (
-    DESCRIBE_REGISTRY,
     _ID_FIELDS,
     _PREFERRED_ID_FIELD,
+    DESCRIBE_REGISTRY,
     _extract_id,
     _summarize_item,
 )
-from backend.routes.stats import SERVICE_REGISTRY, _METHOD_KWARGS
+from backend.routes.stats import _METHOD_KWARGS, SERVICE_REGISTRY
 
 
 class TestServiceRegistry:
@@ -76,10 +85,58 @@ class TestIdFields:
 
 
 class TestPreferredIdField:
-    def test_apigatewayv2_api_id_wins_over_name(self):
-        """get_api takes ApiId, but the list item also has Name, which ranks first
-        in _ID_FIELDS — without the override the detail lookup 404s."""
-        item = {"ApiId": "acf2a85b", "Name": "my-api", "ProtocolType": "HTTP"}
-        preferred = _PREFERRED_ID_FIELD.get(("apigateway", "apis"))
-        assert _extract_id(item, preferred) == "acf2a85b"
-        assert _summarize_item(item, preferred)["id"] == "acf2a85b"
+    @pytest.fixture(params=[
+        ("apigateway", "apis", "ApiId", "ApiId"),
+        ("iam", "policies", "Arn", "PolicyArn"),
+        ("ec2", "subnets", "SubnetId", "SubnetIds"),
+        ("ec2", "security_groups", "GroupId", "GroupIds"),
+        ("elasticfilesystem", "file_systems", "FileSystemId", "FileSystemId"),
+        ("rds", "db_clusters", "DBClusterIdentifier", "DBClusterIdentifier"),
+    ], ids=lambda case: f"{case[0]}/{case[1]}")
+    def resource_case(self, request):
+        service, resource_type, id_field, id_param = request.param
+        entry = next(e for e in SERVICE_REGISTRY[service] if e[0] == resource_type)
+        _, boto_service, list_method, response_key = entry
+        client = boto3.client(
+            boto_service, region_name="us-east-1",
+            aws_access_key_id="test", aws_secret_access_key="test",
+        )
+        model = client.meta.service_model
+        operation = model.operation_model(client.meta.method_to_api_mapping[list_method])
+        shape = operation.output_shape.members[response_key].member
+        assert id_field in shape.members
+        _, describe_method, registered_param, _ = DESCRIBE_REGISTRY[(service, resource_type)]
+        assert registered_param == id_param
+        describe = model.operation_model(client.meta.method_to_api_mapping[describe_method])
+        assert id_param in describe.input_shape.members
+
+        # Include every member, even optional ones: sparse fixtures hide collisions.
+        # Unique field-name markers reveal which field wins; no AWS calls are made.
+        item = {field: f"value-of-{field}" for field in shape.members}
+        return service, resource_type, list_method, response_key, item, item[id_field]
+
+    def test_list_id_matches_describe_contract(self, resource_case):
+        service, resource_type, _, _, item, expected = resource_case
+        preferred = _PREFERRED_ID_FIELD.get((service, resource_type))
+        assert _extract_id(item, preferred) == expected
+        assert _summarize_item(item, preferred)["id"] == expected
+
+    @pytest.mark.parametrize("output", ["table", "csv"])
+    def test_cli_list_emits_describe_identifier(self, resource_case, output, monkeypatch):
+        service, resource_type, list_method, response_key, item, expected = resource_case
+        client = MagicMock()
+        # Other resource types listed by the same service are empty.
+        for _, _, method, key in SERVICE_REGISTRY[service]:
+            getattr(client, method).return_value = {key: []}
+        getattr(client, list_method).return_value = {response_key: [item]}
+        monkeypatch.setattr("backend.cli.get_client", lambda *args, **kwargs: client)
+
+        result = CliRunner().invoke(cli, ["list", service, "--output", output])
+        assert result.exit_code == 0, result.output
+        if output == "csv":
+            rows = list(csv.DictReader(io.StringIO(result.output)))
+            assert len(rows) == 1
+            assert rows[0]["resource_type"] == resource_type
+            assert rows[0]["resource_id"] == expected
+        else:
+            assert any(line.startswith(f"  {expected}") for line in result.output.splitlines())
