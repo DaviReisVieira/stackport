@@ -407,3 +407,170 @@ class TestItemWrites:
         assert any(k.endswith(":dynamodb:item_count:t1") for k in cache_keys), (
             f"expected item_count cache invalidation, got calls: {cache_keys}"
         )
+
+
+# Binary attributes (#176). b"\x00\x8e\xff" is not valid UTF-8, which is what
+# crashed FastAPI's encoder; its base64 form is "AI7/".
+RAW = b"\x00\x8e\xff"
+RAW_B64 = "AI7/"
+
+
+def _hash_table(mock_ddb, key_type="S"):
+    mock_ddb.describe_table.return_value = {
+        "Table": {
+            "KeySchema": [{"AttributeName": "pk", "KeyType": "HASH"}],
+            "AttributeDefinitions": [{"AttributeName": "pk", "AttributeType": key_type}],
+        }
+    }
+
+
+class TestBinaryAttributes:
+    @patch("backend.routes.dynamodb.get_client")
+    def test_scan_returns_binary_as_base64(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        mock_ddb.scan.return_value = {
+            "Items": [
+                {
+                    "pk": {"S": "a"},
+                    "blob": {"B": RAW},
+                    "set": {"BS": [RAW, b"ok"]},
+                    "nested": {"M": {"inner": {"B": RAW}, "list": {"L": [{"B": RAW}, {"S": "keep"}]}}},
+                }
+            ],
+            "ScannedCount": 1,
+        }
+
+        resp = client.get("/api/dynamodb/tables/t1/items")
+        assert resp.status_code == 200
+        item = resp.json()["items"][0]
+        assert item["pk"] == {"S": "a"}
+        assert item["blob"] == {"B": RAW_B64}
+        assert item["set"] == {"BS": [RAW_B64, "b2s="]}
+        assert item["nested"]["M"]["inner"] == {"B": RAW_B64}
+        assert item["nested"]["M"]["list"]["L"] == [{"B": RAW_B64}, {"S": "keep"}]
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_scan_paginates_on_a_binary_key(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        mock_ddb.scan.return_value = {
+            "Items": [{"pk": {"B": RAW}}],
+            "ScannedCount": 1,
+            "LastEvaluatedKey": {"pk": {"B": RAW}},
+        }
+
+        first = client.get("/api/dynamodb/tables/t1/items?limit=1")
+        assert first.status_code == 200
+        body = first.json()
+        assert "error" not in body
+        assert body["next_token"]
+
+        client.get(f"/api/dynamodb/tables/t1/items?limit=1&exclusive_start_key={body['next_token']}")
+        assert mock_ddb.scan.call_args[1]["ExclusiveStartKey"] == {"pk": {"B": RAW}}
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_query_on_a_binary_partition_key(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        _hash_table(mock_ddb, key_type="B")
+        mock_ddb.query.return_value = {"Items": [{"pk": {"B": RAW}}], "ScannedCount": 1}
+
+        resp = client.post("/api/dynamodb/tables/t1/query", json={"partition_key_value": RAW_B64})
+        assert resp.status_code == 200
+        assert resp.json()["items"] == [{"pk": {"B": RAW_B64}}]
+        assert mock_ddb.query.call_args[1]["ExpressionAttributeValues"][":pk"] == {"B": RAW}
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_query_with_invalid_base64_key_is_400(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        _hash_table(mock_ddb, key_type="B")
+
+        resp = client.post("/api/dynamodb/tables/t1/query", json={"partition_key_value": "not base64!"})
+        assert resp.status_code == 400
+        mock_ddb.query.assert_not_called()
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_put_decodes_base64_to_bytes(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        _hash_table(mock_ddb)
+
+        resp = client.put(
+            "/api/dynamodb/tables/t1/items",
+            json={
+                "item": {"pk": {"S": "a"}, "blob": {"B": RAW_B64}, "set": {"BS": [RAW_B64]}, "m": {"M": {"x": {"B": RAW_B64}}}},
+                "item_format": "dynamodb",
+            },
+        )
+        assert resp.status_code == 200
+        item = mock_ddb.put_item.call_args[1]["Item"]
+        assert item["pk"] == {"S": "a"}
+        assert item["blob"] == {"B": RAW}
+        assert item["set"] == {"BS": [RAW]}
+        assert item["m"] == {"M": {"x": {"B": RAW}}}
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_put_with_invalid_base64_is_400(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        _hash_table(mock_ddb)
+
+        resp = client.put(
+            "/api/dynamodb/tables/t1/items",
+            json={"item": {"pk": {"S": "a"}, "blob": {"B": "not base64!"}}, "item_format": "dynamodb"},
+        )
+        assert resp.status_code == 400
+        assert "blob" in resp.json()["detail"]
+        mock_ddb.put_item.assert_not_called()
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_delete_and_batch_delete_by_binary_key(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        _hash_table(mock_ddb, key_type="B")
+        mock_ddb.batch_write_item.return_value = {"UnprocessedItems": {}}
+
+        resp = client.request(
+            "DELETE", "/api/dynamodb/tables/t1/items", json={"key": {"pk": {"B": RAW_B64}}, "item_format": "dynamodb"}
+        )
+        assert resp.status_code == 200
+        assert mock_ddb.delete_item.call_args[1]["Key"] == {"pk": {"B": RAW}}
+
+        resp = client.post(
+            "/api/dynamodb/tables/t1/items/batch",
+            json={"item_format": "dynamodb", "operations": [{"op": "delete", "key": {"pk": {"B": RAW_B64}}}]},
+        )
+        assert resp.status_code == 200
+        req = mock_ddb.batch_write_item.call_args[1]["RequestItems"]["t1"]
+        assert req == [{"DeleteRequest": {"Key": {"pk": {"B": RAW}}}}]
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_batch_unprocessed_binary_is_returned_as_base64(self, mock_get_client):
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        _hash_table(mock_ddb, key_type="B")
+        mock_ddb.batch_write_item.return_value = {
+            "UnprocessedItems": {"t1": [{"PutRequest": {"Item": {"pk": {"B": RAW}}}}]}
+        }
+
+        resp = client.post(
+            "/api/dynamodb/tables/t1/items/batch",
+            json={"item_format": "dynamodb", "operations": [{"op": "put", "item": {"pk": {"B": RAW_B64}}}]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["unprocessed"] == {"t1": [{"PutRequest": {"Item": {"pk": {"B": RAW_B64}}}}]}
+
+    @patch("backend.routes.dynamodb.get_client")
+    def test_scan_output_round_trips_through_put(self, mock_get_client):
+        """What Edit does: take an item from the scan and save it unchanged."""
+        mock_ddb = MagicMock()
+        mock_get_client.return_value = mock_ddb
+        _hash_table(mock_ddb)
+        original = {"pk": {"S": "a"}, "blob": {"B": RAW}, "set": {"BS": [RAW, b"ok"]}}
+        mock_ddb.scan.return_value = {"Items": [original], "ScannedCount": 1}
+
+        scanned = client.get("/api/dynamodb/tables/t1/items").json()["items"][0]
+        client.put("/api/dynamodb/tables/t1/items", json={"item": scanned, "item_format": "dynamodb"})
+        assert mock_ddb.put_item.call_args[1]["Item"] == original

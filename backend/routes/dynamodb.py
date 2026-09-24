@@ -1,4 +1,5 @@
 import base64
+import binascii
 import json
 import logging
 from typing import Any
@@ -25,6 +26,58 @@ _serializer = TypeSerializer()
 
 def _plain_to_dynamodb_item(plain: dict[str, Any]) -> dict[str, Any]:
     return {k: _serializer.serialize(v) for k, v in plain.items()}
+
+
+# Binary (B / BS) travels as base64 over StackPort's HTTP API, the same way AWS
+# writes it in DynamoDB JSON. boto3 hands us raw bytes, which JSON cannot carry.
+
+
+def _to_json_safe(obj: Any) -> Any:
+    """Replace every bytes value with its base64 text. Safe to apply to whole
+    low-level responses: DynamoDB only returns bytes inside B and BS."""
+    if isinstance(obj, (bytes, bytearray)):
+        return base64.b64encode(obj).decode("ascii")
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_json_safe(v) for v in obj]
+    return obj
+
+
+def _b64_to_bytes(value: Any, name: str) -> bytes:
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    try:
+        return base64.b64decode(value, validate=True)
+    except (binascii.Error, TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Attribute {name!r} is not valid base64 for type B") from e
+
+
+def _attr_from_json(av: Any, name: str) -> Any:
+    """Inverse of _to_json_safe for one DynamoDB attribute value. Type-aware, so
+    strings under S stay strings and only B / BS are decoded."""
+    if not isinstance(av, dict):
+        return av
+    if "B" in av:
+        return {**av, "B": _b64_to_bytes(av["B"], name)}
+    if "BS" in av and isinstance(av["BS"], list):
+        return {**av, "BS": [_b64_to_bytes(v, name) for v in av["BS"]]}
+    if "L" in av and isinstance(av["L"], list):
+        return {**av, "L": [_attr_from_json(v, name) for v in av["L"]]}
+    if "M" in av and isinstance(av["M"], dict):
+        return {**av, "M": {k: _attr_from_json(v, f"{name}.{k}") for k, v in av["M"].items()}}
+    return av
+
+
+def _item_from_json(item: dict[str, Any]) -> dict[str, Any]:
+    return {k: _attr_from_json(v, k) for k, v in item.items()}
+
+
+def _key_value(attr_type: str, value: str, name: str) -> dict[str, Any]:
+    """Typed key value for a query condition. Binary keys arrive as base64."""
+    if attr_type == "B":
+        return {"B": _b64_to_bytes(value, name)}
+    return {attr_type: value}
 
 
 def _get_partition_sort_keys(dynamodb: Any, table_name: str) -> tuple[str | None, str | None]:
@@ -56,7 +109,7 @@ def _coerce_item_dict(raw: dict[str, Any], item_format: str) -> dict[str, Any]:
             return _plain_to_dynamodb_item(raw)
         except TypeError as e:
             raise HTTPException(status_code=400, detail=f"Could not convert plain item to DynamoDB types: {e}") from e
-    return raw
+    return _item_from_json(raw)
 
 
 def _coerce_key_dict(raw: dict[str, Any], item_format: str) -> dict[str, Any]:
@@ -65,7 +118,7 @@ def _coerce_key_dict(raw: dict[str, Any], item_format: str) -> dict[str, Any]:
             return _plain_to_dynamodb_item(raw)
         except TypeError as e:
             raise HTTPException(status_code=400, detail=f"Could not convert plain key to DynamoDB types: {e}") from e
-    return raw
+    return _item_from_json(raw)
 
 
 def _invalidate_table_item_count(table_name: str, endpoint_url: str | None) -> None:
@@ -237,7 +290,7 @@ def scan_table(
     if exclusive_start_key:
         try:
             decoded = base64.b64decode(exclusive_start_key).decode("utf-8")
-            scan_params["ExclusiveStartKey"] = json.loads(decoded)
+            scan_params["ExclusiveStartKey"] = _item_from_json(json.loads(decoded))
         except Exception:
             logger.debug("Invalid exclusive_start_key", exc_info=True)
 
@@ -248,11 +301,11 @@ def scan_table(
         last_evaluated_key = resp.get("LastEvaluatedKey")
         next_token = None
         if last_evaluated_key:
-            next_token = base64.b64encode(json.dumps(last_evaluated_key).encode("utf-8")).decode("utf-8")
+            next_token = base64.b64encode(json.dumps(_to_json_safe(last_evaluated_key)).encode("utf-8")).decode("utf-8")
 
         return {
             "table": name,
-            "items": items,
+            "items": _to_json_safe(items),
             "count": len(items),
             "scanned_count": resp.get("ScannedCount", len(items)),
             "next_token": next_token,
@@ -285,19 +338,19 @@ def query_table(name: str, request: QueryRequest, ep: EndpointInfo = Depends(get
         # Build key condition expression
         key_condition = f"#{partition_key} = :pk"
         expression_attr_names = {f"#{partition_key}": partition_key}
-        expression_attr_values = {":pk": {partition_key_type: request.partition_key_value}}
+        expression_attr_values = {":pk": _key_value(partition_key_type, request.partition_key_value, partition_key)}
 
         if sort_key and request.sort_key_value:
             sort_key_type = attribute_defs.get(sort_key, "S")
             if request.sort_key_operator == "=":
                 key_condition += f" AND #{sort_key} = :sk"
-                expression_attr_values[":sk"] = {sort_key_type: request.sort_key_value}
+                expression_attr_values[":sk"] = _key_value(sort_key_type, request.sort_key_value, sort_key)
             elif request.sort_key_operator in ("<", "<=", ">", ">="):
                 key_condition += f" AND #{sort_key} {request.sort_key_operator} :sk"
-                expression_attr_values[":sk"] = {sort_key_type: request.sort_key_value}
+                expression_attr_values[":sk"] = _key_value(sort_key_type, request.sort_key_value, sort_key)
             elif request.sort_key_operator == "BEGINS_WITH":
                 key_condition += f" AND begins_with(#{sort_key}, :sk)"
-                expression_attr_values[":sk"] = {sort_key_type: request.sort_key_value}
+                expression_attr_values[":sk"] = _key_value(sort_key_type, request.sort_key_value, sort_key)
             expression_attr_names[f"#{sort_key}"] = sort_key
 
         query_params = {
@@ -313,10 +366,12 @@ def query_table(name: str, request: QueryRequest, ep: EndpointInfo = Depends(get
 
         return {
             "table": name,
-            "items": items,
+            "items": _to_json_safe(items),
             "count": len(items),
             "scanned_count": resp.get("ScannedCount", len(items)),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Failed to query table %s: %s", name, e, exc_info=True)
         return {"error": str(e), "items": [], "count": 0}
@@ -411,7 +466,7 @@ def batch_write_items(
         return {
             "ok": True,
             "table": name,
-            "unprocessed": uproc,
+            "unprocessed": _to_json_safe(uproc),
             "message": "Some items were not processed; retry with returned keys.",
         }
 
