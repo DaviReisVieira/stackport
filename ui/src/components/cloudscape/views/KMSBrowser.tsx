@@ -57,7 +57,7 @@ function tagsBadges(tags?: Tag[]) {
 
   return (
     <SpaceBetween direction='horizontal' size='xs'>
-      {tags.map((tag, index) => (
+      {tags.map((tag) => (
         <Badge key={tag.TagKey} color='grey'>
           {tag.TagKey}: {tag.TagValue}
         </Badge>
