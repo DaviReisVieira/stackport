@@ -1299,16 +1299,15 @@ export type Tag = {
 
 export interface KMSKeyDetail {
   status: string
-  expires_at?: string
+  expiresAt?: string
   origin: string
   description?: string
   tags: Tag[] | []
   rotationStatus: {
-    KeyRotationEnabled: boolean
-    KeyId?: string
-    RotationPeriodInDays?: number
-    NextRotationDate?: string
-    OnDemandRotationStartDate?: string
+    keyRotationEnabled: boolean
+    rotationPeriodInDays?: number
+    nextRotationDate?: string
+    onDemandRotationStartDate?: string
   }
 }
 
@@ -1322,5 +1321,5 @@ export interface KMSKeyGrant {
 export interface KMSKeyAlias {
   aliasName: string
   aliasArn: string
-  creationDate: string
+  creationDate?: string
 }
