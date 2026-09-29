@@ -42,20 +42,20 @@ const DATE = new Date(2024, 1, 1, 0, 0, 0, 0).toLocaleString();
 
 const tags = [{ TagKey: 'key', TagValue: 'value' }]
 
-const key = { id: 'KID1', arn: 'arn:aws:kms::0:key/KID1', creationDate: DATE, usage: 'ENCRYPT_DECRYPT', keySpec: 'SYMMETRIC_DEFAULT', status: 'Enabled' }
-const keyDetail = { status: 'Enabled', origin: 'AWS_KMS', description: null, tags: tags, expires_at: DATE, KeyRotationEnabled: false }
-const keyPolicy = JSON.parse(`{
-  "Version": "2012-10-17",
-  "Statement": [
+const key = { keyID: 'KID1', keyArn: 'arn:aws:kms::0:key/KID1', creationDate: DATE, keyUsage: 'ENCRYPT_DECRYPT', keySpec: 'SYMMETRIC_DEFAULT', status: 'Enabled' }
+const keyDetail = { status: 'Enabled', origin: 'AWS_KMS', description: null, tags: tags, expiresAt: DATE, rotationStatus: {keyRotationEnabled: false} }
+const keyPolicy = {
+  Version: "2012-10-17",
+  Statement: [
     {
-      "Sid": "Enable IAM User Permissions",
-      "Effect": "Allow",
-      "Principal": { "AWS": "arn:aws:iam::000000000000:root" },
-      "Action": "kms:*",
-      "Resource": "*"
+      Sid: "Enable IAM User Permissions",
+      Effect: "Allow",
+      Principal: { "AWS": "arn:aws:iam::000000000000:root" },
+      Action: "kms:*",
+      Resource: "*"
     }
   ]
-}`)
+}
 
 const keyGrants = { grantID: 'GID1', grantee: 'grantee', operations: ['Encrypt'], creationDate: DATE }
 const keyAliases = { aliasName: 'Alias', aliasArn: 'arn:aws:kms::0:alias/Alias', creationDate: DATE }
@@ -73,7 +73,7 @@ function mockFetchByUrl() {
     } else if (url.match(/\/api\/kms\/keys\/KID1(\?|$)/)) {
       payload = keyDetail
     } else if (url.includes('/api/kms/keys')) {
-      payload = { keys: [{ key }] }
+      payload = { keys: [ key ] }
     } else {
       payload = statsPayload
     }
@@ -103,11 +103,17 @@ describe('CloudscapeKMSBrowser (via registry dispatch)', () => {
     expect(await screen.findByText('(1)')).toBeInTheDocument()
   })
 
+  it('lists the correct key metadata in the table', async () => {
+    renderKMS()
+    expect(await screen.findByText('arn:aws:kms::0:key/KID1')).toBeInTheDocument()
+    expect(await screen.findByText('KID1')).toBeInTheDocument()
+  })
+
   it('shows the key detail in a modal', async () => {
     renderKMS('/resources/kms?id=KID1')
-    expect(await screen.findByText('Enabled')).toBeInTheDocument()
+    expect((await screen.findAllByText('Enabled')).length).toBeGreaterThan(0)
     expect(await screen.findByText('AWS_KMS')).toBeInTheDocument()
-    expect(await screen.findByText(DATE)).toBeInTheDocument()
+    expect((await screen.findAllByText(DATE)).length).toBeGreaterThan(0)
   })
 
   it('shows the key policy', async () => {
@@ -142,6 +148,6 @@ describe('CloudscapeKMSBrowser (via registry dispatch)', () => {
     fireEvent.click(await screen.findByText('Aliases'))
     expect(await screen.findByText('Alias')).toBeInTheDocument()
     expect(await screen.findByText('arn:aws:kms::0:alias/Alias')).toBeInTheDocument()
-    expect(await screen.findByText(DATE)).toBeInTheDocument()
+    expect((await screen.findAllByText(DATE)).length).toBeGreaterThan(0)
   })
 })
