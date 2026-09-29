@@ -1,4 +1,8 @@
-import { Badge, Box, Modal, StatusIndicator, type StatusIndicatorProps } from '@cloudscape-design/components';
+import { type StatusIndicatorProps } from '@cloudscape-design/components/status-indicator';
+import Box from '@cloudscape-design/components/box';
+import Badge from '@cloudscape-design/components/badge';
+import Modal from '@cloudscape-design/components/modal';
+import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import { useFetch } from '@/hooks/useFetch';
 import SpaceBetween from '@cloudscape-design/components/space-between'
 import Header from '@cloudscape-design/components/header'
@@ -24,14 +28,14 @@ function formatDate(iso?: string | null): string {
 
 function keyStateIndicator(state: string) {
   const type: Record<string, StatusIndicatorProps.Type> = {
-    creating: 'in-progress',
-    enabled: 'success',
-    disabled: 'stopped',
-    pendingDeletion: 'warning',
-    pendingImport: 'in-progress',
-    pendingReplicaDeletion: 'warning',
-    unavailable: 'error',
-    updating: 'in-progress'
+    Creating: 'in-progress',
+    Enabled: 'success',
+    Disabled: 'stopped',
+    PendingDeletion: 'warning',
+    PendingImport: 'in-progress',
+    PendingReplicaDeletion: 'warning',
+    Unavailable: 'error',
+    Updating: 'in-progress'
   }
 
   return <StatusIndicator type={type[state]}>{state}</StatusIndicator>
@@ -83,7 +87,7 @@ function AliasesPanel({ id }: { id: string }) {
       {...collectionProps}
       items={items}
       resizableColumns={true}
-      trackBy='name'
+      trackBy='aliasName'
       variant='embedded'
       empty={
         <Box textAlign='center' padding='l' color='text-status-inactive'>
@@ -106,7 +110,7 @@ function AliasesPanel({ id }: { id: string }) {
           id: 'creation_date',
           header: 'Creation Date',
           sortingField: 'creationDate',
-          cell: item => formatDate(item.creationDate)
+          cell: item => item.creationDate ? formatDate(item.creationDate) : "—"
         }
       ]}
       pagination={
@@ -162,7 +166,7 @@ function GrantsPanel({ id }: { id: string }) {
       {...collectionProps}
       items={items}
       resizableColumns={true}
-      trackBy='id'
+      trackBy='grantID'
       variant='embedded'
       empty={
         <Box textAlign='center' padding='l' color='text-status-inactive'>
@@ -227,12 +231,13 @@ function KeyDetailModal({ id, onClose }: { id: string, onClose: () => void }) {
               label: 'Details',
               content: kvGrid([
                 ['Status', data.status],
-                ['Expires at', data.expires_at],
+                ['Expires at', data.expiresAt],
                 ['Description', data.description],
                 ['Origin', data.origin],
-                ['Rotation Period in Days', data.rotationStatus?.RotationPeriodInDays],
-                ['Next Rotation Date', data.rotationStatus?.NextRotationDate],
-                ['On Demand Rotation Start Date', data.rotationStatus?.OnDemandRotationStartDate]
+                ['Key Rotation Enabled', `${data.rotationStatus.keyRotationEnabled}`],
+                ['Rotation Period in Days', data.rotationStatus?.rotationPeriodInDays],
+                ['Next Rotation Date', data.rotationStatus?.nextRotationDate],
+                ['On Demand Rotation Start Date', data.rotationStatus?.onDemandRotationStartDate]
               ])
             },
             {
@@ -284,7 +289,7 @@ export function CloudscapeKMSBrowser() {
       <Table
         {...collectionProps}
         items={items}
-        trackBy='id'
+        trackBy='keyID'
         variant='borderless'
         empty={
           <Box textAlign='center' padding='l' color='text-status-inactive'>
@@ -293,11 +298,10 @@ export function CloudscapeKMSBrowser() {
         }
         header={
           <Header
-            variant='h2'
             actions={<Button iconName='refresh' onClick={refreshKeys} loading={keysLoading} ariaLabel='Refresh Keys' />}
             counter={keys ? `(${keys.length})` : undefined}
           >
-            <Box variant='h2' display='inline'>Keys</Box>
+            Keys
           </Header>
         }
         columnDefinitions={[
