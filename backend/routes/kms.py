@@ -37,7 +37,7 @@ def list_keys(ep: EndpointInfo = Depends(get_endpoint_info)):
 
         return {"keys": all_keys}
     except Exception as e:
-        print(e)
+        logger.error("Failed to list keys with metadata %s", id, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -72,7 +72,7 @@ def get_key_detail(id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
             raise HTTPException(status_code=404, detail=f"Key {id} not found")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.debug("Failed to get details for %s", id, exc_info=True)
+        logger.error("Failed to get details for %s", id, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -92,7 +92,7 @@ def get_key_policy(id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
             raise HTTPException(status_code=404, detail=f"Key {id} not found")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.debug("Failed to get policy document for %s", id, exc_info=True)
+        logger.error("Failed to get policy document for %s", id, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -122,9 +122,15 @@ def list_grants(id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
         error_code = e.response["Error"]["Code"]
         if error_code == "NotFoundException":
             raise HTTPException(status_code=404, detail=f"Key {id} not found")
+        if error_code == "InvalidAction":
+            logger.warning(
+                "ListGrants is not supported by the configured KMS backend",
+                exc_info=True,
+            )
+            return []
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.debug("Failed to list grants for %s", id, exc_info=True)
+        logger.error("Failed to list grants for %s", id, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -153,5 +159,5 @@ def get_aliases_detail(id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
             raise HTTPException(status_code=404, detail=f"Key {id} not found")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.debug("Failed to get aliases for %s", id, exc_info=True)
+        logger.error("Failed to get aliases for %s", id, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
