@@ -37,7 +37,7 @@ import {
   updateDynamoDBItem,
 } from '@/lib/api'
 import type { DynamoDBItem, DynamoDBTable, DynamoDBTableDetail } from '@/lib/types'
-import { dynamoItemToPlainMap, extractKeyDynamo, plainItemToDynamoMap } from '@/lib/dynamodb-marshal'
+import { dynamoItemToPlainMap, extractKeyDynamo, hasUnsafePlainTypes, plainItemToDynamoMap } from '@/lib/dynamodb-marshal'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
 
@@ -83,7 +83,8 @@ function ItemEditorModal({
   onDone: () => void
 }) {
   const { activeEndpoint } = useEndpoint()
-  const [format, setFormat] = useState<'plain' | 'dynamodb'>('plain')
+  const startsUnsafe = initialFormat === 'dynamodb' && hasUnsafePlainTypes(initialItem as DynamoDBItem)
+  const [format, setFormat] = useState<'plain' | 'dynamodb'>(startsUnsafe ? 'dynamodb' : 'plain')
   // Items from the API are DynamoDB-typed; show them as plain JSON first (like the AWS console).
   const initialPlain = useMemo(
     () => JSON.stringify(initialFormat === 'dynamodb' ? dynamoItemToPlainMap(initialItem) : initialItem, null, 2),
@@ -151,7 +152,13 @@ function ItemEditorModal({
         }
       >
         <FormField label="Item JSON" errorText={error ?? undefined} stretch>
-          <SpaceBetween size="xs">
+           <SpaceBetween size="xs">
+            {startsUnsafe && (
+              <Alert type="info">
+                This item has a set, binary, or very large number attribute. Showing DynamoDB JSON
+                so saving doesn't change its type or precision.
+              </Alert>
+            )}
             <SegmentedControl
               selectedId={format}
               onChange={({ detail }) => switchFormat(detail.selectedId as 'plain' | 'dynamodb')}
