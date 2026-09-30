@@ -1282,3 +1282,44 @@ export interface LearnVerifyResponse extends LearnProgressResponse {
   verifyStatus: 'ok' | 'service_unreachable' | 'error'
   message: string
 }
+
+export interface KMSKey {
+  status: string
+  creationDate: string
+  keySpec: string
+  keyUsage: string
+  keyID: string
+  keyArn: string
+}
+
+export type Tag = {
+  TagKey: string;
+  TagValue: string;
+};
+
+export interface KMSKeyDetail {
+  status: string
+  expiresAt?: string
+  origin: string
+  description?: string
+  tags: Tag[] | []
+  rotationStatus: {
+    keyRotationEnabled: boolean
+    rotationPeriodInDays?: number
+    nextRotationDate?: string
+    onDemandRotationStartDate?: string
+  }
+}
+
+export interface KMSKeyGrant {
+  grantID: string
+  grantee: string
+  operations: string[]
+  creationDate: string
+}
+
+export interface KMSKeyAlias {
+  aliasName: string
+  aliasArn: string
+  creationDate?: string
+}

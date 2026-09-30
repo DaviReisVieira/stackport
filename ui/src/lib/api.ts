@@ -93,6 +93,10 @@ import type {
   CloudWatchDashboardEntry,
   MetricDataQueryInput,
   MetricSeries,
+  KMSKey,
+  KMSKeyDetail,
+  KMSKeyGrant,
+  KMSKeyAlias
 } from './types'
 
 const API_BASE = '/api'
@@ -1461,4 +1465,24 @@ export async function setLearnVariable(
 
 export async function resetLearnProgress(trailId?: string): Promise<{ completed: Record<string, LearnCompleted> }> {
   return postLearn<{ completed: Record<string, LearnCompleted> }>('/learn/progress/reset', { trailId: trailId ?? null })
+}
+
+export async function fetchKMSKeys(endpoint?: string | null): Promise<{ keys: KMSKey[] }> {
+  return fetchJSON<{ keys: KMSKey[] }>(buildUrl('/kms/keys', endpoint))
+}
+
+export async function fetchKMSKeyDetail(id: string, endpoint?: string | null): Promise<KMSKeyDetail> {
+  return fetchJSON<KMSKeyDetail>(buildUrl(`/kms/keys/${encodeURIComponent(id)}`, endpoint))
+}
+
+export async function fetchKMSKeyPolicy(id: string, endpoint?: string | null): Promise<object> {
+  return fetchJSON<object>(buildUrl(`/kms/keys/${encodeURIComponent(id)}/policy`, endpoint))
+}
+
+export async function fetchKMSKeyGrants(id: string, endpoint?: string | null): Promise<KMSKeyGrant[]> {
+  return fetchJSON<KMSKeyGrant[]>(buildUrl(`/kms/keys/${encodeURIComponent(id)}/grants`, endpoint))
+}
+
+export async function fetchKMSKeyAliases(id: string, endpoint?: string | null): Promise<KMSKeyAlias[]> {
+  return fetchJSON<KMSKeyAlias[]>(buildUrl(`/kms/keys/${encodeURIComponent(id)}/aliases`, endpoint))
 }
