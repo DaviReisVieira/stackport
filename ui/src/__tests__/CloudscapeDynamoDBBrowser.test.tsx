@@ -187,6 +187,13 @@ describe('CloudscapeDynamoDBBrowser (via registry dispatch)', () => {
     expect(screen.queryByText(/"N":/)).not.toBeInTheDocument()
   })
 
+  it('keeps the Edit/Delete column from shrinking next to wide attributes', async () => {
+    renderDynamo()
+    fireEvent.click(await screen.findByRole('link', { name: 'learners' }))
+    const editCell = (await screen.findAllByText('Edit'))[0].closest('td') as HTMLElement
+    expect(editCell.style.minWidth).toBe('140px')
+  })
+
   it('opens an existing item as plain JSON and shows exact DynamoDB JSON on switch', async () => {
     renderDynamo()
     fireEvent.click(await screen.findByRole('link', { name: 'learners' }))
