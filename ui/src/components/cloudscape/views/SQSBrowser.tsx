@@ -1111,6 +1111,7 @@ function MessagesPanel({ queue, onCountsChanged }: { queue: SQSQueueDetail; onCo
             id: 'actions',
             header: '',
             width: 130,
+            minWidth: 130,
             cell: (m) => (
               <SpaceBetween direction="horizontal" size="xxs">
                 <Button

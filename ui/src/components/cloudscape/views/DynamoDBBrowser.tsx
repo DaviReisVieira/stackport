@@ -356,6 +356,7 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
             id: 'actions',
             header: '',
             width: 140,
+            minWidth: 140,
             cell: (item: DynamoDBItem) => (
               <SpaceBetween direction="horizontal" size="xs">
                 <Button variant="inline-link" onClick={() => setEditor({ mode: 'edit', item: item as Record<string, unknown>, format: 'dynamodb' })}>
