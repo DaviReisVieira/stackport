@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react'
+import { CloudscapeBedrockBrowser } from './BedrockBrowser'
 import { CloudscapeDynamoDBBrowser } from './DynamoDBBrowser'
 import { CloudscapeEC2Browser } from './EC2Browser'
 import { CloudscapeIAMBrowser } from './IAMBrowser'
@@ -21,6 +22,7 @@ import { CloudscapeStepFunctionsBrowser } from './StepFunctionsBrowser'
  * Add each service browser here as its migration issue (#137-#146) lands.
  */
 export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {
+  bedrock: CloudscapeBedrockBrowser,
   dynamodb: CloudscapeDynamoDBBrowser,
   ec2: CloudscapeEC2Browser,
   iam: CloudscapeIAMBrowser,

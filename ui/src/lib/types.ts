@@ -1279,6 +1279,40 @@ export interface SNSTopicDetail extends SNSTopic {
   subscriptions: SNSSubscription[]
 }
 
+// --- Bedrock ---
+
+export interface BedrockModel {
+  modelId: string
+  modelName: string
+  providerName: string
+  inputModalities: string[]
+  outputModalities: string[]
+}
+
+export interface BedrockModelsResponse {
+  models: BedrockModel[]
+  available: boolean
+  message: string | null
+}
+
+export interface BedrockConverseRequest {
+  modelId: string
+  prompt: string
+  system?: string
+  maxTokens?: number
+  temperature?: number
+  topP?: number
+}
+
+export interface BedrockConverseResponse {
+  modelId: string
+  text: string
+  stopReason: string | null
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number }
+  latencyMs: number | null
+  roundTripMs: number
+}
+
 // --- Learn ---
 
 export interface LearnStepCommands {
