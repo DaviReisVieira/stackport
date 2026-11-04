@@ -2282,17 +2282,33 @@ def populate_cognito_identity():
 
     pool_count = random.randint(1, 3)
 
+    # Placeholder ARNs: the role does not need to exist for the emulator to store it.
+    roles = {
+        "authenticated": "arn:aws:iam::000000000000:role/Cognito_Auth",
+        "unauthenticated": "arn:aws:iam::000000000000:role/Cognito_Unauth",
+    }
+    roles_set = False
+
     try:
         for i in range(pool_count):
             pool_name = cool_name("idpool", funny=True)
             try:
-                client.create_identity_pool(
+                response = client.create_identity_pool(
                     IdentityPoolName=pool_name,
                     AllowUnauthenticatedIdentities=random.choice([True, False]),
                 )
                 print(f"  ✓ {pool_name}")
             except Exception as e:
                 print(f"  ✗ Error: {e}")
+                continue
+
+            if not roles_set:
+                try:
+                    client.set_identity_pool_roles(IdentityPoolId=response["IdentityPoolId"], Roles=roles)
+                    roles_set = True
+                    print(f"    ✓ roles set on {pool_name}")
+                except Exception as e:
+                    print(f"    ✗ Error setting roles: {e}")
 
         print(f"Created {pool_count} Cognito Identity pools")
     except Exception as e:
