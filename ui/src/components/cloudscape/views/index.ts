@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import { CloudscapeBedrockBrowser } from './BedrockBrowser'
+import { CloudscapeCognitoIdentityPoolsBrowser, CloudscapeCognitoUserPoolsBrowser } from './CognitoBrowser'
 import { CloudscapeDynamoDBBrowser } from './DynamoDBBrowser'
 import { CloudscapeEC2Browser } from './EC2Browser'
 import { CloudscapeIAMBrowser } from './IAMBrowser'
@@ -37,6 +38,8 @@ export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {
   sns: CloudscapeSNSBrowser,
   sqs: CloudscapeSQSBrowser,
   kms: CloudscapeKMSBrowser,
+  'cognito-idp': CloudscapeCognitoUserPoolsBrowser,
+  'cognito-identity': CloudscapeCognitoIdentityPoolsBrowser,
   stepfunctions: CloudscapeStepFunctionsBrowser,
 }
 
