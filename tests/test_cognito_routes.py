@@ -481,6 +481,7 @@ class TestIdentityPools:
             "SupportedLoginProviders": {"accounts.google.com": "google-app-id"},
             "ResponseMetadata": {"HTTPStatusCode": 200},
         }
+        mock.get_identity_pool_roles.return_value = {"IdentityPoolId": IDENTITY_POOL_ID}
         response = client.get(f"/api/cognito/identity-pools/{IDENTITY_POOL_ID}")
         assert response.status_code == 200
         data = response.json()
@@ -488,6 +489,61 @@ class TestIdentityPools:
         assert data["IdentityPoolName"] == "ids"
         assert data["AllowUnauthenticatedIdentities"] is True
         assert data["SupportedLoginProviders"] == {"accounts.google.com": "google-app-id"}
+        assert data["roles"] == {}
+        assert data["roleMappings"] == {}
+
+    @patch("backend.routes.cognito.get_client")
+    def test_detail_includes_roles(self, mock_get_client):
+        mock = _mock_client(mock_get_client)
+        mock.describe_identity_pool.return_value = {"IdentityPoolId": IDENTITY_POOL_ID, "IdentityPoolName": "ids"}
+        mappings = {
+            "cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123:c1": {
+                "Type": "Rules",
+                "AmbiguousRoleResolution": "Deny",
+                "RulesConfiguration": {
+                    "Rules": [
+                        {
+                            "Claim": "cognito:groups",
+                            "MatchType": "Contains",
+                            "Value": "admins",
+                            "RoleARN": "arn:aws:iam::000000000000:role/Admin",
+                        }
+                    ]
+                },
+            }
+        }
+        mock.get_identity_pool_roles.return_value = {
+            "IdentityPoolId": IDENTITY_POOL_ID,
+            "Roles": {
+                "authenticated": "arn:aws:iam::000000000000:role/Cognito_Auth",
+                "unauthenticated": "arn:aws:iam::000000000000:role/Cognito_Unauth",
+            },
+            "RoleMappings": mappings,
+            "ResponseMetadata": {},
+        }
+        response = client.get(f"/api/cognito/identity-pools/{IDENTITY_POOL_ID}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["roles"] == {
+            "authenticated": "arn:aws:iam::000000000000:role/Cognito_Auth",
+            "unauthenticated": "arn:aws:iam::000000000000:role/Cognito_Unauth",
+        }
+        assert data["roleMappings"] == mappings
+        mock.get_identity_pool_roles.assert_called_once_with(IdentityPoolId=IDENTITY_POOL_ID)
+
+    @patch("backend.routes.cognito.get_client")
+    def test_detail_roles_fallback_when_unsupported(self, mock_get_client):
+        mock = _mock_client(mock_get_client)
+        mock.describe_identity_pool.return_value = {"IdentityPoolId": IDENTITY_POOL_ID, "IdentityPoolName": "ids"}
+        mock.get_identity_pool_roles.side_effect = ClientError(
+            {"Error": {"Code": "InvalidAction", "Message": "not implemented"}}, "GetIdentityPoolRoles"
+        )
+        response = client.get(f"/api/cognito/identity-pools/{IDENTITY_POOL_ID}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["IdentityPoolName"] == "ids"
+        assert data["roles"] == {}
+        assert data["roleMappings"] == {}
 
     @patch("backend.routes.cognito.get_client")
     def test_detail_not_found(self, mock_get_client):

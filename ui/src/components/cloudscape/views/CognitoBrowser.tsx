@@ -516,6 +516,12 @@ function IdentityPoolDetailModal({ id, onClose }: { id: string; onClose: () => v
     provider,
     appId,
   }))
+  const roleMappings = Object.entries(data?.roleMappings ?? {}).map(([provider, mapping]) => ({
+    provider,
+    type: mapping.Type,
+    ambiguous: mapping.AmbiguousRoleResolution,
+    rules: mapping.RulesConfiguration?.Rules?.length ?? 0,
+  }))
 
   return (
     <Modal visible onDismiss={onClose} header={data?.IdentityPoolName ?? id} size="large">
@@ -548,6 +554,26 @@ function IdentityPoolDetailModal({ id, onClose }: { id: string; onClose: () => v
             columnDefinitions={[
               { id: 'provider', header: 'Provider', cell: (p) => p.provider },
               { id: 'appId', header: 'App ID', cell: (p) => p.appId },
+            ]}
+          />
+          <SpaceBetween size="xs">
+            <Header variant="h3">Roles</Header>
+            {kvGrid([
+              ['Authenticated role', data.roles?.authenticated ?? EMPTY],
+              ['Unauthenticated role', data.roles?.unauthenticated ?? EMPTY],
+            ])}
+          </SpaceBetween>
+          <Table
+            items={roleMappings}
+            trackBy="provider"
+            variant="embedded"
+            header={<Header variant="h3">Role mappings</Header>}
+            empty={emptyState('No role mappings')}
+            columnDefinitions={[
+              { id: 'provider', header: 'Provider', cell: (m) => m.provider },
+              { id: 'type', header: 'Type', cell: (m) => m.type ?? EMPTY },
+              { id: 'ambiguous', header: 'Ambiguous role resolution', cell: (m) => m.ambiguous ?? EMPTY },
+              { id: 'rules', header: 'Rules', cell: (m) => m.rules },
             ]}
           />
         </SpaceBetween>
