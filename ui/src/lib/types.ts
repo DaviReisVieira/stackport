@@ -1323,3 +1323,100 @@ export interface KMSKeyAlias {
   aliasArn: string
   creationDate?: string
 }
+
+export interface CognitoUserPool {
+  id: string
+  name: string
+  status?: string | null
+  creationDate?: string | null
+  lastModifiedDate?: string | null
+}
+
+export interface CognitoSchemaAttribute {
+  Name?: string
+  AttributeDataType?: string
+  Required?: boolean
+  Mutable?: boolean
+  DeveloperOnlyAttribute?: boolean
+}
+
+export interface CognitoPasswordPolicy {
+  MinimumLength?: number
+  RequireUppercase?: boolean
+  RequireLowercase?: boolean
+  RequireNumbers?: boolean
+  RequireSymbols?: boolean
+  TemporaryPasswordValidityDays?: number
+}
+
+/** Raw describe_user_pool UserPool. EstimatedNumberOfUsers may be missing on emulators. */
+export interface CognitoUserPoolDetail {
+  Id: string
+  Name: string
+  Status?: string
+  CreationDate?: string
+  LastModifiedDate?: string
+  EstimatedNumberOfUsers?: number
+  MfaConfiguration?: string
+  Policies?: { PasswordPolicy?: CognitoPasswordPolicy }
+  SchemaAttributes?: CognitoSchemaAttribute[]
+  LambdaConfig?: Record<string, string | Record<string, string>>
+}
+
+export interface CognitoUser {
+  username: string
+  status?: string | null
+  enabled?: boolean | null
+  created?: string | null
+  modified?: string | null
+  attributes: Record<string, string>
+}
+
+export interface CognitoUserDetail extends CognitoUser {
+  groups: string[]
+}
+
+export interface CognitoGroup {
+  name: string
+  description?: string | null
+  precedence?: number | null
+  roleArn?: string | null
+}
+
+export interface CognitoUserPoolClient {
+  clientId: string
+  clientName?: string | null
+  explicitAuthFlows: string[]
+  allowedOAuthFlows: string[]
+  callbackURLs: string[]
+  tokenValidity: {
+    accessToken?: number | null
+    idToken?: number | null
+    refreshToken?: number | null
+    units?: { AccessToken?: string; IdToken?: string; RefreshToken?: string } | null
+  }
+}
+
+export interface CognitoIdentityPool {
+  id: string
+  name: string
+}
+
+export interface CognitoIdentityProvider {
+  ProviderName?: string
+  ClientId?: string
+  ServerSideTokenCheck?: boolean
+}
+
+/** Raw describe_identity_pool response minus ResponseMetadata. */
+export interface CognitoIdentityPoolDetail {
+  IdentityPoolId: string
+  IdentityPoolName: string
+  AllowUnauthenticatedIdentities?: boolean
+  AllowClassicFlow?: boolean
+  CognitoIdentityProviders?: CognitoIdentityProvider[]
+  SupportedLoginProviders?: Record<string, string>
+  DeveloperProviderName?: string
+  OpenIdConnectProviderARNs?: string[]
+  SamlProviderARNs?: string[]
+}
