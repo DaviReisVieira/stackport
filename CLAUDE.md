@@ -55,7 +55,7 @@ Requires a running AWS-compatible emulator on :4566. No emulator is the default:
 - `components/cloudscape/CloudscapeShell.tsx` — Shared AppLayout shell: TopNavigation (service search, pinned favorites, theme toggle, endpoint menu), SideNavigation, keyboard shortcuts (`g d/r/s/a`, `?`)
 - `pages/CloudscapeDashboard.tsx` — Service Cards/Table grid, live stats over WebSocket, favorites-first sort
 - `pages/CloudscapeResourceBrowser.tsx` — Service picker + per-type tabs with PropertyFilter tables, detail modal with tag editing, j/k/Enter navigation. Renders `CLOUDSCAPE_SERVICE_VIEWS[service]` when available, falls back to the generic table.
-- `components/cloudscape/views/index.ts` — Registry of service-specific views (`s3`, `sqs`, `dynamodb`, `lambda`, `iam`, `rds`, `ec2`, `logs`, `secretsmanager`, `stepfunctions`). Add new service UIs here.
+- `components/cloudscape/views/index.ts` — Registry of service-specific views (`s3`, `sqs`, `dynamodb`, `lambda`, `iam`, `rds`, `ec2`, `logs`, `secretsmanager`, `stepfunctions`, `kms`, `cognito-idp`, `cognito-identity`). Add new service UIs here.
 - `components/cloudscape/views/stepfunctions/` — Framework-agnostic ASL graph (dagre + SVG) and execution timeline shared by the Step Functions view
 - `lib/api.ts` — `API_BASE = '/api'`, fetch functions for all endpoints
 - `lib/types.ts` — `ServiceStats`, `StatsResponse`

@@ -1374,7 +1374,8 @@ export interface CognitoUser {
 }
 
 export interface CognitoUserDetail extends CognitoUser {
-  groups: string[]
+  /** Null when the groups could not be listed. */
+  groups: string[] | null
 }
 
 export interface CognitoGroup {
@@ -1422,10 +1423,17 @@ export interface CognitoIdentityProvider {
   ServerSideTokenCheck?: boolean
 }
 
+export interface CognitoMappingRule {
+  Claim?: string
+  MatchType?: string
+  Value?: string
+  RoleARN?: string
+}
+
 export interface CognitoRoleMapping {
   Type?: string
   AmbiguousRoleResolution?: string
-  RulesConfiguration?: { Rules?: Array<Record<string, string>> }
+  RulesConfiguration?: { Rules?: CognitoMappingRule[] }
 }
 
 /** Raw describe_identity_pool response minus ResponseMetadata, plus get_identity_pool_roles output. */
@@ -1439,8 +1447,8 @@ export interface CognitoIdentityPoolDetail {
   DeveloperProviderName?: string
   OpenIdConnectProviderARNs?: string[]
   SamlProviderARNs?: string[]
-  /** Empty when the emulator does not support get_identity_pool_roles. */
-  roles: { authenticated?: string; unauthenticated?: string } & Record<string, string>
-  /** Raw RoleMappings keyed by provider. Empty when none or unsupported. */
-  roleMappings: Record<string, CognitoRoleMapping>
+  /** Null when get_identity_pool_roles fails (some emulators lack it). */
+  roles: ({ authenticated?: string; unauthenticated?: string } & Record<string, string>) | null
+  /** Raw RoleMappings keyed by provider. Empty when none, null when get_identity_pool_roles fails. */
+  roleMappings: Record<string, CognitoRoleMapping> | null
 }

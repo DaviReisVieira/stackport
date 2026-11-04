@@ -108,7 +108,6 @@ const identityPoolDetail = {
       RulesConfiguration: {
         Rules: [
           { Claim: 'cognito:groups', MatchType: 'Contains', Value: 'admins', RoleARN: 'arn:aws:iam::000000000000:role/Admin' },
-          { Claim: 'email', MatchType: 'Equals', Value: 'a@b.c', RoleARN: 'arn:aws:iam::000000000000:role/A' },
         ],
       },
     },
@@ -125,11 +124,20 @@ const bareIdentityPoolDetail = {
 
 let requested: string[] = []
 
-function mockFetchByUrl() {
+/** Per-test responses matched by URL substring before the defaults. A null payload means 404. */
+function mockFetchByUrl(overrides: Record<string, unknown> = {}) {
   requested = []
   globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
     requested.push(url)
+    const override = Object.keys(overrides).find((key) => url.includes(key))
+    if (override !== undefined) {
+      const body = overrides[override]
+      if (body === null) {
+        return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found', json: () => Promise.resolve({}) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(body) } as Response)
+    }
     let payload: unknown = statsPayload
     if (url.includes(`/api/cognito/user-pools/${POOL_ID}/users/alice`)) payload = userDetail
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/users`)) payload = { users: [user] }
@@ -197,6 +205,24 @@ describe('CloudscapeCognitoUserPoolsBrowser (via registry dispatch)', () => {
     expect(within(dialog).getByText('sub-123')).toBeInTheDocument()
     expect(within(dialog).getByText('admins')).toBeInTheDocument()
     expect(requested.some((u) => u.includes(`/api/cognito/user-pools/${POOL_ID}/users/alice`))).toBe(true)
+  })
+
+  it('shows a message when the user groups could not be loaded', async () => {
+    mockFetchByUrl({ [`/api/cognito/user-pools/${POOL_ID}/users/alice`]: { ...userDetail, groups: null } })
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByText('alice'))
+    const dialog = await screen.findByRole('dialog', { name: 'alice' })
+    expect(await within(dialog).findByText('Could not load groups')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Not in any group')).not.toBeInTheDocument()
+  })
+
+  it('shows an error in the user modal when the user cannot be loaded', async () => {
+    mockFetchByUrl({ [`/api/cognito/user-pools/${POOL_ID}/users/alice`]: null })
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByText('alice'))
+    const dialog = await screen.findByRole('dialog', { name: 'alice' })
+    expect(await within(dialog).findByText('Could not load user')).toBeInTheDocument()
+    expect(within(dialog).getByText('404: Not Found')).toBeInTheDocument()
   })
 
   it('shows groups, app clients and configuration tabs', async () => {
@@ -271,7 +297,33 @@ describe('CloudscapeCognitoIdentityPoolsBrowser (via registry dispatch)', () => 
       .closest('tr') as HTMLElement
     expect(within(mappingRow).getByText('Rules')).toBeInTheDocument()
     expect(within(mappingRow).getByText('AuthenticatedRole')).toBeInTheDocument()
-    expect(within(mappingRow).getByText('2')).toBeInTheDocument()
+    expect(
+      within(mappingRow).getByText('cognito:groups Contains admins -> arn:aws:iam::000000000000:role/Admin'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows messages when identity pool roles could not be loaded', async () => {
+    mockFetchByUrl({
+      [`/api/cognito/identity-pools/${encodeURIComponent('us-east-1:bare')}`]: {
+        ...bareIdentityPoolDetail,
+        roles: null,
+        roleMappings: null,
+      },
+    })
+    renderAt(`/resources/cognito-identity?pool=${encodeURIComponent('us-east-1:bare')}`)
+    const dialog = await screen.findByRole('dialog', { name: 'bare-pool' })
+    expect(await within(dialog).findByText('Could not load roles')).toBeInTheDocument()
+    expect(within(dialog).getByText('Could not load role mappings')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Authenticated role')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('No role mappings')).not.toBeInTheDocument()
+  })
+
+  it('shows an error in the identity pool modal for an unknown pool', async () => {
+    mockFetchByUrl({ '/api/cognito/identity-pools/bad': null })
+    renderAt('/resources/cognito-identity?pool=bad')
+    const dialog = await screen.findByRole('dialog', { name: 'bad' })
+    expect(await within(dialog).findByText('Could not load identity pool')).toBeInTheDocument()
+    expect(within(dialog).getByText('404: Not Found')).toBeInTheDocument()
   })
 
   it('shows dashes and an empty state when an identity pool has no roles', async () => {
@@ -280,5 +332,19 @@ describe('CloudscapeCognitoIdentityPoolsBrowser (via registry dispatch)', () => 
     expect(await within(dialog).findByText('No role mappings')).toBeInTheDocument()
     const authLabel = within(dialog).getByText('Authenticated role')
     expect(within(authLabel.parentElement as HTMLElement).getByText('-')).toBeInTheDocument()
+  })
+
+  it('shows a dash in the rules cell for a mapping without rules', async () => {
+    mockFetchByUrl({
+      [`/api/cognito/identity-pools/${encodeURIComponent('us-east-1:bare')}`]: {
+        ...bareIdentityPoolDetail,
+        roleMappings: { 'graph.facebook.com': { Type: 'Token', AmbiguousRoleResolution: 'Deny' } },
+      },
+    })
+    renderAt(`/resources/cognito-identity?pool=${encodeURIComponent('us-east-1:bare')}`)
+    const dialog = await screen.findByRole('dialog', { name: 'bare-pool' })
+    const row = (await within(dialog).findByText('graph.facebook.com')).closest('tr') as HTMLElement
+    expect(within(row).getByText('Token')).toBeInTheDocument()
+    expect(within(row).getByText('-')).toBeInTheDocument()
   })
 })

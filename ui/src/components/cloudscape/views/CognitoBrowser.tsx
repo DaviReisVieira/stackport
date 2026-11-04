@@ -93,13 +93,17 @@ function listOrDash(values?: string[] | null) {
 function UserDetailModal({ poolId, username, onClose }: { poolId: string; username: string; onClose: () => void }) {
   const { activeEndpoint } = useEndpoint()
   const fetcher = useCallback(() => fetchCognitoUser(poolId, username, activeEndpoint), [poolId, username, activeEndpoint])
-  const { data, loading } = useFetch<CognitoUserDetail>(fetcher)
+  const { data, loading, error } = useFetch<CognitoUserDetail>(fetcher)
   const attributes = Object.entries(data?.attributes ?? {}).map(([name, value]) => ({ name, value }))
 
   return (
     <Modal visible onDismiss={onClose} header={username} size="large">
       {loading && !data ? (
         <StatusIndicator type="loading">Loading user</StatusIndicator>
+      ) : error && !data ? (
+        <Alert type="error" header="Could not load user">
+          {error}
+        </Alert>
       ) : data ? (
         <SpaceBetween size="l">
           {kvGrid([
@@ -121,7 +125,9 @@ function UserDetailModal({ poolId, username, onClose }: { poolId: string; userna
           />
           <SpaceBetween size="xs">
             <Header variant="h3">Groups</Header>
-            {data.groups.length > 0 ? (
+            {data.groups === null ? (
+              <Box color="text-status-inactive">Could not load groups</Box>
+            ) : data.groups.length > 0 ? (
               <SpaceBetween direction="horizontal" size="xs">
                 {data.groups.map((group) => (
                   <Badge key={group} color="blue">
@@ -142,7 +148,7 @@ function UserDetailModal({ poolId, username, onClose }: { poolId: string; userna
 function UsersPanel({ poolId }: { poolId: string }) {
   const { activeEndpoint } = useEndpoint()
   const fetcher = useCallback(() => fetchCognitoUsers(poolId, activeEndpoint), [poolId, activeEndpoint])
-  const { data, loading } = useFetch<{ users: CognitoUser[] }>(fetcher, 15000)
+  const { data, loading } = useFetch<{ users: CognitoUser[] }>(fetcher)
   const [selected, setSelected] = useState<string | null>(null)
 
   const { items, collectionProps, paginationProps } = useCollection(data?.users ?? [], {
@@ -511,7 +517,7 @@ export function CloudscapeCognitoUserPoolsBrowser() {
 function IdentityPoolDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const { activeEndpoint } = useEndpoint()
   const fetcher = useCallback(() => fetchCognitoIdentityPool(id, activeEndpoint), [id, activeEndpoint])
-  const { data, loading } = useFetch<CognitoIdentityPoolDetail>(fetcher)
+  const { data, loading, error } = useFetch<CognitoIdentityPoolDetail>(fetcher)
   const loginProviders = Object.entries(data?.SupportedLoginProviders ?? {}).map(([provider, appId]) => ({
     provider,
     appId,
@@ -520,13 +526,17 @@ function IdentityPoolDetailModal({ id, onClose }: { id: string; onClose: () => v
     provider,
     type: mapping.Type,
     ambiguous: mapping.AmbiguousRoleResolution,
-    rules: mapping.RulesConfiguration?.Rules?.length ?? 0,
+    rules: mapping.RulesConfiguration?.Rules ?? [],
   }))
 
   return (
     <Modal visible onDismiss={onClose} header={data?.IdentityPoolName ?? id} size="large">
       {loading && !data ? (
         <StatusIndicator type="loading">Loading identity pool</StatusIndicator>
+      ) : error && !data ? (
+        <Alert type="error" header="Could not load identity pool">
+          {error}
+        </Alert>
       ) : data ? (
         <SpaceBetween size="l">
           {kvGrid([
@@ -558,24 +568,50 @@ function IdentityPoolDetailModal({ id, onClose }: { id: string; onClose: () => v
           />
           <SpaceBetween size="xs">
             <Header variant="h3">Roles</Header>
-            {kvGrid([
-              ['Authenticated role', data.roles?.authenticated ?? EMPTY],
-              ['Unauthenticated role', data.roles?.unauthenticated ?? EMPTY],
-            ])}
+            {data.roles === null ? (
+              <Box color="text-status-inactive">Could not load roles</Box>
+            ) : (
+              kvGrid([
+                ['Authenticated role', data.roles.authenticated ?? EMPTY],
+                ['Unauthenticated role', data.roles.unauthenticated ?? EMPTY],
+              ])
+            )}
           </SpaceBetween>
-          <Table
-            items={roleMappings}
-            trackBy="provider"
-            variant="embedded"
-            header={<Header variant="h3">Role mappings</Header>}
-            empty={emptyState('No role mappings')}
-            columnDefinitions={[
-              { id: 'provider', header: 'Provider', cell: (m) => m.provider },
-              { id: 'type', header: 'Type', cell: (m) => m.type ?? EMPTY },
-              { id: 'ambiguous', header: 'Ambiguous role resolution', cell: (m) => m.ambiguous ?? EMPTY },
-              { id: 'rules', header: 'Rules', cell: (m) => m.rules },
-            ]}
-          />
+          {data.roleMappings === null ? (
+            <SpaceBetween size="xs">
+              <Header variant="h3">Role mappings</Header>
+              <Box color="text-status-inactive">Could not load role mappings</Box>
+            </SpaceBetween>
+          ) : (
+            <Table
+              items={roleMappings}
+              trackBy="provider"
+              variant="embedded"
+              header={<Header variant="h3">Role mappings</Header>}
+              empty={emptyState('No role mappings')}
+              columnDefinitions={[
+                { id: 'provider', header: 'Provider', cell: (m) => m.provider },
+                { id: 'type', header: 'Type', cell: (m) => m.type ?? EMPTY },
+                { id: 'ambiguous', header: 'Ambiguous role resolution', cell: (m) => m.ambiguous ?? EMPTY },
+                {
+                  id: 'rules',
+                  header: 'Rules',
+                  cell: (m) =>
+                    m.rules.length > 0 ? (
+                      <SpaceBetween size="xxxs">
+                        {m.rules.map((rule, i) => (
+                          <div key={i}>
+                            {`${rule.Claim ?? EMPTY} ${rule.MatchType ?? EMPTY} ${rule.Value ?? EMPTY} -> ${rule.RoleARN ?? EMPTY}`}
+                          </div>
+                        ))}
+                      </SpaceBetween>
+                    ) : (
+                      EMPTY
+                    ),
+                },
+              ]}
+            />
+          )}
         </SpaceBetween>
       ) : null}
     </Modal>

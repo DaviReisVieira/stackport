@@ -16,7 +16,10 @@ logger = logging.getLogger(__name__)
 
 def _raise_error(e: Exception, not_found: str, action: str) -> NoReturn:
     """Map a boto3 error to 404 for missing resources, 500 otherwise."""
-    if isinstance(e, ClientError) and e.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+    if isinstance(e, ClientError) and e.response.get("Error", {}).get("Code") in (
+        "ResourceNotFoundException",
+        "UserNotFoundException",
+    ):
         raise HTTPException(status_code=404, detail=not_found)
     logger.error("Failed to %s", action, exc_info=True)
     raise HTTPException(status_code=500, detail=str(e))
@@ -97,23 +100,23 @@ def list_users(pool_id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
         _raise_error(e, f"User pool {pool_id} not found", f"list users for {pool_id}")
 
 
-@router.get("/user-pools/{pool_id}/users/{username}")
+@router.get("/user-pools/{pool_id}/users/{username:path}")
 def get_user(pool_id: str, username: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    """Get one user with the names of the groups it belongs to."""
+    """Get one user with its group names (null when they cannot be listed). `:path` keeps "/" routable."""
     try:
         client = get_client("cognito-idp", **ep.client_kwargs())
         user = _user(client.admin_get_user(UserPoolId=pool_id, Username=username), "UserAttributes")
     except Exception as e:
         _raise_error(e, f"User {username} not found", f"get user {username} in {pool_id}")
 
-    groups: list[str] = []
+    groups: list[str] | None = []
     try:
         paginator = client.get_paginator("admin_list_groups_for_user")
         for page in paginator.paginate(UserPoolId=pool_id, Username=username):
             groups.extend(g["GroupName"] for g in page.get("Groups", []))
     except Exception:
         logger.warning("Could not list groups for user %s in %s", username, pool_id, exc_info=True)
-        groups = []
+        groups = None
     user["groups"] = groups
     return user
 
@@ -225,7 +228,7 @@ def list_identity_pools(ep: EndpointInfo = Depends(get_endpoint_info)):
 def get_identity_pool(pool_id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     """Describe one identity pool, plus its roles and raw role mappings.
 
-    Roles degrade to empty dicts when get_identity_pool_roles fails (some emulators lack it).
+    Roles and roleMappings degrade to null when get_identity_pool_roles fails (some emulators lack it).
     """
     try:
         client = get_client("cognito-identity", **ep.client_kwargs())
@@ -240,6 +243,6 @@ def get_identity_pool(pool_id: str, ep: EndpointInfo = Depends(get_endpoint_info
         response["roleMappings"] = roles.get("RoleMappings") or {}
     except Exception:
         logger.warning("Could not get roles for identity pool %s", pool_id, exc_info=True)
-        response["roles"] = {}
-        response["roleMappings"] = {}
+        response["roles"] = None
+        response["roleMappings"] = None
     return response

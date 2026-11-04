@@ -2377,7 +2377,7 @@ def populate_cognito_idp():
                 except Exception as e:
                     print(f"    ✗ App client error: {e}")
 
-                print(f"  ✓ {pool_name} ({users_per_pool} users, 1 group, 1 app client)")
+                print(f"  ✓ {pool_name} ({len(created_users)} users, 1 group, 1 app client)")
             except Exception as e:
                 print(f"  ✗ Error: {e}")
 

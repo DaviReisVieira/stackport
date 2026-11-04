@@ -257,7 +257,7 @@ class TestGetUser:
         )
         response = client.get(f"/api/cognito/user-pools/{POOL_ID}/users/alice")
         assert response.status_code == 200
-        assert response.json()["groups"] == []
+        assert response.json()["groups"] is None
 
     @patch("backend.routes.cognito.get_client")
     def test_not_found(self, mock_get_client):
@@ -265,6 +265,24 @@ class TestGetUser:
         mock.admin_get_user.side_effect = _not_found("AdminGetUser")
         response = client.get(f"/api/cognito/user-pools/{POOL_ID}/users/ghost")
         assert response.status_code == 404
+
+    @patch("backend.routes.cognito.get_client")
+    def test_user_not_found_exception(self, mock_get_client):
+        mock = _mock_client(mock_get_client)
+        mock.admin_get_user.side_effect = ClientError(
+            {"Error": {"Code": "UserNotFoundException", "Message": "missing"}}, "AdminGetUser"
+        )
+        response = client.get(f"/api/cognito/user-pools/{POOL_ID}/users/ghost")
+        assert response.status_code == 404
+
+    @patch("backend.routes.cognito.get_client")
+    def test_encoded_username_with_slash(self, mock_get_client):
+        mock = _mock_client(mock_get_client)
+        mock.admin_get_user.return_value = {**USER, "Username": "team/alice", "UserAttributes": []}
+        response = client.get(f"/api/cognito/user-pools/{POOL_ID}/users/team%2Falice")
+        assert response.status_code == 200
+        assert response.json()["username"] == "team/alice"
+        mock.admin_get_user.assert_called_once_with(UserPoolId=POOL_ID, Username="team/alice")
 
 
 class TestListGroups:
@@ -542,8 +560,8 @@ class TestIdentityPools:
         assert response.status_code == 200
         data = response.json()
         assert data["IdentityPoolName"] == "ids"
-        assert data["roles"] == {}
-        assert data["roleMappings"] == {}
+        assert data["roles"] is None
+        assert data["roleMappings"] is None
 
     @patch("backend.routes.cognito.get_client")
     def test_detail_not_found(self, mock_get_client):
