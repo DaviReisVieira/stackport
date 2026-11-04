@@ -222,12 +222,13 @@ function GroupsPanel({ poolId }: { poolId: string }) {
 
 function tokenValidity(client: CognitoUserPoolClient): string {
   const { accessToken, idToken, refreshToken, units } = client.tokenValidity
+  // Never guess a unit: emulators often omit TokenValidityUnits and the AWS defaults differ per token.
   const part = (label: string, value?: number | null, unit?: string) =>
-    value === undefined || value === null ? null : `${label} ${value} ${unit ?? ''}`.trim()
+    value === undefined || value === null ? null : `${label} ${value} ${unit || '(unit not reported)'}`
   const parts = [
-    part('Access', accessToken, units?.AccessToken ?? 'hours'),
-    part('ID', idToken, units?.IdToken ?? 'hours'),
-    part('Refresh', refreshToken, units?.RefreshToken ?? 'days'),
+    part('Access', accessToken, units?.AccessToken),
+    part('ID', idToken, units?.IdToken),
+    part('Refresh', refreshToken, units?.RefreshToken),
   ].filter((p): p is string => p !== null)
   return parts.length > 0 ? parts.join(', ') : EMPTY
 }
