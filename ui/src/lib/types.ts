@@ -1422,7 +1422,13 @@ export interface CognitoIdentityProvider {
   ServerSideTokenCheck?: boolean
 }
 
-/** Raw describe_identity_pool response minus ResponseMetadata. */
+export interface CognitoRoleMapping {
+  Type?: string
+  AmbiguousRoleResolution?: string
+  RulesConfiguration?: { Rules?: Array<Record<string, string>> }
+}
+
+/** Raw describe_identity_pool response minus ResponseMetadata, plus get_identity_pool_roles output. */
 export interface CognitoIdentityPoolDetail {
   IdentityPoolId: string
   IdentityPoolName: string
@@ -1433,4 +1439,8 @@ export interface CognitoIdentityPoolDetail {
   DeveloperProviderName?: string
   OpenIdConnectProviderARNs?: string[]
   SamlProviderARNs?: string[]
+  /** Empty when the emulator does not support get_identity_pool_roles. */
+  roles: { authenticated?: string; unauthenticated?: string } & Record<string, string>
+  /** Raw RoleMappings keyed by provider. Empty when none or unsupported. */
+  roleMappings: Record<string, CognitoRoleMapping>
 }

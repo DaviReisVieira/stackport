@@ -100,6 +100,27 @@ const identityPoolDetail = {
   AllowUnauthenticatedIdentities: true,
   CognitoIdentityProviders: [{ ProviderName: 'cognito-idp.us-east-1.amazonaws.com/us-east-1_abc', ClientId: 'client-1' }],
   SupportedLoginProviders: { 'accounts.google.com': 'google-app-id' },
+  roles: { authenticated: 'arn:aws:iam::000000000000:role/Cognito_Auth' },
+  roleMappings: {
+    'cognito-idp.us-east-1.amazonaws.com/us-east-1_abc:client-1': {
+      Type: 'Rules',
+      AmbiguousRoleResolution: 'AuthenticatedRole',
+      RulesConfiguration: {
+        Rules: [
+          { Claim: 'cognito:groups', MatchType: 'Contains', Value: 'admins', RoleARN: 'arn:aws:iam::000000000000:role/Admin' },
+          { Claim: 'email', MatchType: 'Equals', Value: 'a@b.c', RoleARN: 'arn:aws:iam::000000000000:role/A' },
+        ],
+      },
+    },
+  },
+}
+const bareIdentityPool = { id: 'us-east-1:bare', name: 'bare-pool' }
+const bareIdentityPoolDetail = {
+  IdentityPoolId: 'us-east-1:bare',
+  IdentityPoolName: 'bare-pool',
+  AllowUnauthenticatedIdentities: false,
+  roles: {},
+  roleMappings: {},
 }
 
 let requested: string[] = []
@@ -120,7 +141,9 @@ function mockFetchByUrl() {
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}`)) payload = userPoolDetail
     else if (url.includes('/api/cognito/user-pools')) payload = { userPools: [userPool, otherPool] }
     else if (url.includes(`/api/cognito/identity-pools/${encodeURIComponent(IDENTITY_POOL_ID)}`)) payload = identityPoolDetail
-    else if (url.includes('/api/cognito/identity-pools')) payload = { identityPools: [identityPool] }
+    else if (url.includes(`/api/cognito/identity-pools/${encodeURIComponent('us-east-1:bare')}`))
+      payload = bareIdentityPoolDetail
+    else if (url.includes('/api/cognito/identity-pools')) payload = { identityPools: [identityPool, bareIdentityPool] }
     return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) } as Response)
   }) as unknown as typeof fetch
 }
@@ -233,5 +256,29 @@ describe('CloudscapeCognitoIdentityPoolsBrowser (via registry dispatch)', () => 
     expect(requested.some((u) => u.includes(`/api/cognito/identity-pools/${encodeURIComponent(IDENTITY_POOL_ID)}`))).toBe(
       true,
     )
+  })
+
+  it('shows identity pool roles and role mappings', async () => {
+    renderAt(`/resources/cognito-identity?pool=${encodeURIComponent(IDENTITY_POOL_ID)}`)
+    const dialog = await screen.findByRole('dialog', { name: 'ids-pool' })
+    expect(await within(dialog).findByText('Roles')).toBeInTheDocument()
+    expect(within(dialog).getByText('arn:aws:iam::000000000000:role/Cognito_Auth')).toBeInTheDocument()
+    const unauthLabel = within(dialog).getByText('Unauthenticated role')
+    expect(within(unauthLabel.parentElement as HTMLElement).getByText('-')).toBeInTheDocument()
+    expect(within(dialog).getByText('Role mappings')).toBeInTheDocument()
+    const mappingRow = within(dialog)
+      .getByText('cognito-idp.us-east-1.amazonaws.com/us-east-1_abc:client-1')
+      .closest('tr') as HTMLElement
+    expect(within(mappingRow).getByText('Rules')).toBeInTheDocument()
+    expect(within(mappingRow).getByText('AuthenticatedRole')).toBeInTheDocument()
+    expect(within(mappingRow).getByText('2')).toBeInTheDocument()
+  })
+
+  it('shows dashes and an empty state when an identity pool has no roles', async () => {
+    renderAt(`/resources/cognito-identity?pool=${encodeURIComponent('us-east-1:bare')}`)
+    const dialog = await screen.findByRole('dialog', { name: 'bare-pool' })
+    expect(await within(dialog).findByText('No role mappings')).toBeInTheDocument()
+    const authLabel = within(dialog).getByText('Authenticated role')
+    expect(within(authLabel.parentElement as HTMLElement).getByText('-')).toBeInTheDocument()
   })
 })

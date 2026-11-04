@@ -223,11 +223,23 @@ def list_identity_pools(ep: EndpointInfo = Depends(get_endpoint_info)):
 
 @router.get("/identity-pools/{pool_id}")
 def get_identity_pool(pool_id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    """Describe one identity pool."""
+    """Describe one identity pool, plus its roles and raw role mappings.
+
+    Roles degrade to empty dicts when get_identity_pool_roles fails (some emulators lack it).
+    """
     try:
         client = get_client("cognito-identity", **ep.client_kwargs())
         response = client.describe_identity_pool(IdentityPoolId=pool_id)
         response.pop("ResponseMetadata", None)
-        return response
     except Exception as e:
         _raise_error(e, f"Identity pool {pool_id} not found", f"describe identity pool {pool_id}")
+
+    try:
+        roles = client.get_identity_pool_roles(IdentityPoolId=pool_id)
+        response["roles"] = roles.get("Roles") or {}
+        response["roleMappings"] = roles.get("RoleMappings") or {}
+    except Exception:
+        logger.warning("Could not get roles for identity pool %s", pool_id, exc_info=True)
+        response["roles"] = {}
+        response["roleMappings"] = {}
+    return response
