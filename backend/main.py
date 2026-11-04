@@ -30,7 +30,7 @@ from backend.config import (
 from backend import emulators
 from backend.error_handlers import install_aws_error_handlers
 from backend.origins import CrossSiteGuard, HostGuard
-from backend.routes import activity, bedrock, connection_details, dynamodb, ec2, endpoints, explorer, iam, lambda_svc, learn, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags, kms, try_it
+from backend.routes import activity, bedrock, cognito, connection_details, dynamodb, ec2, endpoints, explorer, iam, lambda_svc, learn, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags, kms, try_it
 from backend.service_models import is_read_operation
 from backend.websocket import logs_tail_endpoint, probe_loop, websocket_endpoint
 
@@ -206,6 +206,7 @@ app.include_router(activity.router, prefix="/api/activity", tags=["activity"])
 app.include_router(try_it.router, prefix=try_it.PREFIX, tags=["try-it"])
 app.include_router(connection_details.router, prefix="/api/connection-details", tags=["connection-details"])
 app.include_router(bedrock.router, prefix="/api/bedrock", tags=["bedrock"])
+app.include_router(cognito.router, prefix="/api/cognito", tags=["cognito"])
 if STACKPORT_LEARN:
     app.include_router(learn.router, prefix="/api/learn", tags=["learn"])
 
