@@ -19,6 +19,7 @@ import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
 import {
   fetchCognitoClients,
+  fetchCognitoGroup,
   fetchCognitoGroups,
   fetchCognitoIdentityPool,
   fetchCognitoIdentityPools,
@@ -29,6 +30,7 @@ import {
 } from '@/lib/api'
 import type {
   CognitoGroup,
+  CognitoGroupDetail,
   CognitoIdentityPool,
   CognitoIdentityPoolDetail,
   CognitoUser,
@@ -190,10 +192,52 @@ function UsersPanel({ poolId }: { poolId: string }) {
 
 // --- User pools: groups and app clients ---
 
+function GroupDetailModal({ poolId, name, onClose }: { poolId: string; name: string; onClose: () => void }) {
+  const { activeEndpoint } = useEndpoint()
+  const fetcher = useCallback(() => fetchCognitoGroup(poolId, name, activeEndpoint), [poolId, name, activeEndpoint])
+  const { data, loading, error } = useFetch<CognitoGroupDetail>(fetcher)
+
+  return (
+    <Modal visible onDismiss={onClose} header={name} size="large">
+      {loading && !data ? (
+        <StatusIndicator type="loading">Loading group</StatusIndicator>
+      ) : error && !data ? (
+        <Alert type="error" header="Could not load group">
+          {error}
+        </Alert>
+      ) : data ? (
+        <SpaceBetween size="l">
+          {kvGrid([
+            ['Description', data.description || EMPTY],
+            ['Precedence', data.precedence ?? EMPTY],
+            ['Role ARN', data.roleArn ?? EMPTY],
+            ['Created', formatDate(data.created)],
+            ['Last modified', formatDate(data.modified)],
+          ])}
+          <Table
+            items={data.members}
+            trackBy="username"
+            variant="embedded"
+            header={<Header variant="h3" counter={`(${data.members.length})`}>Members</Header>}
+            empty={emptyState('No users in this group')}
+            columnDefinitions={[
+              { id: 'username', header: 'Username', cell: (m) => m.username },
+              { id: 'status', header: 'Status', cell: (m) => userStatusIndicator(m.status) },
+              { id: 'email', header: 'Email', cell: (m) => m.email ?? EMPTY },
+              { id: 'enabled', header: 'Enabled', cell: (m) => formatBool(m.enabled) },
+            ]}
+          />
+        </SpaceBetween>
+      ) : null}
+    </Modal>
+  )
+}
+
 function GroupsPanel({ poolId }: { poolId: string }) {
   const { activeEndpoint } = useEndpoint()
   const fetcher = useCallback(() => fetchCognitoGroups(poolId, activeEndpoint), [poolId, activeEndpoint])
   const { data, loading } = useFetch<{ groups: CognitoGroup[] }>(fetcher)
+  const [selected, setSelected] = useState<string | null>(null)
 
   const { items, collectionProps, paginationProps } = useCollection(data?.groups ?? [], {
     pagination: { pageSize: 25 },
@@ -201,22 +245,41 @@ function GroupsPanel({ poolId }: { poolId: string }) {
   })
 
   return (
-    <Table
-      {...collectionProps}
-      items={items}
-      trackBy="name"
-      variant="embedded"
-      loading={loading && !data}
-      loadingText="Loading groups"
-      empty={emptyState('No groups in this pool')}
-      columnDefinitions={[
-        { id: 'name', header: 'Name', sortingField: 'name', cell: (g) => g.name },
-        { id: 'description', header: 'Description', cell: (g) => g.description || EMPTY },
-        { id: 'precedence', header: 'Precedence', sortingField: 'precedence', cell: (g) => g.precedence ?? EMPTY },
-        { id: 'role', header: 'Role ARN', cell: (g) => g.roleArn ?? EMPTY },
-      ]}
-      pagination={<Pagination {...paginationProps} />}
-    />
+    <>
+      <Table
+        {...collectionProps}
+        items={items}
+        trackBy="name"
+        variant="embedded"
+        loading={loading && !data}
+        loadingText="Loading groups"
+        empty={emptyState('No groups in this pool')}
+        onRowClick={({ detail }) => setSelected(detail.item.name)}
+        columnDefinitions={[
+          {
+            id: 'name',
+            header: 'Name',
+            sortingField: 'name',
+            cell: (g) => (
+              <Link
+                href="#"
+                onFollow={(event) => {
+                  event.preventDefault()
+                  setSelected(g.name)
+                }}
+              >
+                {g.name}
+              </Link>
+            ),
+          },
+          { id: 'description', header: 'Description', cell: (g) => g.description || EMPTY },
+          { id: 'precedence', header: 'Precedence', sortingField: 'precedence', cell: (g) => g.precedence ?? EMPTY },
+          { id: 'role', header: 'Role ARN', cell: (g) => g.roleArn ?? EMPTY },
+        ]}
+        pagination={<Pagination {...paginationProps} />}
+      />
+      {selected && <GroupDetailModal poolId={poolId} name={selected} onClose={() => setSelected(null)} />}
+    </>
   )
 }
 

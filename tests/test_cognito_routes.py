@@ -313,6 +313,78 @@ class TestListGroups:
         assert response.status_code == 404
 
 
+class TestGetGroup:
+    GROUP = {
+        "GroupName": "admins",
+        "UserPoolId": POOL_ID,
+        "Description": "Admins",
+        "Precedence": 1,
+        "RoleArn": "arn:aws:iam::000000000000:role/admin",
+        "CreationDate": NOW,
+        "LastModifiedDate": NOW,
+    }
+
+    @patch("backend.routes.cognito.get_client")
+    def test_detail_with_members_across_pages(self, mock_get_client):
+        mock = _mock_client(
+            mock_get_client,
+            {
+                "list_users_in_group": [
+                    {"Users": [{**USER, "Attributes": [{"Name": "email", "Value": "alice@example.com"}]}]},
+                    {"Users": [{"Username": "bob", "UserStatus": "UNCONFIRMED", "Enabled": False, "Attributes": []}]},
+                ]
+            },
+        )
+        mock.get_group.return_value = {"Group": self.GROUP}
+        response = client.get(f"/api/cognito/user-pools/{POOL_ID}/groups/admins")
+        assert response.status_code == 200
+        assert response.json() == {
+            "name": "admins",
+            "description": "Admins",
+            "precedence": 1,
+            "roleArn": "arn:aws:iam::000000000000:role/admin",
+            "created": NOW.isoformat(),
+            "modified": NOW.isoformat(),
+            "members": [
+                {"username": "alice", "status": "CONFIRMED", "enabled": True, "email": "alice@example.com"},
+                {"username": "bob", "status": "UNCONFIRMED", "enabled": False, "email": None},
+            ],
+        }
+        mock.get_group.assert_called_once_with(GroupName="admins", UserPoolId=POOL_ID)
+        mock.get_paginator.assert_called_with("list_users_in_group")
+
+    @patch("backend.routes.cognito.get_client")
+    def test_detail_without_members(self, mock_get_client):
+        mock = _mock_client(mock_get_client, {"list_users_in_group": [{"Users": []}]})
+        mock.get_group.return_value = {"Group": self.GROUP}
+        response = client.get(f"/api/cognito/user-pools/{POOL_ID}/groups/admins")
+        assert response.status_code == 200
+        assert response.json()["members"] == []
+
+    @patch("backend.routes.cognito.get_client")
+    def test_encoded_name_with_slash(self, mock_get_client):
+        mock = _mock_client(mock_get_client, {"list_users_in_group": [{"Users": []}]})
+        mock.get_group.return_value = {"Group": {**self.GROUP, "GroupName": "team/a b"}}
+        response = client.get(f"/api/cognito/user-pools/{POOL_ID}/groups/team%2Fa%20b")
+        assert response.status_code == 200
+        mock.get_group.assert_called_once_with(GroupName="team/a b", UserPoolId=POOL_ID)
+
+    @patch("backend.routes.cognito.get_client")
+    def test_not_found(self, mock_get_client):
+        mock = _mock_client(mock_get_client)
+        mock.get_group.side_effect = _not_found("GetGroup")
+        response = client.get(f"/api/cognito/user-pools/{POOL_ID}/groups/ghost")
+        assert response.status_code == 404
+
+    @patch("backend.routes.cognito.get_client")
+    def test_members_not_found(self, mock_get_client):
+        mock = _mock_client(mock_get_client)
+        mock.get_group.return_value = {"Group": self.GROUP}
+        _raising_paginator(mock, _not_found("ListUsersInGroup"))
+        response = client.get(f"/api/cognito/user-pools/{POOL_ID}/groups/admins")
+        assert response.status_code == 404
+
+
 class TestListClients:
     @patch("backend.routes.cognito.get_client")
     def test_list_never_returns_secret(self, mock_get_client):

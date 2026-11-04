@@ -66,6 +66,17 @@ const user = {
 }
 const userDetail = { ...user, attributes: { ...user.attributes, given_name: 'Alice' }, groups: ['admins'] }
 const group = { name: 'admins', description: 'Administrators', precedence: 1, roleArn: null }
+const emptyGroup = { name: 'night shift/ops', description: 'Nobody yet', precedence: 5, roleArn: null }
+const groupDetail = {
+  ...group,
+  created: ISO,
+  modified: ISO,
+  members: [
+    { username: 'alice', status: 'CONFIRMED', enabled: true, email: 'alice@example.com' },
+    { username: 'bob', status: 'UNCONFIRMED', enabled: false, email: null },
+  ],
+}
+const emptyGroupDetail = { ...emptyGroup, created: ISO, modified: ISO, members: [] }
 const appClient = {
   clientId: 'client-1',
   clientName: 'web-app',
@@ -101,7 +112,10 @@ function mockFetchByUrl() {
     let payload: unknown = statsPayload
     if (url.includes(`/api/cognito/user-pools/${POOL_ID}/users/alice`)) payload = userDetail
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/users`)) payload = { users: [user] }
-    else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/groups`)) payload = { groups: [group] }
+    else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/groups/admins`)) payload = groupDetail
+    else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/groups/${encodeURIComponent(emptyGroup.name)}`))
+      payload = emptyGroupDetail
+    else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/groups`)) payload = { groups: [group, emptyGroup] }
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/clients`)) payload = { clients: [appClient, bareClient] }
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}`)) payload = userPoolDetail
     else if (url.includes('/api/cognito/user-pools')) payload = { userPools: [userPool, otherPool] }
@@ -178,6 +192,30 @@ describe('CloudscapeCognitoUserPoolsBrowser (via registry dispatch)', () => {
     expect(await screen.findByText('Password policy')).toBeInTheDocument()
     expect(screen.getByText('PreSignUp')).toBeInTheDocument()
     expect(screen.getByText('OFF')).toBeInTheDocument()
+  })
+
+  it('opens a group modal with its members', async () => {
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByText('Groups'))
+    fireEvent.click(await screen.findByText('admins'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'admins' })
+    expect(await within(dialog).findByText('bob')).toBeInTheDocument()
+    expect(within(dialog).getByText('alice')).toBeInTheDocument()
+    expect(within(dialog).getByText('alice@example.com')).toBeInTheDocument()
+    expect(within(dialog).getByText('UNCONFIRMED')).toBeInTheDocument()
+    expect(within(dialog).getByText('Administrators')).toBeInTheDocument()
+    expect(requested.some((u) => u.includes(`/api/cognito/user-pools/${POOL_ID}/groups/admins`))).toBe(true)
+  })
+
+  it('shows an empty state for a group without members and URL-encodes its name', async () => {
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByText('Groups'))
+    fireEvent.click(await screen.findByText('night shift/ops'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'night shift/ops' })
+    expect(await within(dialog).findByText('No users in this group')).toBeInTheDocument()
+    expect(requested.some((u) => u.includes(`/groups/night%20shift%2Fops`))).toBe(true)
   })
 })
 

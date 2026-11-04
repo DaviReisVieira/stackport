@@ -1384,6 +1384,19 @@ export interface CognitoGroup {
   roleArn?: string | null
 }
 
+export interface CognitoGroupMember {
+  username: string
+  status?: string | null
+  enabled?: boolean | null
+  email?: string | null
+}
+
+export interface CognitoGroupDetail extends CognitoGroup {
+  created?: string | null
+  modified?: string | null
+  members: CognitoGroupMember[]
+}
+
 export interface CognitoUserPoolClient {
   clientId: string
   clientName?: string | null

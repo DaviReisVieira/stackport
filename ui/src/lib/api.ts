@@ -102,6 +102,7 @@ import type {
   CognitoUser,
   CognitoUserDetail,
   CognitoGroup,
+  CognitoGroupDetail,
   CognitoUserPoolClient,
   CognitoIdentityPool,
   CognitoIdentityPoolDetail,
@@ -1517,6 +1518,12 @@ export async function fetchCognitoUser(id: string, username: string, endpoint?: 
 
 export async function fetchCognitoGroups(id: string, endpoint?: string | null): Promise<{ groups: CognitoGroup[] }> {
   return fetchJSON<{ groups: CognitoGroup[] }>(buildUrl(`/cognito/user-pools/${encodeURIComponent(id)}/groups`, endpoint))
+}
+
+export async function fetchCognitoGroup(id: string, name: string, endpoint?: string | null): Promise<CognitoGroupDetail> {
+  return fetchJSON<CognitoGroupDetail>(
+    buildUrl(`/cognito/user-pools/${encodeURIComponent(id)}/groups/${encodeURIComponent(name)}`, endpoint),
+  )
 }
 
 export async function fetchCognitoClients(id: string, endpoint?: string | null): Promise<{ clients: CognitoUserPoolClient[] }> {
