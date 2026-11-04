@@ -140,6 +140,37 @@ def list_groups(pool_id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
         _raise_error(e, f"User pool {pool_id} not found", f"list groups for {pool_id}")
 
 
+@router.get("/user-pools/{pool_id}/groups/{group_name:path}")
+def get_group(pool_id: str, group_name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
+    """Get one group with its members. `:path` keeps group names containing "/" routable."""
+    try:
+        client = get_client("cognito-idp", **ep.client_kwargs())
+        group = client.get_group(GroupName=group_name, UserPoolId=pool_id)["Group"]
+        paginator = client.get_paginator("list_users_in_group")
+        members = []
+        for page in paginator.paginate(UserPoolId=pool_id, GroupName=group_name):
+            for user in page.get("Users", []):
+                members.append(
+                    {
+                        "username": user.get("Username"),
+                        "status": user.get("UserStatus"),
+                        "enabled": user.get("Enabled"),
+                        "email": _attributes(user.get("Attributes")).get("email"),
+                    }
+                )
+        return {
+            "name": group.get("GroupName"),
+            "description": group.get("Description"),
+            "precedence": group.get("Precedence"),
+            "roleArn": group.get("RoleArn"),
+            "created": group.get("CreationDate"),
+            "modified": group.get("LastModifiedDate"),
+            "members": members,
+        }
+    except Exception as e:
+        _raise_error(e, f"Group {group_name} not found", f"get group {group_name} in {pool_id}")
+
+
 @router.get("/user-pools/{pool_id}/clients")
 def list_clients(pool_id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     """List app clients in a user pool. The client secret is never returned."""
