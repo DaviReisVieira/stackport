@@ -72,7 +72,15 @@ const appClient = {
   explicitAuthFlows: ['ALLOW_USER_PASSWORD_AUTH'],
   allowedOAuthFlows: [],
   callbackURLs: [],
-  tokenValidity: { accessToken: 60, idToken: null, refreshToken: 30, units: { AccessToken: 'minutes' } },
+  tokenValidity: { accessToken: 60, idToken: null, refreshToken: 30, units: { AccessToken: 'minutes', RefreshToken: 'days' } },
+}
+const bareClient = {
+  clientId: 'client-2',
+  clientName: 'cli-app',
+  explicitAuthFlows: [],
+  allowedOAuthFlows: [],
+  callbackURLs: [],
+  tokenValidity: { accessToken: 60, idToken: null, refreshToken: 30, units: null },
 }
 const identityPool = { id: IDENTITY_POOL_ID, name: 'ids-pool' }
 const identityPoolDetail = {
@@ -94,7 +102,7 @@ function mockFetchByUrl() {
     if (url.includes(`/api/cognito/user-pools/${POOL_ID}/users/alice`)) payload = userDetail
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/users`)) payload = { users: [user] }
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/groups`)) payload = { groups: [group] }
-    else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/clients`)) payload = { clients: [appClient] }
+    else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/clients`)) payload = { clients: [appClient, bareClient] }
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}`)) payload = userPoolDetail
     else if (url.includes('/api/cognito/user-pools')) payload = { userPools: [userPool, otherPool] }
     else if (url.includes(`/api/cognito/identity-pools/${encodeURIComponent(IDENTITY_POOL_ID)}`)) payload = identityPoolDetail
@@ -164,6 +172,7 @@ describe('CloudscapeCognitoUserPoolsBrowser (via registry dispatch)', () => {
     expect(await screen.findByText('web-app')).toBeInTheDocument()
     expect(screen.getByText('ALLOW_USER_PASSWORD_AUTH')).toBeInTheDocument()
     expect(screen.getByText('Access 60 minutes, Refresh 30 days')).toBeInTheDocument()
+    expect(screen.getByText('Access 60 (unit not reported), Refresh 30 (unit not reported)')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Configuration'))
     expect(await screen.findByText('Password policy')).toBeInTheDocument()
