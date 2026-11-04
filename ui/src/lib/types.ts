@@ -1327,7 +1327,8 @@ export interface KMSKeyAlias {
 export interface CognitoUserPool {
   id: string
   name: string
-  status?: string | null
+  /** From describe_user_pool; null when the emulator omits it or the call fails. */
+  estimatedNumberOfUsers?: number | null
   creationDate?: string | null
   lastModifiedDate?: string | null
 }

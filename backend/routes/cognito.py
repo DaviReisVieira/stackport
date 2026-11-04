@@ -40,9 +40,18 @@ def _user(user: dict[str, Any], attributes_key: str) -> dict[str, Any]:
 # --- User pools ---
 
 
+def _estimated_users(client: Any, pool_id: str | None) -> int | None:
+    """EstimatedNumberOfUsers from describe_user_pool, or None if the call fails or omits it."""
+    try:
+        return client.describe_user_pool(UserPoolId=pool_id)["UserPool"].get("EstimatedNumberOfUsers")
+    except Exception:
+        logger.warning("Could not describe user pool %s for estimated users", pool_id, exc_info=True)
+        return None
+
+
 @router.get("/user-pools")
 def list_user_pools(ep: EndpointInfo = Depends(get_endpoint_info)):
-    """List Cognito user pools."""
+    """List Cognito user pools with an estimated user count per pool (null when unavailable)."""
     try:
         client = get_client("cognito-idp", **ep.client_kwargs())
         paginator = client.get_paginator("list_user_pools")
@@ -53,7 +62,7 @@ def list_user_pools(ep: EndpointInfo = Depends(get_endpoint_info)):
                     {
                         "id": pool.get("Id"),
                         "name": pool.get("Name"),
-                        "status": pool.get("Status"),
+                        "estimatedNumberOfUsers": _estimated_users(client, pool.get("Id")),
                         "creationDate": pool.get("CreationDate"),
                         "lastModifiedDate": pool.get("LastModifiedDate"),
                     }
