@@ -75,6 +75,7 @@ class TestListUserPools:
                 ]
             },
         )
+        mock.describe_user_pool.return_value = {"UserPool": {"Id": POOL_ID, "EstimatedNumberOfUsers": 4}}
         response = client.get("/api/cognito/user-pools")
         assert response.status_code == 200
         pools = response.json()["userPools"]
@@ -82,12 +83,39 @@ class TestListUserPools:
             {
                 "id": POOL_ID,
                 "name": "main",
-                "status": "Enabled",
+                "estimatedNumberOfUsers": 4,
                 "creationDate": NOW.isoformat(),
                 "lastModifiedDate": NOW.isoformat(),
             }
         ]
         mock.get_paginator.assert_called_with("list_user_pools")
+        mock.describe_user_pool.assert_called_once_with(UserPoolId=POOL_ID)
+
+    @patch("backend.routes.cognito.get_client")
+    def test_estimated_users_null_when_describe_fails_for_one_pool(self, mock_get_client):
+        mock = _mock_client(
+            mock_get_client,
+            {"list_user_pools": [{"UserPools": [{"Id": "pool-a", "Name": "a"}, {"Id": "pool-b", "Name": "b"}]}]},
+        )
+
+        def describe(UserPoolId):
+            if UserPoolId == "pool-a":
+                raise ClientError({"Error": {"Code": "InternalErrorException", "Message": "x"}}, "DescribeUserPool")
+            return {"UserPool": {"Id": UserPoolId, "EstimatedNumberOfUsers": 2}}
+
+        mock.describe_user_pool.side_effect = describe
+        response = client.get("/api/cognito/user-pools")
+        assert response.status_code == 200
+        counts = {p["id"]: p["estimatedNumberOfUsers"] for p in response.json()["userPools"]}
+        assert counts == {"pool-a": None, "pool-b": 2}
+
+    @patch("backend.routes.cognito.get_client")
+    def test_estimated_users_null_when_omitted(self, mock_get_client):
+        mock = _mock_client(mock_get_client, {"list_user_pools": [{"UserPools": [{"Id": POOL_ID, "Name": "main"}]}]})
+        mock.describe_user_pool.return_value = {"UserPool": {"Id": POOL_ID}}
+        response = client.get("/api/cognito/user-pools")
+        assert response.status_code == 200
+        assert response.json()["userPools"][0]["estimatedNumberOfUsers"] is None
 
     @patch("backend.routes.cognito.get_client")
     def test_list_empty(self, mock_get_client):

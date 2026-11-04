@@ -45,7 +45,8 @@ const ISO = '2024-02-01T00:00:00+00:00'
 const POOL_ID = 'us-east-1_abc'
 const IDENTITY_POOL_ID = 'us-east-1:1111-2222'
 
-const userPool = { id: POOL_ID, name: 'main-pool', status: 'Enabled', creationDate: ISO, lastModifiedDate: ISO }
+const userPool = { id: POOL_ID, name: 'main-pool', estimatedNumberOfUsers: 7, creationDate: ISO, lastModifiedDate: ISO }
+const otherPool = { id: 'us-east-1_other', name: 'other-pool', estimatedNumberOfUsers: null, creationDate: ISO, lastModifiedDate: ISO }
 const userPoolDetail = {
   Id: POOL_ID,
   Name: 'main-pool',
@@ -95,7 +96,7 @@ function mockFetchByUrl() {
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/groups`)) payload = { groups: [group] }
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/clients`)) payload = { clients: [appClient] }
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}`)) payload = userPoolDetail
-    else if (url.includes('/api/cognito/user-pools')) payload = { userPools: [userPool] }
+    else if (url.includes('/api/cognito/user-pools')) payload = { userPools: [userPool, otherPool] }
     else if (url.includes(`/api/cognito/identity-pools/${encodeURIComponent(IDENTITY_POOL_ID)}`)) payload = identityPoolDetail
     else if (url.includes('/api/cognito/identity-pools')) payload = { identityPools: [identityPool] }
     return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) } as Response)
@@ -123,6 +124,16 @@ describe('CloudscapeCognitoUserPoolsBrowser (via registry dispatch)', () => {
     expect(await screen.findByText('User pools')).toBeInTheDocument()
     expect(await screen.findByText('main-pool')).toBeInTheDocument()
     expect(screen.getByText(POOL_ID)).toBeInTheDocument()
+  })
+
+  it('shows estimated users per pool and a dash when unknown', async () => {
+    renderAt('/resources/cognito-idp')
+    expect(await screen.findByText('Estimated users')).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /^Status/ })).not.toBeInTheDocument()
+    const mainRow = (await screen.findByText('main-pool')).closest('tr') as HTMLElement
+    expect(within(mainRow).getByText('7')).toBeInTheDocument()
+    const otherRow = screen.getByText('other-pool').closest('tr') as HTMLElement
+    expect(within(otherRow).getByText('-')).toBeInTheDocument()
   })
 
   it('selects a pool, shows users with a status badge and opens the user modal', async () => {

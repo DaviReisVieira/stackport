@@ -422,7 +422,12 @@ export function CloudscapeCognitoUserPoolsBrowser() {
           ),
         },
         { id: 'id', header: 'Pool ID', sortingField: 'id', cell: (p) => p.id },
-        { id: 'status', header: 'Status', cell: (p) => p.status ?? EMPTY },
+        {
+          id: 'estimatedUsers',
+          header: 'Estimated users',
+          sortingField: 'estimatedNumberOfUsers',
+          cell: (p) => p.estimatedNumberOfUsers ?? EMPTY,
+        },
         { id: 'created', header: 'Created', sortingField: 'creationDate', cell: (p) => formatDate(p.creationDate) },
       ]}
       filter={
