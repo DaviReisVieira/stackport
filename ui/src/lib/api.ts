@@ -96,7 +96,16 @@ import type {
   KMSKey,
   KMSKeyDetail,
   KMSKeyGrant,
-  KMSKeyAlias
+  KMSKeyAlias,
+  CognitoUserPool,
+  CognitoUserPoolDetail,
+  CognitoUser,
+  CognitoUserDetail,
+  CognitoGroup,
+  CognitoGroupDetail,
+  CognitoUserPoolClient,
+  CognitoIdentityPool,
+  CognitoIdentityPoolDetail,
 } from './types'
 
 const API_BASE = '/api'
@@ -1485,4 +1494,48 @@ export async function fetchKMSKeyGrants(id: string, endpoint?: string | null): P
 
 export async function fetchKMSKeyAliases(id: string, endpoint?: string | null): Promise<KMSKeyAlias[]> {
   return fetchJSON<KMSKeyAlias[]>(buildUrl(`/kms/keys/${encodeURIComponent(id)}/aliases`, endpoint))
+}
+
+// --- Cognito ---
+
+export async function fetchCognitoUserPools(endpoint?: string | null): Promise<{ userPools: CognitoUserPool[] }> {
+  return fetchJSON<{ userPools: CognitoUserPool[] }>(buildUrl('/cognito/user-pools', endpoint))
+}
+
+export async function fetchCognitoUserPool(id: string, endpoint?: string | null): Promise<CognitoUserPoolDetail> {
+  return fetchJSON<CognitoUserPoolDetail>(buildUrl(`/cognito/user-pools/${encodeURIComponent(id)}`, endpoint))
+}
+
+export async function fetchCognitoUsers(id: string, endpoint?: string | null): Promise<{ users: CognitoUser[] }> {
+  return fetchJSON<{ users: CognitoUser[] }>(buildUrl(`/cognito/user-pools/${encodeURIComponent(id)}/users`, endpoint))
+}
+
+export async function fetchCognitoUser(id: string, username: string, endpoint?: string | null): Promise<CognitoUserDetail> {
+  return fetchJSON<CognitoUserDetail>(
+    buildUrl(`/cognito/user-pools/${encodeURIComponent(id)}/users/${encodeURIComponent(username)}`, endpoint),
+  )
+}
+
+export async function fetchCognitoGroups(id: string, endpoint?: string | null): Promise<{ groups: CognitoGroup[] }> {
+  return fetchJSON<{ groups: CognitoGroup[] }>(buildUrl(`/cognito/user-pools/${encodeURIComponent(id)}/groups`, endpoint))
+}
+
+export async function fetchCognitoGroup(id: string, name: string, endpoint?: string | null): Promise<CognitoGroupDetail> {
+  return fetchJSON<CognitoGroupDetail>(
+    buildUrl(`/cognito/user-pools/${encodeURIComponent(id)}/groups/${encodeURIComponent(name)}`, endpoint),
+  )
+}
+
+export async function fetchCognitoClients(id: string, endpoint?: string | null): Promise<{ clients: CognitoUserPoolClient[] }> {
+  return fetchJSON<{ clients: CognitoUserPoolClient[] }>(
+    buildUrl(`/cognito/user-pools/${encodeURIComponent(id)}/clients`, endpoint),
+  )
+}
+
+export async function fetchCognitoIdentityPools(endpoint?: string | null): Promise<{ identityPools: CognitoIdentityPool[] }> {
+  return fetchJSON<{ identityPools: CognitoIdentityPool[] }>(buildUrl('/cognito/identity-pools', endpoint))
+}
+
+export async function fetchCognitoIdentityPool(id: string, endpoint?: string | null): Promise<CognitoIdentityPoolDetail> {
+  return fetchJSON<CognitoIdentityPoolDetail>(buildUrl(`/cognito/identity-pools/${encodeURIComponent(id)}`, endpoint))
 }

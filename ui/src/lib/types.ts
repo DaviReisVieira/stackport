@@ -1323,3 +1323,132 @@ export interface KMSKeyAlias {
   aliasArn: string
   creationDate?: string
 }
+
+export interface CognitoUserPool {
+  id: string
+  name: string
+  /** From describe_user_pool; null when the emulator omits it or the call fails. */
+  estimatedNumberOfUsers?: number | null
+  creationDate?: string | null
+  lastModifiedDate?: string | null
+}
+
+export interface CognitoSchemaAttribute {
+  Name?: string
+  AttributeDataType?: string
+  Required?: boolean
+  Mutable?: boolean
+  DeveloperOnlyAttribute?: boolean
+}
+
+export interface CognitoPasswordPolicy {
+  MinimumLength?: number
+  RequireUppercase?: boolean
+  RequireLowercase?: boolean
+  RequireNumbers?: boolean
+  RequireSymbols?: boolean
+  TemporaryPasswordValidityDays?: number
+}
+
+/** Raw describe_user_pool UserPool. EstimatedNumberOfUsers may be missing on emulators. */
+export interface CognitoUserPoolDetail {
+  Id: string
+  Name: string
+  Status?: string
+  CreationDate?: string
+  LastModifiedDate?: string
+  EstimatedNumberOfUsers?: number
+  MfaConfiguration?: string
+  Policies?: { PasswordPolicy?: CognitoPasswordPolicy }
+  SchemaAttributes?: CognitoSchemaAttribute[]
+  LambdaConfig?: Record<string, string | Record<string, string>>
+}
+
+export interface CognitoUser {
+  username: string
+  status?: string | null
+  enabled?: boolean | null
+  created?: string | null
+  modified?: string | null
+  attributes: Record<string, string>
+}
+
+export interface CognitoUserDetail extends CognitoUser {
+  /** Null when the groups could not be listed. */
+  groups: string[] | null
+}
+
+export interface CognitoGroup {
+  name: string
+  description?: string | null
+  precedence?: number | null
+  roleArn?: string | null
+}
+
+export interface CognitoGroupMember {
+  username: string
+  status?: string | null
+  enabled?: boolean | null
+  email?: string | null
+}
+
+export interface CognitoGroupDetail extends CognitoGroup {
+  created?: string | null
+  modified?: string | null
+  members: CognitoGroupMember[]
+}
+
+export interface CognitoUserPoolClient {
+  clientId: string
+  clientName?: string | null
+  explicitAuthFlows: string[]
+  allowedOAuthFlows: string[]
+  callbackURLs: string[]
+  tokenValidity: {
+    accessToken?: number | null
+    idToken?: number | null
+    refreshToken?: number | null
+    units?: { AccessToken?: string; IdToken?: string; RefreshToken?: string } | null
+  }
+}
+
+export interface CognitoIdentityPool {
+  id: string
+  name: string
+}
+
+export interface CognitoIdentityProvider {
+  ProviderName?: string
+  ClientId?: string
+  ServerSideTokenCheck?: boolean
+}
+
+export interface CognitoMappingRule {
+  Claim?: string
+  MatchType?: string
+  Value?: string
+  RoleARN?: string
+}
+
+export interface CognitoRoleMapping {
+  Type?: string
+  AmbiguousRoleResolution?: string
+  RulesConfiguration?: { Rules?: CognitoMappingRule[] }
+}
+
+/** Raw describe_identity_pool response minus ResponseMetadata, plus get_identity_pool_roles output. */
+export interface CognitoIdentityPoolDetail {
+  IdentityPoolId: string
+  IdentityPoolName: string
+  AllowUnauthenticatedIdentities?: boolean
+  AllowClassicFlow?: boolean
+  CognitoIdentityProviders?: CognitoIdentityProvider[]
+  SupportedLoginProviders?: Record<string, string>
+  DeveloperProviderName?: string
+  OpenIdConnectProviderARNs?: string[]
+  SamlProviderARNs?: string[]
+  /** Null when get_identity_pool_roles fails (some emulators lack it). */
+  roles: ({ authenticated?: string; unauthenticated?: string } & Record<string, string>) | null
+  /** Raw RoleMappings keyed by provider. Empty when none, null when get_identity_pool_roles fails. */
+  roleMappings: Record<string, CognitoRoleMapping> | null
+}
