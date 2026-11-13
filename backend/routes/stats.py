@@ -136,6 +136,9 @@ _METHOD_KWARGS: dict[tuple[str, str], dict] = {
     ("cognito-idp", "list_user_pools"): {"MaxResults": 60},
     ("cognito-identity", "list_identity_pools"): {"MaxResults": 60},
     ("wafv2", "list_web_acls"): {"Scope": "REGIONAL"},
+    # The account's own policies, which is what the IAM view lists: without a
+    # scope, every AWS managed policy is counted too.
+    ("iam", "list_policies"): {"Scope": "Local"},
 }
 
 

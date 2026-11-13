@@ -100,6 +100,22 @@ class TestPolicyDocuments:
         assert data["tags"] == {"owner": "data"}
 
 
+class TestPolicyCount:
+    def test_the_dashboard_counts_the_policies_the_view_lists(self, monkeypatch):
+        # moto then lists AWS managed policies as well, as AWS and emulators do.
+        monkeypatch.setenv("MOTO_IAM_LOAD_MANAGED_POLICIES", "true")
+        monkeypatch.setattr("backend.routes.stats.STACKPORT_SERVICES", "iam")
+        with moto_account():
+            managed_policy(aws("iam"), "read-reports", READ_REPORTS)
+            view = client.get("/api/iam/policies").json()["policies"]
+            counted = client.get("/api/stats").json()["services"]["iam"]["resources"]["policies"]
+            listed = client.get("/api/resources/iam").json()["resources"]["policies"]
+
+        assert [p["PolicyName"] for p in view] == ["read-reports"]
+        assert counted == 1
+        assert [p["PolicyName"] for p in listed] == ["read-reports"]
+
+
 class TestListUsers:
     @patch("backend.routes.iam.get_client")
     def test_list_users_empty(self, mock_get_client):
