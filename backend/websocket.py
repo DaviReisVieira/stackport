@@ -10,7 +10,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.aws_client import get_client
 from backend.config import endpoint_store
-from backend.connection import InvalidEndpointUrl, check_endpoint_url
+from backend.connection import InvalidEndpointUrl, check_endpoint_url, is_direct_endpoint_url
 from backend.routes.common import endpoint_info_for, endpoint_info_for_url
 from backend.routes.logs import _epoch_millis_to_iso
 from backend.routes.stats import collect_stats
@@ -87,8 +87,8 @@ async def probe_loop():
 
 def _resolve_endpoint(name_or_url: str | None) -> str | None:
     """Resolve a subscription target. Raises InvalidEndpointUrl for a direct URL StackPort refuses."""
-    if name_or_url is not None and name_or_url.startswith(("http://", "https://")):
-        check_endpoint_url(name_or_url)
+    if is_direct_endpoint_url(name_or_url):
+        return check_endpoint_url(name_or_url)
     return endpoint_store.resolve(name_or_url)
 
 

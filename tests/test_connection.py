@@ -265,3 +265,20 @@ class TestCacheScope:
         ep = EndpointInfo(url="http://x:4566", region=None, auth_type="credentials",
                           auth_access_key_id="AKID", auth_secret_access_key="TOPSECRET")
         assert "TOPSECRET" not in ep.cache_scope()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("http://localhost:4566", True),
+        ("https://localhost:4566", True),
+        ("HTTP://localhost:4566", True),
+        ("HtTpS://localhost:4566", True),
+        ("local", False),
+        ("ftp://localhost", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_is_direct_endpoint_url(value, expected):
+    assert connection.is_direct_endpoint_url(value) is expected
