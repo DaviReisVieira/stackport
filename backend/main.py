@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.convertors import PathConvertor, register_url_convertor
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from botocore.exceptions import (
@@ -175,14 +176,27 @@ async def ws_logs_tail(websocket: WebSocket):
     await logs_tail_endpoint(websocket)
 
 
-# Serve UI static files — mount assets under /assets, SPA fallback for everything else
+class AppPagePath(PathConvertor):
+    """A path the SPA fallback answers: anything except /api, /ws and paths under them.
+
+    Those never reach the fallback, so an unknown API path gets the same JSON
+    404 (or 405 for a known path and another method) as when the UI isn't
+    built, rather than the app page with a 200.
+    """
+
+    regex = r"(?!(?:api|ws)(?:/|$)).*"
+
+
+register_url_convertor("app_page", AppPagePath())
+
+# Serve UI static files — mount assets under /assets, SPA fallback for every other page
 ui_dist = os.path.join(os.path.dirname(__file__), "..", "ui", "dist")
 if os.path.isdir(ui_dist):
     app.mount("/assets", StaticFiles(directory=os.path.join(ui_dist, "assets")), name="assets")
 
     ui_root = os.path.realpath(ui_dist)
 
-    @app.get("/{path:path}")
+    @app.get("/{path:app_page}")
     def spa_fallback(path: str):
         # Serve a file from ui/dist when the path names one inside it. The path
         # comes from the URL, where %2F decodes to "/", so resolve it and check
