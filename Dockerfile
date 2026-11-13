@@ -1,4 +1,7 @@
-FROM node:20-alpine AS ui-build
+# The UI is static files, the same on every architecture: build it once on the
+# machine running the build. Building it per platform runs npm under QEMU for
+# arm64, which is slow and can hang.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS ui-build
 WORKDIR /app/ui
 COPY ui/package*.json ./
 RUN npm ci
