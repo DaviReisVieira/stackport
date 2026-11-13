@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 vi.mock('@/hooks/useEndpoint', () => ({
@@ -71,7 +71,7 @@ const objectsRoot = {
       key: 'readme.md',
       name: 'readme.md',
       size: 512,
-      content_type: 'text/markdown',
+      content_type: null,
       etag: 'etag-1',
       last_modified: '2026-03-01T10:00:00Z',
     },
@@ -186,8 +186,15 @@ describe('CloudscapeS3Browser (via registry dispatch)', () => {
     renderS3('/resources/s3?bucket=app-assets')
     expect(await screen.findByText('images/')).toBeInTheDocument()
     expect(await screen.findByText('readme.md')).toBeInTheDocument()
-    expect(await screen.findByText('text/markdown')).toBeInTheDocument()
     expect(await screen.findByText('(1 folders, 1 files)')).toBeInTheDocument()
+  })
+
+  it('shows the extension as the Type, since a listing has no content type', async () => {
+    renderS3('/resources/s3?bucket=app-assets')
+    const fileRow = (await screen.findByRole('link', { name: 'readme.md' })).closest('tr') as HTMLElement
+    const folderRow = screen.getByRole('link', { name: 'images/' }).closest('tr') as HTMLElement
+    expect(within(fileRow).getByText('md')).toBeInTheDocument()
+    expect(within(folderRow).getByText('Folder')).toBeInTheDocument()
   })
 
   it('navigates into a folder updating the prefix query', async () => {

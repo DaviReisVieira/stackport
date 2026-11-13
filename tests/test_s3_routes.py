@@ -278,6 +278,19 @@ class TestS3RoundTrip:
         assert gone.status_code == 404
 
 
+class TestListObjectsContentType:
+    def test_listing_leaves_the_type_to_the_detail(self, s3):
+        """ListObjectsV2 has no content type, and the key's extension can't be trusted for one."""
+        s3.put_object(Bucket=BUCKET, Key="summary.csv", Body=b"a,b\n1,2\n", ContentType="text/csv")
+        s3.put_object(Bucket=BUCKET, Key="report.json", Body=b"{}", ContentType="binary/octet-stream")
+
+        listed = client.get(f"/api/s3/buckets/{BUCKET}/objects").json()["files"]
+
+        assert {f["key"]: f["content_type"] for f in listed} == {"report.json": None, "summary.csv": None}
+        assert client.get(f"/api/s3/buckets/{BUCKET}/objects/summary.csv").json()["content_type"] == "text/csv"
+        assert client.get(f"/api/s3/buckets/{BUCKET}/objects/report.json").json()["content_type"] == "binary/octet-stream"
+
+
 class TestDownloadObject:
     @pytest.mark.parametrize(
         ("key", "disposition"),
