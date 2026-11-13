@@ -145,6 +145,15 @@ class InvalidEndpointUrl(ValueError):
     """An endpoint URL StackPort refuses to use."""
 
 
+def is_direct_endpoint_url(value: str | None) -> bool:
+    """True when an endpoint reference is a URL rather than a saved endpoint's name.
+
+    The scheme is case-insensitive (``HTTP://host`` is a URL); whether the URL
+    is acceptable is ``check_endpoint_url``'s call.
+    """
+    return value is not None and value.lower().startswith(("http://", "https://"))
+
+
 def check_endpoint_url(url: str) -> str:
     """Return ``url`` if it is a plain http(s) URL every parser reads the same way.
 

@@ -3,13 +3,20 @@
 from fastapi import HTTPException, Query
 
 from backend.config import endpoint_store
-from backend.connection import EndpointInfo, InvalidEndpointUrl, check_endpoint_url
+from backend.connection import EndpointInfo, InvalidEndpointUrl, check_endpoint_url, is_direct_endpoint_url
 
-__all__ = ["EndpointInfo", "endpoint_info_for", "endpoint_info_for_url", "get_endpoint_info", "get_endpoint_url"]
+__all__ = [
+    "EndpointInfo",
+    "UnknownEndpoint",
+    "endpoint_info_for",
+    "endpoint_info_for_url",
+    "get_endpoint_info",
+    "get_endpoint_url",
+]
 
 
-def _is_direct_url(endpoint: str | None) -> bool:
-    return endpoint is not None and endpoint.startswith(("http://", "https://"))
+class UnknownEndpoint(LookupError):
+    """A name that matches no saved endpoint."""
 
 
 def get_endpoint_url(endpoint: str | None = Query(None, description="Endpoint name or URL")) -> str | None:
@@ -21,22 +28,29 @@ def get_endpoint_url(endpoint: str | None = Query(None, description="Endpoint na
     Returns:
         Endpoint URL to use for AWS API calls, or None for real AWS.
     """
-    if _is_direct_url(endpoint):
+    if is_direct_endpoint_url(endpoint):
         try:
-            check_endpoint_url(endpoint)
+            return check_endpoint_url(endpoint)
         except InvalidEndpointUrl as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     return endpoint_store.resolve(endpoint)
 
 
-def endpoint_info_for(endpoint: str | None) -> EndpointInfo:
+def endpoint_info_for(endpoint: str | None, strict: bool = False) -> EndpointInfo:
     """Resolve an endpoint name, a direct URL, or None (the default) to connection info.
+
+    An unknown name falls back to the default endpoint, which suits HTTP routes;
+    ``strict`` raises instead, for callers where a typo shouldn't pick another endpoint.
 
     Raises:
         InvalidEndpointUrl: a direct URL StackPort refuses to use.
+        UnknownEndpoint: ``strict`` and the name matches no saved endpoint.
     """
-    if _is_direct_url(endpoint):
-        check_endpoint_url(endpoint)
+    if is_direct_endpoint_url(endpoint):
+        return EndpointInfo(url=check_endpoint_url(endpoint), region=None)
+    if strict and endpoint is not None and endpoint_store.get(endpoint) is None:
+        known = ", ".join(sorted(endpoint_store.list_all())) or "none"
+        raise UnknownEndpoint(f"'{endpoint}' is not a saved endpoint name or an http(s) URL. Saved endpoints: {known}.")
     entry = endpoint_store.resolve_full(endpoint)
     if entry:
         return EndpointInfo.from_entry(entry)
