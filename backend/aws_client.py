@@ -26,10 +26,18 @@ _UNSET = object()
 #   dozens of services. Locally nothing is throttled, a refused connection or a
 #   rejected certificate won't fix itself on retry, and the UI polls again in
 #   seconds, so fail fast instead. STACKPORT_PROBE_TIMEOUT bounds the connect.
+# - Flexible checksums (CRC32 on uploads, checked on downloads) only where an API
+#   requires them, as before botocore 1.36. Emulators keep them unevenly: moto
+#   returns a multipart object's checksum of part checksums as if it covered the
+#   whole object, so a download of it failed its check. Without asking for them,
+#   StackPort's multipart uploads don't leave such objects behind for other
+#   clients either.
 _LOCAL_ENDPOINT_CONFIG = Config(
     inject_host_prefix=False,
     connect_timeout=STACKPORT_PROBE_TIMEOUT,
     retries={"mode": "standard", "total_max_attempts": 1},
+    request_checksum_calculation="when_required",
+    response_checksum_validation="when_required",
 )
 
 # Last stat stamp seen per AWS Emulator files directory, to notice restarts.
