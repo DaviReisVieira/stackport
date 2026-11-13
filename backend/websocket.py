@@ -9,9 +9,8 @@ import time
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.aws_client import get_client
-from backend.config import endpoint_store
-from backend.connection import InvalidEndpointUrl, check_endpoint_url, is_direct_endpoint_url
-from backend.routes.common import endpoint_info_for, endpoint_info_for_url
+from backend.connection import EndpointInfo, InvalidEndpointUrl
+from backend.routes.common import endpoint_info_for
 from backend.routes.logs import _epoch_millis_to_iso
 from backend.routes.stats import collect_stats
 
@@ -21,75 +20,85 @@ TAIL_POLL_SECONDS = 1.0
 
 
 class ConnectionManager:
-    """Manages active WebSocket connections with per-endpoint subscriptions."""
+    """Manages active WebSocket connections and the endpoint each one follows.
+
+    A subscription is the endpoint the client named (a saved endpoint's name, a
+    direct URL, or None for the default), not a URL: two saved endpoints can
+    share a URL with different auth or TLS settings. The probe loop resolves it
+    again every cycle, so an edited endpoint is followed under its new settings.
+    """
 
     def __init__(self):
         self.active_connections: dict[WebSocket, str | None] = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections[websocket] = endpoint_store.get_default_url()
+        self.active_connections[websocket] = None
         logger.debug("WebSocket client connected (%d total)", len(self.active_connections))
 
     def disconnect(self, websocket: WebSocket):
         self.active_connections.pop(websocket, None)
         logger.debug("WebSocket client disconnected (%d remaining)", len(self.active_connections))
 
-    def set_endpoint(self, websocket: WebSocket, endpoint_url: str | None):
+    def set_endpoint(self, websocket: WebSocket, endpoint: str | None):
         if websocket in self.active_connections:
-            self.active_connections[websocket] = endpoint_url
+            self.active_connections[websocket] = endpoint
 
-    def get_active_endpoints(self) -> set[str | None]:
-        return set(self.active_connections.values())
+    def subscribers_by_scope(self) -> dict[str, tuple[EndpointInfo, list[WebSocket]]]:
+        """Group connections by the endpoint settings they resolve to right now.
 
-    async def broadcast_to_endpoint(self, endpoint_url: str | None, message: dict):
+        Connections whose endpoint no longer resolves (a direct URL StackPort
+        refuses) are left out.
+        """
+        groups: dict[str, tuple[EndpointInfo, list[WebSocket]]] = {}
+        for ws, endpoint in list(self.active_connections.items()):
+            try:
+                ep = endpoint_info_for(endpoint)
+            except InvalidEndpointUrl:
+                continue
+            groups.setdefault(ep.cache_scope(), (ep, []))[1].append(ws)
+        return groups
+
+    async def send_to(self, websockets: list[WebSocket], message: dict):
         data = json.dumps(message)
-        for ws, ep in list(self.active_connections.items()):
-            if ep == endpoint_url:
-                try:
-                    await ws.send_text(data)
-                except Exception:
-                    logger.debug("Failed to send to client, removing", exc_info=True)
-                    self.active_connections.pop(ws, None)
-
-    async def broadcast_to_all(self, message: dict):
-        """Broadcast a message to all connected clients."""
-        data = json.dumps(message)
-        for ws in list(self.active_connections.keys()):
+        for ws in websockets:
             try:
                 await ws.send_text(data)
             except Exception:
                 logger.debug("Failed to send to client, removing", exc_info=True)
                 self.active_connections.pop(ws, None)
 
+    async def broadcast_to_all(self, message: dict):
+        """Broadcast a message to all connected clients."""
+        await self.send_to(list(self.active_connections), message)
+
 
 manager = ConnectionManager()
-_last_stats_by_endpoint: dict[str | None, dict] = {}
+# Latest stats per EndpointInfo.cache_scope(), so saved endpoints that share a URL stay apart.
+_last_stats_by_scope: dict[str, dict] = {}
+
+
+async def probe_once():
+    """Probe each endpoint someone is watching once, and send the stats to its watchers."""
+    groups = manager.subscribers_by_scope()
+    for scope, (ep, websockets) in groups.items():
+        try:
+            stats = await asyncio.get_running_loop().run_in_executor(None, collect_stats, ep)
+            _last_stats_by_scope[scope] = stats
+            await manager.send_to(websockets, {"type": "stats", "data": stats})
+        except Exception:
+            logger.warning("Error in probe loop for endpoint %s", ep.url, exc_info=True)
+
+    # Nobody is watching these any more (disconnected, switched, or the endpoint was edited)
+    for scope in set(_last_stats_by_scope) - set(groups):
+        del _last_stats_by_scope[scope]
 
 
 async def probe_loop():
-    """Background task: probe services for each active endpoint and broadcast."""
+    """Background task: probe the watched endpoints every couple of seconds."""
     while True:
         await asyncio.sleep(2)
-
-        if not manager.active_connections:
-            continue
-
-        for endpoint_url in manager.get_active_endpoints():
-            try:
-                ep = endpoint_info_for_url(endpoint_url)
-                stats = await asyncio.get_running_loop().run_in_executor(None, collect_stats, ep)
-                _last_stats_by_endpoint[endpoint_url] = stats
-                await manager.broadcast_to_endpoint(endpoint_url, {"type": "stats", "data": stats})
-            except Exception:
-                logger.warning("Error in probe loop for endpoint %s", endpoint_url, exc_info=True)
-
-
-def _resolve_endpoint(name_or_url: str | None) -> str | None:
-    """Resolve a subscription target. Raises InvalidEndpointUrl for a direct URL StackPort refuses."""
-    if is_direct_endpoint_url(name_or_url):
-        return check_endpoint_url(name_or_url)
-    return endpoint_store.resolve(name_or_url)
+        await probe_once()
 
 
 async def websocket_endpoint(websocket: WebSocket):
@@ -102,12 +111,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 msg = json.loads(data)
                 msg_type = msg.get("type")
                 if msg_type == "subscribe":
-                    current_ep = _resolve_endpoint(msg.get("endpoint"))
-                    manager.set_endpoint(websocket, current_ep)
-                    cached = _last_stats_by_endpoint.get(current_ep)
+                    endpoint = msg.get("endpoint")
+                    ep = endpoint_info_for(endpoint)
+                    manager.set_endpoint(websocket, endpoint)
+                    cached = _last_stats_by_scope.get(ep.cache_scope())
                     if cached:
                         await websocket.send_text(json.dumps({"type": "stats", "data": cached}))
-                    logger.debug("Client subscribed to endpoint: %s", current_ep)
+                    logger.debug("Client subscribed to endpoint: %s", ep.url)
                 elif msg_type == "unsubscribe":
                     logger.debug("Client unsubscribed from: %s", msg.get("services"))
             except json.JSONDecodeError:
@@ -249,5 +259,10 @@ async def broadcast_endpoints_changed():
 
 
 def remove_endpoint_from_stats(endpoint_url: str | None):
-    """Remove an endpoint from the stats cache when it's deleted."""
-    _last_stats_by_endpoint.pop(endpoint_url, None)
+    """Drop the stats kept for every endpoint at this URL, when one is edited or deleted.
+
+    Scopes start with the URL (see ``EndpointInfo.cache_scope``). A saved
+    endpoint that shares the URL is probed again on the next cycle.
+    """
+    for scope in [scope for scope in _last_stats_by_scope if scope.startswith(f"{endpoint_url}:")]:
+        del _last_stats_by_scope[scope]

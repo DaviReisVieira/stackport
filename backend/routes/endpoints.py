@@ -190,8 +190,9 @@ async def update_endpoint(name: str, body: UpdateEndpointBody):
         if old_url:
             cache.delete_by_prefix(f"{old_url}:")
 
-        # Broadcast change to connected clients
-        from backend.websocket import broadcast_endpoints_changed
+        # Broadcast change to connected clients; live stats kept under the old settings go too
+        from backend.websocket import broadcast_endpoints_changed, remove_endpoint_from_stats
+        remove_endpoint_from_stats(old_url)
         asyncio.create_task(broadcast_endpoints_changed())
 
         return {"name": name, **_public_entry(entry)}
