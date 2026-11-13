@@ -4,14 +4,54 @@ import os
 
 os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import boto3
+import pytest
+from botocore.stub import Stubber
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.routes import dynamodb as dynamodb_routes
 
 client = TestClient(app)
+
+
+@pytest.fixture
+def stubber(monkeypatch) -> Iterator[Stubber]:
+    """A real boto3 client behind the routes, stubbed at the wire: botocore checks
+    every request the routes build against the DynamoDB API model, and raises
+    stubbed errors as the ClientError it would raise for a real response."""
+    ddb = boto3.client(
+        "dynamodb",
+        region_name="us-east-1",
+        endpoint_url="http://127.0.0.1:9",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+    monkeypatch.setattr(dynamodb_routes, "get_client", lambda _service, **_kwargs: ddb)
+    with Stubber(ddb) as stub:
+        yield stub
+        stub.assert_no_pending_responses()
+
+
+def describes(stub: Stubber, table: str, pk: tuple[str, str], sk: tuple[str, str] | None = None) -> None:
+    """Queue a DescribeTable answer for a table with these (name, type) keys."""
+    keys = [(pk, "HASH")] + ([(sk, "RANGE")] if sk else [])
+    stub.add_response(
+        "describe_table",
+        {
+            "Table": {
+                "TableName": table,
+                "TableStatus": "ACTIVE",
+                "KeySchema": [{"AttributeName": name, "KeyType": kind} for (name, _), kind in keys],
+                "AttributeDefinitions": [{"AttributeName": name, "AttributeType": t} for (name, t), _ in keys],
+            }
+        },
+        {"TableName": table},
+    )
 
 
 class TestListTables:
@@ -574,3 +614,113 @@ class TestBinaryAttributes:
         scanned = client.get("/api/dynamodb/tables/t1/items").json()["items"][0]
         client.put("/api/dynamodb/tables/t1/items", json={"item": scanned, "item_format": "dynamodb"})
         assert mock_ddb.put_item.call_args[1]["Item"] == original
+
+
+def send_json(path: str, body: str, method: str = "POST"):
+    """Send ``body`` as written, so numbers reach the route with every digit a client typed."""
+    return client.request(method, path, content=body, headers={"Content-Type": "application/json"})
+
+
+class TestPlainJsonNumbers:
+    """Plain JSON numbers reach DynamoDB exactly as written (#197)."""
+
+    def test_put_keeps_decimals_big_ints_and_nested_numbers(self, stubber):
+        describes(stubber, "Orders", ("pk", "S"))
+        stubber.add_response(
+            "put_item",
+            {},
+            {
+                "TableName": "Orders",
+                "Item": {
+                    "pk": {"S": "o1"},
+                    "score": {"N": "9.75"},
+                    "precise": {"N": "0.12345678901234567890123"},
+                    "big": {"N": "12345678901234567890"},
+                    "negative": {"N": "-0.5"},
+                    "exponent": {"N": "1.5E+3"},
+                    "count": {"N": "3"},
+                    "nested": {
+                        "M": {
+                            "rate": {"N": "0.1"},
+                            "history": {"L": [{"N": "1.25"}, {"N": "2"}, {"M": {"x": {"N": "3.5"}}}]},
+                        }
+                    },
+                },
+            },
+        )
+
+        resp = send_json(
+            "/api/dynamodb/tables/Orders/items",
+            '{"item_format": "plain", "item": {"pk": "o1", "score": 9.75, "precise": 0.12345678901234567890123,'
+            ' "big": 12345678901234567890, "negative": -0.5, "exponent": 1.5e3, "count": 3,'
+            ' "nested": {"rate": 0.1, "history": [1.25, 2, {"x": 3.5}]}}}',
+        )
+
+        assert resp.status_code == 200, resp.text
+
+    def test_edit_saves_a_decimal(self, stubber):
+        describes(stubber, "Orders", ("pk", "S"))
+        stubber.add_response("put_item", {}, {"TableName": "Orders", "Item": {"pk": {"S": "o1"}, "price": {"N": "9.99"}}})
+
+        resp = send_json("/api/dynamodb/tables/Orders/items", '{"item_format": "plain", "item": {"pk": "o1", "price": 9.99}}', "PUT")
+
+        assert resp.status_code == 200, resp.text
+
+    def test_delete_by_a_decimal_number_key(self, stubber):
+        describes(stubber, "Readings", ("sensor", "S"), ("at", "N"))
+        stubber.add_response("delete_item", {}, {"TableName": "Readings", "Key": {"sensor": {"S": "s1"}, "at": {"N": "1.5"}}})
+
+        resp = send_json(
+            "/api/dynamodb/tables/Readings/items", '{"item_format": "plain", "key": {"sensor": "s1", "at": 1.5}}', "DELETE"
+        )
+
+        assert resp.status_code == 200, resp.text
+
+    def test_batch_puts_and_deletes_with_decimals(self, stubber):
+        describes(stubber, "Readings", ("sensor", "S"), ("at", "N"))
+        stubber.add_response(
+            "batch_write_item",
+            {"UnprocessedItems": {}},
+            {
+                "RequestItems": {
+                    "Readings": [
+                        {"PutRequest": {"Item": {"sensor": {"S": "s1"}, "at": {"N": "2.5"}, "temp": {"N": "21.75"}}}},
+                        {"DeleteRequest": {"Key": {"sensor": {"S": "s1"}, "at": {"N": "1.5"}}}},
+                    ]
+                }
+            },
+        )
+
+        resp = send_json(
+            "/api/dynamodb/tables/Readings/items/batch",
+            '{"item_format": "plain", "operations": ['
+            '{"op": "put", "item": {"sensor": "s1", "at": 2.5, "temp": 21.75}},'
+            ' {"op": "delete", "key": {"sensor": "s1", "at": 1.5}}]}',
+        )
+
+        assert resp.status_code == 200, resp.text
+
+    @pytest.mark.parametrize(
+        "number",
+        [
+            "1e-300",  # smaller than the smallest magnitude DynamoDB stores
+            "1e300",  # larger than the largest
+            "1234567890123456789012345678901234567890",  # 40 significant digits, DynamoDB keeps 38
+        ],
+    )
+    def test_a_number_dynamodb_cannot_store_is_a_400_naming_the_attribute(self, stubber, number):
+        describes(stubber, "Orders", ("pk", "S"))
+
+        resp = send_json("/api/dynamodb/tables/Orders/items", f'{{"item_format": "plain", "item": {{"pk": "o1", "reading": {number}}}}}')
+
+        assert resp.status_code == 400
+        assert "'reading'" in resp.json()["detail"]
+        assert "38 significant digits" in resp.json()["detail"]
+
+    def test_nan_is_a_400(self, stubber):
+        describes(stubber, "Orders", ("pk", "S"))
+
+        resp = send_json("/api/dynamodb/tables/Orders/items", '{"item_format": "plain", "item": {"pk": "o1", "reading": NaN}}')
+
+        assert resp.status_code == 400
+        assert "NaN" in resp.json()["detail"]
