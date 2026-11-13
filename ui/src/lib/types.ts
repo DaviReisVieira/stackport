@@ -1,3 +1,52 @@
+/** What went wrong talking to an endpoint, in terms of what fixes it (backend/aws_errors.py). */
+export type ErrorKind = 'not_implemented' | 'credentials' | 'forbidden' | 'tls' | 'unreachable' | 'other'
+
+/** A failure the backend classified. `message` is a sentence; `cause` is the original error text. */
+export interface ClassifiedError {
+  kind: ErrorKind
+  message: string
+  hint?: string
+  code?: string
+  operation?: string
+  cause?: string
+}
+
+/** Where StackPort's credentials for an endpoint come from (backend/connection.py). */
+export type CredentialsSource =
+  | 'endpoint-profile'
+  | 'endpoint-keys'
+  | 'aws-emulator'
+  | 'environment'
+  | 'placeholder'
+  | 'default-chain'
+
+/** Which certificates StackPort trusts for an endpoint (backend/connection.py). */
+export type TlsTrustSource = 'endpoint' | 'disabled' | 'aws-emulator' | 'environment' | 'system'
+
+/** How StackPort connects to an endpoint. Never contains key material. */
+export interface ConnectionDescription {
+  credentials_source: CredentialsSource
+  tls_trust_source: TlsTrustSource
+  /** CA bundle in use, with `~` for the home directory, or null for the system store. */
+  ca_bundle: string | null
+  /** AWS Emulator's files folder for this endpoint, when StackPort found one. */
+  aws_emulator_dir: string | null
+  /**
+   * Where StackPort looks for AWS Emulator's files for this endpoint, found or not
+   * (null when the URL can't be an AWS Emulator, or the lookup is turned off).
+   */
+  aws_emulator_lookup_dir?: string | null
+}
+
+/** The emulator StackPort recognised behind an endpoint. */
+export interface EmulatorInfo {
+  id: string
+  name: string
+  version?: string | null
+  /** False when the emulator was only identified with certificate checks off. */
+  tls_trusted?: boolean
+}
+
 export interface HealthResponse {
   status: string
   version: string
@@ -8,6 +57,8 @@ export interface HealthResponse {
   connection_type: 'local' | 'aws'
   writes_enabled: boolean
   learn_enabled?: boolean
+  connection?: ConnectionDescription | null
+  emulator?: EmulatorInfo | null
 }
 
 export type AuthType = 'default' | 'profile' | 'credentials'
@@ -21,21 +72,67 @@ export interface Endpoint {
   region: string
   source: 'env' | 'user'
   auth_type: AuthType
+  tls_verify: boolean
+  ca_bundle: string | null
 }
 
 export interface EndpointsResponse {
   endpoints: Endpoint[]
 }
 
+/** Auth and TLS settings sent when adding, updating, or testing an endpoint. */
+export interface EndpointConnectionSettings {
+  auth_type?: AuthType
+  auth_profile?: string | null
+  auth_access_key_id?: string | null
+  auth_secret_access_key?: string | null
+  /** False turns certificate verification off. Omit to keep the current value. */
+  tls_verify?: boolean
+  /** PEM CA bundle path on the machine that runs StackPort; null clears it. */
+  ca_bundle?: string | null
+}
+
+/** Result of testing an endpoint, saved or not. */
+export interface ConnectionCheck {
+  url: string | null
+  health: 'healthy' | 'unhealthy'
+  /** A sentence describing the failure, or null when healthy. */
+  error: string | null
+  error_detail: ClassifiedError | null
+  /** Null only when StackPort couldn't work out how to connect at all. */
+  connection: ConnectionDescription | null
+  emulator?: EmulatorInfo | null
+}
+
+export interface SavedEndpoint {
+  name: string
+  url: string | null
+  source: string
+  region: string
+  auth_type: string
+  tls_verify: boolean
+  ca_bundle: string | null
+}
+
 export interface ServiceStats {
-  status: 'available' | 'unavailable'
+  /**
+   * `unsupported`: every list call returned NotImplemented (the endpoint lacks the service).
+   * `unavailable`: every list call failed for another reason, described in `error`.
+   */
+  status: 'available' | 'unavailable' | 'unsupported'
   resources: Record<string, number>
+  /** Why the service is unsupported or unavailable. */
+  error?: ClassifiedError
+  /** Resource types that failed while others worked (they count 0). */
+  errors?: Record<string, ClassifiedError>
 }
 
 export interface StatsResponse {
   services: Record<string, ServiceStats>
   total_resources: number
   uptime_seconds: number
+  /** An endpoint-wide failure (credentials, TLS, unreachable) when no service answered. */
+  problem?: ClassifiedError | null
 }
 
 export interface ResourceItem {

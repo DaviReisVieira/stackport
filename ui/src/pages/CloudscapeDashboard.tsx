@@ -15,8 +15,9 @@ import StatusIndicator from '@cloudscape-design/components/status-indicator'
 import Table from '@cloudscape-design/components/table'
 import TextFilter from '@cloudscape-design/components/text-filter'
 import { CloudscapeShell } from '@/components/cloudscape/CloudscapeShell'
+import { EndpointProblemAlert, ServiceStatusIndicator } from '@/components/cloudscape/ServiceStatus'
 import { fetchStats } from '@/lib/api'
-import type { StatsResponse } from '@/lib/types'
+import type { ServiceStats, StatsResponse } from '@/lib/types'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFavorites } from '@/hooks/useFavorites'
 import { useHealth } from '@/hooks/useHealth'
@@ -31,10 +32,8 @@ function getInitialViewMode(): ViewMode {
   return localStorage.getItem('stackport:view-mode') === 'list' ? 'list' : 'grid'
 }
 
-interface ServiceItem {
+interface ServiceItem extends ServiceStats {
   name: string
-  status: 'available' | 'unavailable'
-  resources: Record<string, number>
   total: number
   favorite: boolean
 }
@@ -101,20 +100,43 @@ export default function CloudscapeDashboard() {
     if (!stats) return []
     return Object.entries(stats.services)
       .map(([name, svc]) => ({
+        ...svc,
         name,
-        status: svc.status,
-        resources: svc.resources,
         total: Object.values(svc.resources).reduce((a, b) => a + b, 0),
         favorite: isFavorite(name),
       }))
       .filter((svc) => svc.name.toLowerCase().includes(filterText.toLowerCase()))
       .sort(
         (a, b) =>
-          Number(b.favorite) - Number(a.favorite) || b.total - a.total || a.name.localeCompare(b.name),
+          Number(b.favorite) - Number(a.favorite) ||
+          b.total - a.total ||
+          // Services the endpoint doesn't implement go after the ones it does.
+          Number(a.status === 'unsupported') - Number(b.status === 'unsupported') ||
+          a.name.localeCompare(b.name),
       )
   }, [stats, filterText, isFavorite])
 
-  const availableCount = stats ? Object.values(stats.services).filter((s) => s.status === 'available').length : 0
+  const statusCounts = useMemo(() => {
+    const counts: Record<ServiceStats['status'], number> = { available: 0, unavailable: 0, unsupported: 0 }
+    for (const svc of Object.values(stats?.services ?? {})) {
+      // A status a newer backend added isn't counted as any of these
+      if (Object.hasOwn(counts, svc.status)) counts[svc.status] += 1
+    }
+    return counts
+  }, [stats])
+  // Out of the services the endpoint implements: one it lacks isn't a failure
+  const implementedCount = statusCounts.available + statusCounts.unavailable
+  const problem = stats?.problem
+  const endpointLabel = activeEndpoint ?? health?.endpoint_url ?? null
+  // Only claim a connection the stats confirm
+  const connectionConfirmed = Boolean(stats) && !problem
+  const endpointSummary = endpointLabel
+    ? connectionConfirmed
+      ? `Connected to ${endpointLabel}`
+      : `Endpoint: ${endpointLabel}`
+    : 'Using the default endpoint'
+  // Health follows the active endpoint, so the emulator it names is the one behind it
+  const emulatorName = health?.emulator?.name
   const goToService = useCallback((service: string) => navigate(`/resources/${service}`), [navigate])
 
   const favoriteButton = (item: ServiceItem) => (
@@ -160,13 +182,7 @@ export default function CloudscapeDashboard() {
         header={
           <Header
             variant="h1"
-            description={
-              activeEndpoint
-                ? `Connected to ${activeEndpoint}`
-                : health?.endpoint_url
-                  ? `Connected to ${health.endpoint_url}`
-                  : 'Using the default endpoint'
-            }
+            description={emulatorName ? `${endpointSummary} · ${emulatorName}` : endpointSummary}
             actions={
               <SpaceBetween direction="horizontal" size="xs">
                 <StatusIndicator type={connected ? 'success' : 'in-progress'}>
@@ -186,19 +202,28 @@ export default function CloudscapeDashboard() {
           {!stats && error && (
             <Alert
               type="error"
-              header="Could not reach the endpoint"
-              action={<Button onClick={() => refresh()}>Retry</Button>}
+              header="Could not load service stats"
+              action={
+                <Button onClick={() => refresh()} loading={loading}>
+                  Retry
+                </Button>
+              }
             >
               {error}
             </Alert>
           )}
 
+          {problem && <EndpointProblemAlert problem={problem} retrying={loading} onRetry={() => refresh()} />}
+
           <ColumnLayout columns={3} variant="text-grid">
             <div>
               <Box variant="awsui-key-label">Services available</Box>
               <Box fontSize="display-l" fontWeight="bold">
-                {stats ? `${availableCount}/${Object.keys(stats.services).length}` : '—'}
+                {stats ? (implementedCount > 0 ? `${statusCounts.available}/${implementedCount}` : '0') : '—'}
               </Box>
+              {statusCounts.unsupported > 0 && (
+                <Box color="text-body-secondary">{statusCounts.unsupported} not supported by this endpoint</Box>
+              )}
             </div>
             <div>
               <Box variant="awsui-key-label">Total resources</Box>
@@ -214,7 +239,8 @@ export default function CloudscapeDashboard() {
             </div>
           </ColumnLayout>
 
-          {viewMode === 'grid' ? (
+          {/* With an endpoint-wide problem every service fails the same way: the alert says it once. */}
+          {problem ? null : viewMode === 'grid' ? (
             <Cards
               items={services}
               loading={loading && !stats}
@@ -233,11 +259,7 @@ export default function CloudscapeDashboard() {
                 sections: [
                   {
                     id: 'status',
-                    content: (item) => (
-                      <StatusIndicator type={item.status === 'available' ? 'success' : 'error'}>
-                        {item.status === 'available' ? 'Available' : 'Unavailable'}
-                      </StatusIndicator>
-                    ),
+                    content: (item) => <ServiceStatusIndicator name={item.name} service={item} />,
                   },
                   { id: 'resources', header: 'Resources', content: (item) => renderResourceBadges(item) },
                 ],
@@ -269,11 +291,7 @@ export default function CloudscapeDashboard() {
                 {
                   id: 'status',
                   header: 'Status',
-                  cell: (item) => (
-                    <StatusIndicator type={item.status === 'available' ? 'success' : 'error'}>
-                      {item.status === 'available' ? 'Available' : 'Unavailable'}
-                    </StatusIndicator>
-                  ),
+                  cell: (item) => <ServiceStatusIndicator name={item.name} service={item} />,
                 },
                 { id: 'resources', header: 'Resources', cell: (item) => renderResourceBadges(item) },
                 { id: 'total', header: 'Total', width: 90, cell: (item) => item.total },

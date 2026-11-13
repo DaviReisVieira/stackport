@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useFetch } from './useFetch'
 
 interface UseWebSocketOptions<T> {
@@ -12,14 +12,25 @@ interface UseWebSocketOptions<T> {
   endpoint?: string | null
 }
 
+/** Data from the socket or over HTTP, numbered in the order it arrived. */
+interface Answer<T> {
+  data: T
+  arrival: number
+}
+
 /**
  * WebSocket hook with automatic reconnection and HTTP polling fallback.
  *
  * Connects to ws://host/ws, listens for messages of the given type,
  * and falls back to HTTP polling after 3 failed reconnection attempts.
+ *
+ * `data` is the newest answer, from the socket or over HTTP, so a `refresh()`
+ * replaces an older snapshot the socket pushed. `loading` is whether the first
+ * HTTP fetch or a `refresh()` is still on its way.
  */
 export function useWebSocket<T>({ fallbackFetcher, fallbackInterval = 5000, messageType, endpoint }: UseWebSocketOptions<T>) {
-  const [wsData, setWsData] = useState<T | null>(null)
+  const [wsAnswer, setWsAnswer] = useState<Answer<T> | null>(null)
+  const arrivalsRef = useRef(0)
   const [connected, setConnected] = useState(false)
   const [failed, setFailed] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
@@ -51,7 +62,7 @@ export function useWebSocket<T>({ fallbackFetcher, fallbackInterval = 5000, mess
         try {
           const msg = JSON.parse(event.data)
           if (msg.type === messageType && msg.data) {
-            setWsData(msg.data as T)
+            setWsAnswer({ data: msg.data as T, arrival: ++arrivalsRef.current })
           }
         } catch {
           // Ignore malformed messages
@@ -87,22 +98,26 @@ export function useWebSocket<T>({ fallbackFetcher, fallbackInterval = 5000, mess
       disposed = true
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       wsRef.current?.close()
-      setWsData(null)
+      setWsAnswer(null)
       setFailed(false)
     }
   }, [messageType, endpoint])
 
+  // Numbered on the same count as the socket's messages, so the two can be told apart by age
+  const numberedFetcher = useCallback(
+    () => fallbackFetcher().then((data): Answer<T> => ({ data, arrival: ++arrivalsRef.current })),
+    [fallbackFetcher],
+  )
   // HTTP polling fallback — always fetches once for initial data,
   // then continues polling only when WebSocket has failed
-  const fallback = useFetch<T>(fallbackFetcher, failed ? fallbackInterval : undefined)
+  const fallback = useFetch<Answer<T>>(numberedFetcher, failed ? fallbackInterval : undefined)
 
-  // Prefer WebSocket data when available, otherwise use HTTP data
-  const data = wsData ?? fallback.data
-  const loading = !data && fallback.loading
+  const httpAnswer = fallback.data
+  const newest = wsAnswer && (!httpAnswer || wsAnswer.arrival > httpAnswer.arrival) ? wsAnswer : httpAnswer
 
   return {
-    data,
-    loading,
+    data: newest ? newest.data : null,
+    loading: fallback.loading,
     error: failed ? fallback.error : null,
     connected,
     refresh: fallback.refresh,

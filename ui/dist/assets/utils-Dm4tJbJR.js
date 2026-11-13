@@ -1,0 +1,1 @@
+function s(t){const r=Math.floor(t/3600),o=Math.floor(t%3600/60),n=Math.floor(t%60);return r>0?`${r}h ${o}m`:o>0?`${o}m ${n}s`:`${n}s`}function i(t,r){return Object.hasOwn(t,r)?t[r]:void 0}function f(t){return t!==null&&t.trim().toLowerCase().startsWith("https://")}export{s as f,f as i,i as l};

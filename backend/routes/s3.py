@@ -72,26 +72,25 @@ def s3_upload_config():
     return {"max_upload_bytes": S3_MAX_UPLOAD_BYTES}
 
 
-def _get_bucket_stats(bucket_name: str, endpoint_url: str | None) -> tuple[int, int]:
+def _get_bucket_stats(bucket_name: str, ep: EndpointInfo) -> tuple[int, int]:
     """Return (object_count, total_size_bytes) for a bucket. Cached 30s.
 
     On real AWS this enumerates every object, which can be very slow for large
     buckets.  Only perform the full scan when targeting a local emulator.
     """
-    if not is_local_endpoint(endpoint_url):
+    if not is_local_endpoint(ep.url):
         return (0, 0)
 
-    cache_key = f"{endpoint_url}:s3:bucket_stats:{bucket_name}"
+    cache_key = f"{ep.url}:s3:bucket_stats:{bucket_name}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    s3 = get_client("s3", endpoint_url)
-    paginator = s3.get_paginator("list_objects_v2")
     obj_count = 0
     total_size = 0
 
     try:
+        paginator = get_client("s3", **ep.client_kwargs()).get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=bucket_name):
             for obj in page.get("Contents", []):
                 obj_count += 1
@@ -155,7 +154,7 @@ def list_buckets(ep: EndpointInfo = Depends(get_endpoint_info)):
 
     for b in response.get("Buckets", []):
         name = b["Name"]
-        obj_count, total_size = _get_bucket_stats(name, ep.url)
+        obj_count, total_size = _get_bucket_stats(name, ep)
 
         versioning = "Disabled"
         encryption = "Disabled"

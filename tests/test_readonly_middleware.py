@@ -123,3 +123,61 @@ class TestReadOnlyMiddleware:
             resp = client.put("/api/tags/s3/buckets/test-bucket", json={"tags": {}})
             # Should NOT be blocked by middleware
             assert resp.status_code != 403
+
+
+class TestStreamingThroughTheMiddleware:
+    """A stream that fails halfway must not reach the client looking complete (#Lambda/S3 downloads)."""
+
+    @staticmethod
+    async def _run(app) -> list[dict]:
+        import asyncio
+
+        sent: list[dict] = []
+        request_sent = False
+        never = asyncio.Event()
+
+        async def receive():
+            # The request body once, then block like a client that stays connected.
+            nonlocal request_sent
+            if not request_sent:
+                request_sent = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+            await never.wait()
+
+        async def send(message):
+            sent.append(message)
+
+        scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET",
+                 "scheme": "http", "path": "/stream", "raw_path": b"/stream", "query_string": b"",
+                 "root_path": "", "headers": [], "client": ("127.0.0.1", 1), "server": ("127.0.0.1", 80)}
+        try:
+            await app(scope, receive, send)
+        except RuntimeError:
+            pass  # the server drops the connection; what matters is what was sent before
+        return sent
+
+    def test_failed_stream_is_not_finished(self):
+        import asyncio
+
+        from fastapi import FastAPI
+        from fastapi.responses import StreamingResponse
+
+        from backend.main import ReadOnlyMiddleware
+
+        inner = FastAPI()
+
+        @inner.get("/stream")
+        def stream():
+            def chunks():
+                yield b"first half"
+                raise RuntimeError("upstream went away")
+
+            return StreamingResponse(chunks(), media_type="application/zip")
+
+        with patch("backend.main.STACKPORT_ALLOW_WRITES", False):
+            sent = asyncio.run(self._run(ReadOnlyMiddleware(inner)))
+
+        bodies = [m for m in sent if m["type"] == "http.response.body"]
+        assert bodies and bodies[0]["body"] == b"first half"
+        # A final message with more_body False is what tells the server the body is complete.
+        assert not any(m.get("more_body") is False for m in bodies)

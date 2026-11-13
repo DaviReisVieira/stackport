@@ -56,7 +56,7 @@ class TestStats:
         data = resp.json()
         for svc_name, svc_data in data["services"].items():
             assert "status" in svc_data
-            assert svc_data["status"] in ("available", "unavailable")
+            assert svc_data["status"] in ("available", "unavailable", "unsupported")
             assert "resources" in svc_data
             assert isinstance(svc_data["resources"], dict)
 

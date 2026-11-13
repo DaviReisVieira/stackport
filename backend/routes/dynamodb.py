@@ -132,15 +132,15 @@ def _client_error_message(exc: ClientError) -> str:
 router = APIRouter()
 
 
-def _get_table_item_count(table_name: str, endpoint_url: str | None) -> int:
+def _get_table_item_count(table_name: str, ep: EndpointInfo) -> int:
     """Return item count for a table. Cached 30s."""
-    cache_key = f"{endpoint_url}:dynamodb:item_count:{table_name}"
+    cache_key = f"{ep.url}:dynamodb:item_count:{table_name}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    dynamodb = get_client("dynamodb", endpoint_url)
     try:
+        dynamodb = get_client("dynamodb", **ep.client_kwargs())
         resp = dynamodb.describe_table(TableName=table_name)
         item_count = resp["Table"].get("ItemCount", 0)
         cache.set(cache_key, item_count, ttl=30)

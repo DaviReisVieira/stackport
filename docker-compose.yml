@@ -2,7 +2,8 @@ services:
   stackport:
     build: .
     ports:
-      - "8080:8080"
+      # 127.0.0.1 keeps StackPort on this machine; drop it to open it to your network.
+      - "127.0.0.1:8080:8080"
     environment:
       - AWS_ENDPOINT_URL=http://ministack:4566
       - AWS_REGION=us-east-1

@@ -56,6 +56,9 @@ function mockFetchByUrl(overrides: { s3Error?: string } = {}) {
       }
     } else if (url.includes('/api/dynamodb/tables') && method === 'POST') {
       payload = { name: 'Music', status: 'ACTIVE', partitionKey: 'Artist', sortKey: null, billingMode: 'PAY_PER_REQUEST' }
+    } else if (url.includes('/api/dynamodb/tables/') && url.includes('/items')) {
+      // the new table's item scan, which the table view loads next to its detail
+      payload = { table: 'Music', items: [], count: 0, scanned_count: 0, next_token: null }
     } else if (url.includes('/api/dynamodb/tables/')) {
       // creating navigates into the new table, so its detail must resolve
       payload = {

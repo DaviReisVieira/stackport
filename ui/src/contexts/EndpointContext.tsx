@@ -16,6 +16,7 @@ export function EndpointProvider({ children }: { children: ReactNode }) {
   })
   const [endpoints, setEndpoints] = useState<Endpoint[]>([])
   const [loading, setLoading] = useState(true)
+  const [revision, setRevision] = useState(0)
   const wsRef = useRef<WebSocket | null>(null)
 
   const load = useCallback(() => {
@@ -37,6 +38,12 @@ export function EndpointProvider({ children }: { children: ReactNode }) {
     load()
   }, [load])
 
+  // The endpoints were changed: whatever depends on their settings looks again
+  const refresh = useCallback(() => {
+    setRevision((current) => current + 1)
+    load()
+  }, [load])
+
   // WebSocket connection to listen for endpoints_changed events
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -52,8 +59,7 @@ export function EndpointProvider({ children }: { children: ReactNode }) {
       try {
         const msg = JSON.parse(event.data)
         if (msg.type === 'endpoints_changed') {
-          // Refetch endpoints when they change
-          load()
+          refresh()
         }
       } catch {
         // Ignore malformed messages
@@ -68,7 +74,7 @@ export function EndpointProvider({ children }: { children: ReactNode }) {
     return () => {
       ws.close()
     }
-  }, [load])
+  }, [refresh])
 
   const setActiveEndpoint = useCallback((name: string | null) => {
     setActiveEndpointState(name)
@@ -82,7 +88,7 @@ export function EndpointProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <EndpointContext.Provider value={{ activeEndpoint, endpoints, loading, setActiveEndpoint, refresh: load }}>
+    <EndpointContext.Provider value={{ activeEndpoint, endpoints, loading, revision, setActiveEndpoint, refresh }}>
       {children}
     </EndpointContext.Provider>
   )

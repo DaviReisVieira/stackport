@@ -13,3 +13,17 @@ export function formatUptime(seconds: number): string {
   if (m > 0) return `${m}m ${s}s`
   return `${s}s`
 }
+
+/**
+ * `table[key]` when `key` is one of the table's own keys, else undefined. For
+ * values from the backend, which a newer StackPort may extend past what this UI
+ * has copy for.
+ */
+export function lookup<V>(table: Readonly<Record<string, V>>, key: string): V | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined
+}
+
+/** Whether `url` is an https:// URL, the only kind where certificates come into it for an emulator. */
+export function isHttpsUrl(url: string | null): boolean {
+  return url !== null && url.trim().toLowerCase().startsWith('https://')
+}

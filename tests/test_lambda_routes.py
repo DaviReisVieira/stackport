@@ -110,7 +110,11 @@ class TestDownloadCode:
             "Code": {"Location": "https://example.com/code.zip"},
         }
 
-        resp = client.get("/api/lambda/functions/my-func/code", follow_redirects=False)
+        resp = client.get(
+            "/api/lambda/functions/my-func/code",
+            params={"endpoint": "https://lambda.us-east-1.amazonaws.com"},
+            follow_redirects=False,
+        )
         assert resp.status_code == 307
         assert "example.com/code.zip" in resp.headers["location"]
 

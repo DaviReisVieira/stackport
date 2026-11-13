@@ -176,7 +176,7 @@ def _summarize_item(item, preferred_field: str | None = None) -> dict:
 
 @router.get("/resources/{service}")
 def list_resources(service: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    cache_key = f"{ep.url}:resources:{service}"
+    cache_key = f"{ep.cache_scope()}:resources:{service}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -209,7 +209,7 @@ def list_resources(service: str, ep: EndpointInfo = Depends(get_endpoint_info)):
 
 @router.get("/resources/{service}/{res_type}/{res_id:path}")
 def get_resource_detail(service: str, res_type: str, res_id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    cache_key = f"{ep.url}:detail:{service}:{res_type}:{res_id}"
+    cache_key = f"{ep.cache_scope()}:detail:{service}:{res_type}:{res_id}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached

@@ -14,7 +14,8 @@ services:
   stackport:
     image: davireis/stackport:latest
     ports:
-      - "8080:8080"
+      # 127.0.0.1 keeps StackPort on this machine; drop it to open it to your network.
+      - "127.0.0.1:8080:8080"
     environment:
       - STACKPORT_ENDPOINTS=dev=http://ministack-dev:4566,staging=http://ministack-staging:4566,nprod=
       - AWS_REGION=us-west-1
