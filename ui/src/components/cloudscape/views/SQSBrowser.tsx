@@ -284,7 +284,7 @@ function EditSettingsModal({ queue, onClose, onDone }: { queue: SQSQueueDetail; 
   const [retention, setRetention] = useState(String(queue.messageRetentionPeriod))
   const [delay, setDelay] = useState(String(queue.delaySeconds))
   const [maxSize, setMaxSize] = useState(String(queue.maximumMessageSize))
-  const [receiveWait, setReceiveWait] = useState('0')
+  const [receiveWait, setReceiveWait] = useState(String(queue.receiveMessageWaitTime))
   const [dlqEnabled, setDlqEnabled] = useState(Boolean(queue.redrivePolicy))
   const [dlqArn, setDlqArn] = useState(queue.redrivePolicy?.deadLetterTargetArn ?? '')
   const [maxReceiveCount, setMaxReceiveCount] = useState(String(queue.redrivePolicy?.maxReceiveCount ?? 5))
@@ -1150,6 +1150,7 @@ function ConfigPanel({ detail }: { detail: SQSQueueDetail }) {
     ['Message retention', `${detail.messageRetentionPeriod}s`],
     ['Delivery delay', `${detail.delaySeconds}s`],
     ['Maximum message size', `${detail.maximumMessageSize} bytes`],
+    ['Receive message wait time', `${detail.receiveMessageWaitTime}s`],
     ['Content-based deduplication', detail.contentBasedDeduplication ? 'Enabled' : 'Disabled'],
     ['Dead-letter queue', detail.redrivePolicy ? `${detail.redrivePolicy.deadLetterTargetArn} (max ${detail.redrivePolicy.maxReceiveCount})` : 'None'],
   ]
