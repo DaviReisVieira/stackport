@@ -10,6 +10,11 @@ def _parse_aws_endpoint_url(environ: Mapping[str, str]) -> str | None:
     return environ.get("AWS_ENDPOINT_URL") or None
 
 
+def _parse_aws_credential(environ: Mapping[str, str], name: str) -> str | None:
+    """An access key, secret key or session token. Empty counts as unset (``AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}`` in Compose)."""
+    return environ.get(name, "").strip() or None
+
+
 AWS_ENDPOINT_URL: str | None = _parse_aws_endpoint_url(os.environ)
 
 # Remove AWS_ENDPOINT_URL from the process environment so boto3's internal
@@ -17,10 +22,10 @@ AWS_ENDPOINT_URL: str | None = _parse_aws_endpoint_url(os.environ)
 if "AWS_ENDPOINT_URL" in os.environ:
     del os.environ["AWS_ENDPOINT_URL"]
 AWS_REGION: str = os.environ.get("AWS_REGION", "us-east-1")
-AWS_ACCESS_KEY_ID: str | None = os.environ.get("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY: str | None = os.environ.get("AWS_SECRET_ACCESS_KEY")
-# Belongs to the two keys above (SSO exports, assumed roles); an empty value counts as unset.
-AWS_SESSION_TOKEN: str | None = os.environ.get("AWS_SESSION_TOKEN") or None
+AWS_ACCESS_KEY_ID: str | None = _parse_aws_credential(os.environ, "AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY: str | None = _parse_aws_credential(os.environ, "AWS_SECRET_ACCESS_KEY")
+# Belongs to the two keys above (SSO exports, assumed roles). Read once at start-up.
+AWS_SESSION_TOKEN: str | None = _parse_aws_credential(os.environ, "AWS_SESSION_TOKEN")
 STACKPORT_ALLOW_WRITES: bool = os.environ.get("STACKPORT_ALLOW_WRITES", "true").lower() in ("1", "true", "yes")
 STACKPORT_PORT: int = int(os.environ.get("STACKPORT_PORT", "8080"))
 # Interface the server listens on. Loopback by default: StackPort has no login
