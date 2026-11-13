@@ -412,11 +412,8 @@ class TestItemWrites:
         assert "PutRequest" in req["t1"][0]
         assert "DeleteRequest" in req["t1"][1]
 
-    @patch("backend.routes.dynamodb.cache.delete")
     @patch("backend.routes.dynamodb.get_client")
-    def test_batch_write_partial_invalidates_cache(self, mock_get_client, mock_cache_delete):
-        """Cache must be invalidated even when some items are unprocessed,
-        because items NOT listed in UnprocessedItems were already written."""
+    def test_batch_write_partial_returns_unprocessed(self, mock_get_client):
         mock_ddb = MagicMock()
         mock_get_client.return_value = mock_ddb
         mock_ddb.describe_table.return_value = {
@@ -442,11 +439,6 @@ class TestItemWrites:
         body = resp.json()
         assert body["unprocessed"] == unprocessed
         assert "message" in body
-
-        cache_keys = [c.args[0] for c in mock_cache_delete.call_args_list]
-        assert any(k.endswith(":dynamodb:item_count:t1") for k in cache_keys), (
-            f"expected item_count cache invalidation, got calls: {cache_keys}"
-        )
 
 
 # Binary attributes (#176). b"\x00\x8e\xff" is not valid UTF-8, which is what
@@ -811,3 +803,46 @@ class TestReadFailures:
 
         assert resp.status_code == 400
         assert "exclusive_start_key" in resp.json()["detail"]
+
+
+class TestLiveItemCount:
+    """DescribeTable's ItemCount is approximate, so the live count scans with Select=COUNT."""
+
+    def test_counts_every_page(self, stubber):
+        stubber.add_response(
+            "scan",
+            {"Count": 3, "ScannedCount": 3, "LastEvaluatedKey": {"pk": {"S": "c"}}},
+            {"TableName": "Orders", "Select": "COUNT"},
+        )
+        stubber.add_response(
+            "scan",
+            {"Count": 2, "ScannedCount": 2},
+            {"TableName": "Orders", "Select": "COUNT", "ExclusiveStartKey": {"pk": {"S": "c"}}},
+        )
+
+        resp = client.get("/api/dynamodb/tables/Orders/item-count")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"table": "Orders", "count": 5}
+
+    def test_an_empty_table(self, stubber):
+        stubber.add_response("scan", {"Count": 0, "ScannedCount": 0}, {"TableName": "Orders", "Select": "COUNT"})
+
+        assert client.get("/api/dynamodb/tables/Orders/item-count").json() == {"table": "Orders", "count": 0}
+
+    def test_a_missing_table_is_a_404(self, stubber):
+        table_missing(stubber, "scan")
+
+        resp = client.get("/api/dynamodb/tables/NoSuchTable/item-count")
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Table 'NoSuchTable' not found"
+
+    def test_allowed_in_read_only_mode(self, stubber):
+        stubber.add_response("scan", {"Count": 1, "ScannedCount": 1}, {"TableName": "Orders", "Select": "COUNT"})
+
+        with patch("backend.main.STACKPORT_ALLOW_WRITES", False):
+            resp = client.get("/api/dynamodb/tables/Orders/item-count")
+
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 1

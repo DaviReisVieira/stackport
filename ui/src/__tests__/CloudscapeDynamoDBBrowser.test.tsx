@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 vi.mock('@/hooks/useEndpoint', () => ({
@@ -89,6 +89,7 @@ function mockFetchByUrl() {
     const method = init?.method ?? 'GET'
     let payload: unknown = statsPayload
     if (url.includes('/items/batch')) payload = { ok: true, table: 'learners' }
+    else if (url.includes('/item-count')) payload = { table: 'learners', count: 5 }
     else if (url.includes('/query')) payload = queryPayload
     else if (url.includes('/items')) payload = method === 'GET' ? scanPayload : { ok: true, table: 'learners' }
     else if (url.includes('/tags')) payload = { tags: {} }
@@ -141,6 +142,25 @@ describe('CloudscapeDynamoDBBrowser (via registry dispatch)', () => {
     expect(await screen.findByText('Could not load table')).toBeInTheDocument()
     expect(screen.getByText("Table 'NoSuchTable' not found")).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  it('labels the stored item count as approximate and gets the live count on request', async () => {
+    renderDynamo('/resources/dynamodb?table=learners')
+
+    const approximate = (await screen.findByText('Item count (approximate)')).parentElement as HTMLElement
+    expect(within(approximate).getByText('2')).toBeInTheDocument()
+    const live = screen.getByText('Live item count').parentElement as HTMLElement
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/item-count'))).toBe(false)
+
+    fireEvent.click(within(live).getByRole('button', { name: 'Get live item count' }))
+
+    expect(await within(live).findByText('5')).toBeInTheDocument()
+    const countCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes('/item-count'))
+    expect(countCalls).toHaveLength(1)
+    const [url, init] = countCalls[0]
+    expect(String(url)).toBe('/api/dynamodb/tables/learners/item-count?endpoint=local')
+    expect((init as RequestInit | undefined)?.method ?? 'GET').toBe('GET')
+    expect(within(live).getByRole('button', { name: 'Count items again' })).toBeInTheDocument()
   })
 
   it('opens the table and scans items', async () => {

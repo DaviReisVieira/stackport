@@ -254,6 +254,12 @@ export interface DynamoDBItem {
   [key: string]: unknown
 }
 
+/** Every item counted with a scan, unlike the approximate `item_count` of a table. */
+export interface DynamoDBItemCount {
+  table: string
+  count: number
+}
+
 export interface DynamoDBScanResponse {
   table: string
   items: DynamoDBItem[]

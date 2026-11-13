@@ -13,7 +13,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.routing import APIRoute
 
 from backend.aws_client import get_client
-from backend.cache import cache
 from backend.routes.common import EndpointInfo, get_endpoint_info
 from backend.schemas.dynamodb import (
     BatchWriteRequest,
@@ -186,33 +185,11 @@ def _coerce_attributes(raw: dict[str, Any], item_format: str, label: str) -> dic
     return _item_from_json(raw)
 
 
-def _invalidate_table_item_count(table_name: str, endpoint_url: str | None) -> None:
-    cache.delete(f"{endpoint_url}:dynamodb:item_count:{table_name}")
-
-
 def _client_error_message(exc: ClientError) -> str:
     err = exc.response.get("Error", {})
     return err.get("Message", err.get("Code", str(exc)))
 
 router = APIRouter(route_class=_ExactNumbersRoute)
-
-
-def _get_table_item_count(table_name: str, ep: EndpointInfo) -> int:
-    """Return item count for a table. Cached 30s."""
-    cache_key = f"{ep.url}:dynamodb:item_count:{table_name}"
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
-
-    try:
-        dynamodb = get_client("dynamodb", **ep.client_kwargs())
-        resp = dynamodb.describe_table(TableName=table_name)
-        item_count = resp["Table"].get("ItemCount", 0)
-        cache.set(cache_key, item_count, ttl=30)
-        return item_count
-    except Exception:
-        logger.debug("Failed to get item count for %s", table_name, exc_info=True)
-        return 0
 
 
 @router.post("/tables", status_code=201)
@@ -360,6 +337,23 @@ def scan_table(
     }
 
 
+@router.get("/tables/{name}/item-count")
+def count_table_items(name: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
+    """Count the table's items now, like the console's "Get live item count".
+
+    DescribeTable's ItemCount is approximate: AWS refreshes it about every six
+    hours, and some emulators always report 0. This scans with Select=COUNT,
+    following LastEvaluatedKey since a page stops at 1 MB of data, so on a large
+    table it takes a while and, on AWS, consumes read capacity for every item.
+    """
+    dynamodb = get_client("dynamodb", **ep.client_kwargs())
+    count = 0
+    with _table_must_exist(name):
+        for page in dynamodb.get_paginator("scan").paginate(TableName=name, Select="COUNT"):
+            count += page["Count"]
+    return {"table": name, "count": count}
+
+
 @router.post("/tables/{name}/query")
 def query_table(name: str, request: QueryRequest, ep: EndpointInfo = Depends(get_endpoint_info)):
     dynamodb = get_client("dynamodb", **ep.client_kwargs())
@@ -430,7 +424,6 @@ def put_table_item(
         logger.error("put_item %s: %s", name, e, exc_info=True)
         raise HTTPException(status_code=400, detail=msg) from e
 
-    _invalidate_table_item_count(name, ep.url)
     return {"ok": True, "table": name}
 
 
@@ -452,7 +445,6 @@ def delete_table_item(
         msg = _client_error_message(e)
         raise HTTPException(status_code=400, detail=msg) from e
 
-    _invalidate_table_item_count(name, ep.url)
     return {"ok": True, "table": name}
 
 
@@ -481,8 +473,6 @@ def batch_write_items(
     except ClientError as e:
         msg = _client_error_message(e)
         raise HTTPException(status_code=400, detail=msg) from e
-
-    _invalidate_table_item_count(name, ep.url)
 
     uproc = resp.get("UnprocessedItems", {})
     if uproc:
