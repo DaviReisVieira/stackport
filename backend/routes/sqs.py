@@ -258,6 +258,7 @@ def get_queue_detail(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_in
             "messageRetentionPeriod": int(attrs.get("MessageRetentionPeriod", 345600)),
             "maximumMessageSize": int(attrs.get("MaximumMessageSize", 262144)),
             "delaySeconds": int(attrs.get("DelaySeconds", 0)),
+            "receiveMessageWaitTime": int(attrs.get("ReceiveMessageWaitTimeSeconds", 0)),
             "redrivePolicy": _parse_redrive_policy(attrs.get("RedrivePolicy")),
             "contentBasedDeduplication": attrs.get("ContentBasedDeduplication") == "true",
             "tags": tags,

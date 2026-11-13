@@ -4,12 +4,17 @@ import os
 
 os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
+import boto3
 import botocore.session
+import pytest
+from botocore.stub import Stubber
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.routes import sqs as sqs_routes
 
 client = TestClient(app)
 
@@ -876,3 +881,40 @@ class TestUpdateRedrivePolicy:
             },
         )
         assert resp.status_code == 422
+
+
+# --- Through a real boto3 client --------------------------------------------
+# The tests below stub the endpoint's answers on a real SQS client, so request
+# parameters, responses and errors all go through botocore as they do live.
+
+
+@pytest.fixture
+def sqs_stub(monkeypatch) -> Iterator[Stubber]:
+    sqs = boto3.client(
+        "sqs",
+        region_name="us-east-1",
+        endpoint_url="http://localhost:4566",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+    monkeypatch.setattr(sqs_routes, "get_client", lambda service_name, **_kwargs: sqs)
+    with Stubber(sqs) as stubber:
+        yield stubber
+        stubber.assert_no_pending_responses()
+
+
+class TestQueueDetailFromTheEndpoint:
+    def test_reports_the_receive_wait_time(self, sqs_stub):
+        # Edit settings starts its form from the detail: without the wait time
+        # it sent 0, turning long polling off whenever any setting was saved.
+        sqs_stub.add_response("get_queue_url", {"QueueUrl": QUEUE_URL}, {"QueueName": "test-queue"})
+        sqs_stub.add_response(
+            "get_queue_attributes",
+            {"Attributes": {"QueueArn": "arn:aws:sqs:us-east-1:000000000000:test-queue", "ReceiveMessageWaitTimeSeconds": "10"}},
+            {"QueueUrl": QUEUE_URL, "AttributeNames": ["All"]},
+        )
+        sqs_stub.add_response("list_queue_tags", {"Tags": {}}, {"QueueUrl": QUEUE_URL})
+
+        resp = client.get("/api/sqs/queues/test-queue")
+        assert resp.status_code == 200
+        assert resp.json()["receiveMessageWaitTime"] == 10

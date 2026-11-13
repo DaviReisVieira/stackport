@@ -99,6 +99,7 @@ function mockFetchByUrl() {
         ...queuesPayload.queues[0],
         arn: 'arn:aws:sqs:us-east-1:000000000000:orders',
         maximumMessageSize: 262144,
+        receiveMessageWaitTime: 10,
         contentBasedDeduplication: false,
       }
     } else if (url.includes('/api/sqs/queues') && method === 'POST') {
@@ -183,6 +184,32 @@ describe('CloudscapeSQSBrowser (via registry dispatch)', () => {
     fireEvent.click(screen.getByText('Configuration'))
     expect(await screen.findByText('Content-based deduplication')).toBeInTheDocument()
     expect(screen.getByText('262144 bytes')).toBeInTheDocument()
+    expect(screen.getByText('Receive message wait time')).toBeInTheDocument()
+    expect(screen.getByText('10s')).toBeInTheDocument()
+  })
+
+  it('keeps the queue long polling when saving other settings', async () => {
+    renderSQS()
+    fireEvent.click(await screen.findByRole('link', { name: 'orders' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    expect(await screen.findByLabelText('Receive message wait time (seconds)')).toHaveValue(10)
+    fireEvent.change(screen.getByLabelText('Visibility timeout (seconds)'), { target: { value: '45' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    const findSave = () =>
+      fetchMock.mock.calls.find(
+        ([url, init]) => String(url).includes('/api/sqs/queues/orders/attributes') && (init as RequestInit)?.method === 'PUT',
+      )
+    await waitFor(() => expect(findSave()).toBeTruthy())
+    const body = JSON.parse((findSave()![1] as RequestInit).body as string)
+    expect(body).toEqual({
+      visibilityTimeout: 45,
+      messageRetentionPeriod: 345600,
+      delaySeconds: 0,
+      maximumMessageSize: 262144,
+      receiveMessageWaitTime: 10,
+    })
   })
 
   it('polls messages and batch-deletes the selection in the detail view', async () => {

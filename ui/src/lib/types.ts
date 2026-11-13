@@ -446,6 +446,7 @@ export interface SQSQueue {
 export interface SQSQueueDetail extends SQSQueue {
   arn: string
   maximumMessageSize: number
+  receiveMessageWaitTime: number
   contentBasedDeduplication: boolean
 }
 
