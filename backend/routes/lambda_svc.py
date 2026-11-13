@@ -5,7 +5,6 @@ import http.client
 import ipaddress
 import json
 import logging
-import re
 import socket
 import ssl
 import urllib.error
@@ -13,16 +12,16 @@ import urllib.request
 from collections.abc import Iterator
 from email.message import Message
 from typing import IO, Any
-from urllib.parse import SplitResult, quote, urlsplit, urlunsplit
+from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
-from starlette.types import Receive, Scope, Send
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from backend.aws_client import get_client
 from backend.aws_errors import ClassifiedError, ErrorKind
 from backend.config import is_local_endpoint
 from backend.connection import plan_connection, ssl_context_for
+from backend.downloads import RELAY_CHUNK_BYTES, RelayResponse, attachment
 from backend.routes.common import EndpointInfo, get_endpoint_info
 from backend.schemas.lambda_svc import UpdateFunctionConfigRequest
 
@@ -41,9 +40,7 @@ CODE_PACKAGE_MAX_BYTES = 256 * 1024 * 1024
 # StackPort reaches directly, so a socket idle this long is stuck, not slow.
 CODE_FETCH_TIMEOUT_SECONDS = 10.0
 
-_CHUNK_BYTES = 64 * 1024
 _FETCHABLE_SCHEMES = frozenset({"http", "https"})
-_PLAIN_FILENAME = re.compile(r"[A-Za-z0-9._-]+")
 
 _TLS_HINT = (
     "StackPort trusts the same certificates for this download as for the endpoint. "
@@ -87,43 +84,19 @@ class _NoRedirects(urllib.request.HTTPRedirectHandler):
         return None
 
 
-class _CodePackageResponse(StreamingResponse):
-    """Relays an open code package download, and closes it however the response ends.
-
-    When the client goes away, Starlette stops iterating the body without
-    closing it, so the body generator can't be the one that closes the upstream.
-    """
+class _CodePackageResponse(RelayResponse):
+    """Relays an open code package download, and closes it however the response ends."""
 
     def __init__(self, upstream: http.client.HTTPResponse, *, origin: str, filename: str, length: int | None):
-        headers = {"Content-Disposition": _attachment(filename)}
+        headers = {"Content-Disposition": attachment(filename)}
         if length is not None:
             headers["Content-Length"] = str(length)
-        super().__init__(_relay(upstream, origin), media_type="application/zip", headers=headers)
-        self._upstream = upstream
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        try:
-            await super().__call__(scope, receive, send)
-        finally:
-            self._upstream.close()
+        super().__init__(_relay(upstream, origin), upstream=upstream, media_type="application/zip", headers=headers)
 
 
 def _host(parts: SplitResult) -> str:
     """The URL's host and port, without any credentials in it."""
     return parts.netloc.rpartition("@")[2]
-
-
-def _attachment(filename: str) -> str:
-    """A Content-Disposition value that saves the download as ``filename`` (RFC 6266).
-
-    A name outside a conservative ASCII set gets an underscored fallback plus the
-    exact name, percent-encoded, in ``filename*`` (RFC 8187), so quotes,
-    semicolons, and line breaks in it can't break the header.
-    """
-    if _PLAIN_FILENAME.fullmatch(filename):
-        return f'attachment; filename="{filename}"'
-    fallback = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
-    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename, safe='')}"
 
 
 def _declared_length(headers: Message) -> int | None:
@@ -141,7 +114,7 @@ def _declared_length(headers: Message) -> int | None:
 def _relay(upstream: http.client.HTTPResponse, origin: str) -> Iterator[bytes]:
     """Yield the package in chunks, refusing to relay more than CODE_PACKAGE_MAX_BYTES."""
     relayed = 0
-    while chunk := upstream.read(_CHUNK_BYTES):
+    while chunk := upstream.read(RELAY_CHUNK_BYTES):
         relayed += len(chunk)
         if relayed > CODE_PACKAGE_MAX_BYTES:
             raise CodePackageTooLarge(
