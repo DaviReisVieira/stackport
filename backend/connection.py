@@ -34,6 +34,7 @@ A plan is hashable and carries the emulator files' stat stamp, so
 
 from __future__ import annotations
 
+import hashlib
 import os
 import ssl
 from dataclasses import dataclass, field
@@ -97,14 +98,21 @@ class EndpointInfo:
         """Prefix for cache keys holding this endpoint's results.
 
         Two saved endpoints can share a URL with different auth or TLS settings,
-        so all of them are in it (never the secret key). It starts with the URL,
-        so editing an endpoint, which drops ``"<url>:"`` keys, drops these too.
+        so all of them are in it. The secret key is there only as a short
+        digest, enough to tell two keys apart and useless for recovering one.
+        It starts with the URL, so editing an endpoint, which drops
+        ``"<url>:"`` keys, drops these too.
         """
+        secret_digest = (
+            hashlib.sha256(self.auth_secret_access_key.encode()).hexdigest()[:12]
+            if self.auth_secret_access_key
+            else None
+        )
         return ":".join(
             str(part)
             for part in (
                 self.url, self.region, self.auth_type, self.auth_profile,
-                self.auth_access_key_id, self.tls_verify, self.ca_bundle,
+                self.auth_access_key_id, secret_digest, self.tls_verify, self.ca_bundle,
             )
         )
 

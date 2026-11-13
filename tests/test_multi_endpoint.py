@@ -301,7 +301,7 @@ class TestConnectionManagerEndpointTracking:
 
         mgr = ConnectionManager()
         assert len(mgr.active_connections) == 0
-        assert mgr.subscribers_by_scope() == {}
+        assert mgr.subscribers_by_scope() == ({}, [])
 
     @pytest.mark.anyio
     async def test_send_to_nobody(self):
@@ -318,7 +318,8 @@ class TestConnectionManagerEndpointTracking:
         mgr.active_connections[mock_ws] = None
         mgr.set_endpoint(mock_ws, "http://other:4566")
         assert mgr.active_connections[mock_ws] == "http://other:4566"
-        ((ep, sockets),) = mgr.subscribers_by_scope().values()
+        groups, _ = mgr.subscribers_by_scope()
+        ((ep, sockets),) = groups.values()
         assert ep.url == "http://other:4566"
         assert sockets == [mock_ws]
 
@@ -330,6 +331,6 @@ class TestConnectionManagerEndpointTracking:
         mgr.active_connections[ws1] = "http://a:4566"
         mgr.active_connections[ws2] = "http://a:4566"
         mgr.active_connections[ws3] = "http://b:4566"
-        groups = mgr.subscribers_by_scope()
+        groups, _ = mgr.subscribers_by_scope()
         assert sorted(ep.url for ep, _ in groups.values()) == ["http://a:4566", "http://b:4566"]
         assert sorted(len(sockets) for _, sockets in groups.values()) == [1, 2]
