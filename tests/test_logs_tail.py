@@ -29,7 +29,7 @@ class TestFetchNewEvents:
             events = _fetch_new_events("g", "s", 500, "", {})
         assert events == [
             {
-                "timestamp": events[0]["timestamp"],
+                "timestamp": "1970-01-01T00:00:01.000+00:00",
                 "timestamp_millis": 1000,
                 "message": "hello",
                 "ingestion_time": None,
@@ -48,6 +48,7 @@ class TestFetchNewEvents:
             events = _fetch_new_events("g", "s", 0, "ERROR", {})
         assert events[0]["message"] == "ERROR boom"
         assert events[0]["event_id"] == "e1"
+        assert events[0]["ingestion_time"] == "1970-01-01T00:00:02.001+00:00"
         kwargs = logs.filter_log_events.call_args.kwargs
         assert kwargs["filterPattern"] == "ERROR"
         assert kwargs["logStreamNames"] == ["s"]

@@ -1,15 +1,20 @@
 """Integration tests for CloudWatch Logs API routes."""
 
 import os
+import time
 
 os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
-from backend.main import app
 from backend.cache import cache
+from backend.main import app
+from backend.routes import logs as logs_routes
+from backend.routes.logs import _epoch_millis_to_iso
+from tests.moto_inprocess import moto_client, moto_routes
 
 client = TestClient(app)
 
@@ -118,7 +123,7 @@ class TestListLogStreams:
                     "logStreamName": "2024/01/01/[$LATEST]abc123",
                     "creationTime": 1609459200000,
                     "firstEventTimestamp": 1609459300000,
-                    "lastEventTime": 1609459400000,
+                    "lastEventTimestamp": 1609459400000,
                     "lastIngestionTime": 1609459500000,
                     "storedBytes": 2048,
                 }
@@ -131,6 +136,7 @@ class TestListLogStreams:
         data = resp.json()
         assert len(data["log_streams"]) == 1
         assert data["log_streams"][0]["name"] == "2024/01/01/[$LATEST]abc123"
+        assert data["log_streams"][0]["last_event_time"] == "2021-01-01T00:03:20.000+00:00"
         assert data["log_streams"][0]["stored_bytes"] == 2048
         assert data["next_token"] == "stream_token"
 
@@ -431,3 +437,82 @@ class TestDeleteLogStream:
 
         resp = client.delete("/api/logs/groups/my-log-group/streams/missing-stream")
         assert resp.status_code == 404
+
+
+@pytest.fixture
+def local_time_not_utc():
+    """A host whose local time isn't UTC: naive local timestamps would show up shifted."""
+    original = os.environ.get("TZ")
+    os.environ["TZ"] = "America/Sao_Paulo"
+    time.tzset()
+    yield
+    if original is None:
+        del os.environ["TZ"]
+    else:
+        os.environ["TZ"] = original
+    time.tzset()
+
+
+def _utc_iso(millis: int) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(millis // 1000)) + f".{millis % 1000:03d}+00:00"
+
+
+class TestEpochMillisToIso:
+    def test_utc_with_an_explicit_offset_whatever_the_local_zone(self, local_time_not_utc):
+        assert _epoch_millis_to_iso(1763063495671) == "2025-11-13T19:51:35.671+00:00"
+
+    def test_whole_seconds_keep_their_milliseconds(self):
+        assert _epoch_millis_to_iso(1763063495000) == "2025-11-13T19:51:35.000+00:00"
+
+    def test_none_stays_none(self):
+        assert _epoch_millis_to_iso(None) is None
+
+
+class TestLogTimesFromMoto:
+    """What the routes read from real DescribeLogGroups/DescribeLogStreams/GetLogEvents/FilterLogEvents responses."""
+
+    GROUP = "/app/orders"
+    STREAM = "web-1"
+
+    @pytest.fixture
+    def seeded(self, monkeypatch, local_time_not_utc):
+        cache.delete_by_prefix("")
+        with moto_routes(monkeypatch, logs_routes):
+            logs = moto_client("logs")
+            logs.create_log_group(logGroupName=self.GROUP)
+            logs.create_log_stream(logGroupName=self.GROUP, logStreamName=self.STREAM)
+            first = int(time.time() * 1000) - 60_000
+            last = first + 1_234
+            logs.put_log_events(
+                logGroupName=self.GROUP,
+                logStreamName=self.STREAM,
+                logEvents=[{"timestamp": first, "message": "ERROR first"}, {"timestamp": last, "message": "ERROR last"}],
+            )
+            yield logs, first, last
+        cache.delete_by_prefix("")
+
+    def test_log_group_creation_time(self, seeded):
+        logs, _, _ = seeded
+        created = logs.describe_log_groups()["logGroups"][0]["creationTime"]
+        group = client.get("/api/logs/groups").json()["log_groups"][0]
+        assert group["creation_time"] == _utc_iso(created)
+
+    def test_log_stream_event_times(self, seeded):
+        logs, first, last = seeded
+        described = logs.describe_log_streams(logGroupName=self.GROUP)["logStreams"][0]
+        stream = client.get(f"/api/logs/groups/{self.GROUP}/streams").json()["log_streams"][0]
+        assert stream["first_event_time"] == _utc_iso(first)
+        assert stream["last_event_time"] == _utc_iso(last)
+        assert stream["creation_time"] == _utc_iso(described["creationTime"])
+        assert stream["last_ingestion_time"] == _utc_iso(described["lastIngestionTime"])
+
+    @pytest.mark.parametrize("filter_pattern", ["", "ERROR"], ids=["GetLogEvents", "FilterLogEvents"])
+    def test_event_times(self, seeded, filter_pattern):
+        _, first, last = seeded
+        resp = client.get(
+            f"/api/logs/groups/{self.GROUP}/streams/{self.STREAM}/events", params={"filter_pattern": filter_pattern}
+        )
+        events = sorted(resp.json()["events"], key=lambda event: event["timestamp_millis"])
+        assert [event["timestamp"] for event in events] == [_utc_iso(first), _utc_iso(last)]
+        for event in events:
+            assert event["ingestion_time"].endswith("+00:00")
