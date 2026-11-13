@@ -1362,11 +1362,19 @@ export type LearnCompleted = Record<string, string[]>
 /** lessonId -> variable name -> value */
 export type LearnVariables = Record<string, Record<string, string>>
 
+/** Shell variables the CLI needs for this endpoint's emulator, beyond --endpoint-url. */
+export interface LearnCliSetup {
+  emulator: string
+  variables: { name: string; value: string }[]
+}
+
 export interface LearnTrailResponse {
   trail: LearnTrail
   completed: LearnCompleted
   skipped: LearnCompleted
   variables: LearnVariables
+  /** Null for emulators whose plain command works as written. */
+  cliSetup: LearnCliSetup | null
 }
 
 export interface LearnProgressResponse {

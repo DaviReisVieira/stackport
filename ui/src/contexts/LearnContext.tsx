@@ -14,7 +14,7 @@ import {
   setLearnVariable,
   verifyLearnStep,
 } from '@/lib/api'
-import type { LearnCompleted, LearnStep, LearnTrail, LearnVariables } from '@/lib/types'
+import type { LearnCliSetup, LearnCompleted, LearnStep, LearnTrail, LearnVariables } from '@/lib/types'
 import { buildTutorial } from '@/components/cloudscape/learn/buildTutorial'
 import { FALLBACK_HOTSPOT_ID, resolveHotspotId } from '@/components/cloudscape/learn/hotspots'
 
@@ -45,6 +45,7 @@ export function LearnProvider({ children }: { children: ReactNode }) {
   const [completed, setCompleted] = useState<LearnCompleted>({})
   const [skipped, setSkipped] = useState<LearnCompleted>({})
   const [variables, setVariables] = useState<LearnVariables>({})
+  const [cliSetup, setCliSetup] = useState<LearnCliSetup | null>(null)
   const [loading, setLoading] = useState(false)
 
   // AnnotationContext holds on to the onStepChange handler it was given, so
@@ -69,6 +70,7 @@ export function LearnProvider({ children }: { children: ReactNode }) {
       setCompleted(data.completed ?? {})
       setSkipped(data.skipped ?? {})
       setVariables(data.variables ?? {})
+      setCliSetup(data.cliSetup ?? null)
     } catch {
       setTrail(null)
     } finally {
@@ -335,6 +337,7 @@ export function LearnProvider({ children }: { children: ReactNode }) {
       completed,
       skipped,
       variables,
+      cliSetup,
       run,
       stepIndex,
       frontier,
@@ -359,6 +362,7 @@ export function LearnProvider({ children }: { children: ReactNode }) {
       completed,
       skipped,
       variables,
+      cliSetup,
       run,
       stepIndex,
       frontier,

@@ -10,7 +10,7 @@ import SpaceBetween from '@cloudscape-design/components/space-between'
 import StatusIndicator from '@cloudscape-design/components/status-indicator'
 import Tabs from '@cloudscape-design/components/tabs'
 import { useLearn } from '@/hooks/useLearn'
-import type { LearnStep } from '@/lib/types'
+import type { LearnCliSetup, LearnStep } from '@/lib/types'
 import { Prose } from './Prose'
 
 const PATH_PREFERENCE_KEY = 'stackport.learn.path'
@@ -179,11 +179,13 @@ function ConsoleFields({ step }: { step: LearnStep }) {
 }
 
 function CliPath({ step }: { step: LearnStep }) {
+  const { cliSetup } = useLearn()
   const cli = step.commands?.cli
   if (!cli) return null
 
   return (
     <SpaceBetween size="s">
+      {cliSetup && <CliSetupBlock setup={cliSetup} />}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <Box variant="code" padding="n">
           <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12 }}>{cli}</pre>
@@ -209,6 +211,38 @@ function CliPath({ step }: { step: LearnStep }) {
         </ExpandableSection>
       )}
     </SpaceBetween>
+  )
+}
+
+/**
+ * What this endpoint's emulator needs from the shell before the command below
+ * will run, which the plain `--endpoint-url` form does not cover. Shown only
+ * when the server reports some, so emulators that need nothing look unchanged.
+ */
+function CliSetupBlock({ setup }: { setup: LearnCliSetup }) {
+  const script = setup.variables.map(({ name, value }) => `export ${name}=${value}`).join('\n')
+
+  return (
+    <Alert type="info" header={`${setup.emulator} needs a little setup first`} data-testid="learn-cli-setup">
+      <SpaceBetween size="xs">
+        <Box variant="p" padding="n">
+          Run this once in the terminal you will use for the commands below. It points the CLI at the keys and
+          certificate {setup.emulator} created when it started.
+        </Box>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <Box variant="code" padding="n">
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12 }}>{script}</pre>
+          </Box>
+          <CopyToClipboard
+            copyButtonAriaLabel="Copy setup"
+            textToCopy={script}
+            variant="icon"
+            copySuccessText="Setup copied"
+            copyErrorText="Could not copy the setup"
+          />
+        </div>
+      </SpaceBetween>
+    </Alert>
   )
 }
 
