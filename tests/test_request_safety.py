@@ -114,6 +114,38 @@ class TestStaticFiles:
             pytest.skip("ui/dist isn't built")
         assert "<!doctype html>" in client.get("/index.html").text.lower()
 
+    @pytest.mark.parametrize("path", ["/", "/resources/sqs", "/settings", "/apiary", "/wsdl"])
+    def test_app_routes_get_the_app_page(self, path):
+        import os
+
+        if not os.path.isfile(os.path.join(os.path.dirname(__file__), "..", "ui", "dist", "index.html")):
+            pytest.skip("ui/dist isn't built")
+        resp = client.get(path)
+        assert resp.status_code == 200
+        assert "<!doctype html>" in resp.text.lower()
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("GET", "/api/does-not-exist"),
+            # A route the UI once called that never existed: the app page made it look like it worked.
+            ("GET", "/api/s3/buckets/live-data"),
+            ("GET", "/api"),
+            ("POST", "/api/does-not-exist"),
+            ("GET", "/ws"),
+            ("GET", "/ws/does-not-exist"),
+        ],
+    )
+    def test_unknown_api_paths_are_a_json_404(self, method, path):
+        resp = client.request(method, path)
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "Not Found"}
+
+    def test_api_paths_keep_405_for_another_method(self):
+        resp = client.patch("/api/sqs/queues")
+        assert resp.status_code == 405
+        assert resp.json() == {"detail": "Method Not Allowed"}
+
 
 class TestCrossSiteGuard:
     """Simple requests from another site's page never reach the routes."""

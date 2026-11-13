@@ -325,10 +325,6 @@ export async function fetchS3Buckets(endpoint?: string | null): Promise<{ bucket
   return fetchJSON<{ buckets: S3Bucket[] }>(buildUrl('/s3/buckets', endpoint))
 }
 
-export async function fetchS3Bucket(bucket: string, endpoint?: string | null) {
-  return fetchJSON(buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}`, endpoint))
-}
-
 export async function fetchS3Objects(bucket: string, prefix = '', delimiter = '/', endpoint?: string | null): Promise<S3ObjectsResponse> {
   const params = new URLSearchParams({ prefix, delimiter })
   return fetchJSON<S3ObjectsResponse>(buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/objects`, endpoint, params))
