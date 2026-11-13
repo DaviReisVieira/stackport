@@ -1,5 +1,6 @@
 """Integration tests for IAM API routes."""
 
+import json
 import os
 
 os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
@@ -7,13 +8,96 @@ os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from tests.moto_aws import aws, moto_account
 
 client = TestClient(app)
 
 NOW = datetime(2024, 6, 1, tzinfo=timezone.utc)
+
+TRUST_LAMBDA = {
+    "Version": "2012-10-17",
+    "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}],
+}
+READ_REPORTS = {
+    "Version": "2012-10-17",
+    "Statement": [{"Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::reports/*"}],
+}
+DENY_DELETES = {
+    "Version": "2012-10-17",
+    "Statement": [{"Effect": "Deny", "Action": "s3:DeleteObject", "Resource": "*"}],
+}
+
+
+@pytest.fixture
+def iam():
+    """An IAM client for a moto account that StackPort's routes read from."""
+    with moto_account():
+        yield aws("iam")
+
+
+def managed_policy(iam, name: str, document: dict) -> str:
+    return iam.create_policy(PolicyName=name, PolicyDocument=json.dumps(document))["Policy"]["Arn"]
+
+
+class TestPolicyDocuments:
+    """Documents come through as the JSON objects botocore parsed them into."""
+
+    def test_role_trust_policy_and_inline_policies(self, iam):
+        iam.create_role(RoleName="lambda-exec", AssumeRolePolicyDocument=json.dumps(TRUST_LAMBDA))
+        iam.put_role_policy(RoleName="lambda-exec", PolicyName="read-reports", PolicyDocument=json.dumps(READ_REPORTS))
+        iam.attach_role_policy(RoleName="lambda-exec", PolicyArn=managed_policy(iam, "deny-deletes", DENY_DELETES))
+
+        resp = client.get("/api/iam/roles/lambda-exec")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["role"]["RoleName"] == "lambda-exec"
+        assert data["trust_policy"] == TRUST_LAMBDA
+        assert data["inline_policies"] == [{"name": "read-reports", "document": READ_REPORTS}]
+        assert [p["PolicyName"] for p in data["attached_policies"]] == ["deny-deletes"]
+
+    def test_user_inline_policies(self, iam):
+        iam.create_user(UserName="alice", Tags=[{"Key": "team", "Value": "backend"}])
+        iam.put_user_policy(UserName="alice", PolicyName="read-reports", PolicyDocument=json.dumps(READ_REPORTS))
+        iam.create_group(GroupName="developers")
+        iam.add_user_to_group(GroupName="developers", UserName="alice")
+        key_id = iam.create_access_key(UserName="alice")["AccessKey"]["AccessKeyId"]
+
+        resp = client.get("/api/iam/users/alice")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["inline_policies"] == [{"name": "read-reports", "document": READ_REPORTS}]
+        assert [g["GroupName"] for g in data["groups"]] == ["developers"]
+        assert [(k["AccessKeyId"], k["Status"]) for k in data["access_keys"]] == [(key_id, "Active")]
+        assert data["tags"] == {"team": "backend"}
+
+    def test_group_inline_policies(self, iam):
+        iam.create_group(GroupName="admins")
+        iam.create_user(UserName="alice")
+        iam.add_user_to_group(GroupName="admins", UserName="alice")
+        iam.put_group_policy(GroupName="admins", PolicyName="deny-deletes", PolicyDocument=json.dumps(DENY_DELETES))
+
+        resp = client.get("/api/iam/groups/admins")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert [u["UserName"] for u in data["users"]] == ["alice"]
+        assert data["inline_policies"] == [{"name": "deny-deletes", "document": DENY_DELETES}]
+
+    def test_managed_policy_document(self, iam):
+        arn = managed_policy(iam, "read-reports", READ_REPORTS)
+        iam.tag_policy(PolicyArn=arn, Tags=[{"Key": "owner", "Value": "data"}])
+        iam.create_role(RoleName="reader", AssumeRolePolicyDocument=json.dumps(TRUST_LAMBDA))
+        iam.attach_role_policy(RoleName="reader", PolicyArn=arn)
+
+        resp = client.get(f"/api/iam/policies/{arn}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["document"] == READ_REPORTS
+        assert [r["RoleName"] for r in data["attached_to"]["roles"]] == ["reader"]
+        assert data["tags"] == {"owner": "data"}
 
 
 class TestListUsers:
@@ -52,69 +136,6 @@ class TestListUsers:
         assert data["users"][0]["UserId"] == "AIDAEXAMPLE1"
 
 
-class TestGetUserDetail:
-    @patch("backend.routes.iam.get_client")
-    def test_get_user_detail(self, mock_get_client):
-        mock_iam = MagicMock()
-        mock_get_client.return_value = mock_iam
-        mock_iam.get_user.return_value = {
-            "User": {
-                "UserName": "alice",
-                "UserId": "AIDAEXAMPLE1",
-                "Arn": "arn:aws:iam::000000000000:user/alice",
-                "Path": "/",
-                "CreateDate": NOW,
-            }
-        }
-        mock_iam.list_attached_user_policies.return_value = {
-            "AttachedPolicies": [
-                {"PolicyName": "ReadOnly", "PolicyArn": "arn:aws:iam::000:policy/ReadOnly"}
-            ]
-        }
-        mock_iam.list_user_policies.return_value = {"PolicyNames": ["inline-1"]}
-        mock_iam.get_user_policy.return_value = {
-            "PolicyDocument": '{"Version":"2012-10-17","Statement":[]}'
-        }
-        mock_iam.list_groups_for_user.return_value = {
-            "Groups": [
-                {
-                    "GroupName": "developers",
-                    "GroupId": "AGPAEXAMPLE",
-                    "Arn": "arn:aws:iam::000:group/developers",
-                    "Path": "/",
-                    "CreateDate": NOW,
-                }
-            ]
-        }
-        mock_iam.list_access_keys.return_value = {
-            "AccessKeyMetadata": [
-                {
-                    "UserName": "alice",
-                    "AccessKeyId": "AKIAEXAMPLE",
-                    "Status": "Active",
-                    "CreateDate": NOW,
-                }
-            ]
-        }
-        mock_iam.list_user_tags.return_value = {
-            "Tags": [{"Key": "team", "Value": "backend"}]
-        }
-
-        resp = client.get("/api/iam/users/alice")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["user"]["UserName"] == "alice"
-        assert len(data["attached_policies"]) == 1
-        assert data["attached_policies"][0]["PolicyName"] == "ReadOnly"
-        assert len(data["inline_policies"]) == 1
-        assert data["inline_policies"][0]["name"] == "inline-1"
-        assert len(data["groups"]) == 1
-        assert data["groups"][0]["GroupName"] == "developers"
-        assert len(data["access_keys"]) == 1
-        assert data["access_keys"][0]["Status"] == "Active"
-        assert data["tags"] == {"team": "backend"}
-
-
 class TestListRoles:
     @patch("backend.routes.iam.get_client")
     def test_list_roles_empty(self, mock_get_client):
@@ -151,39 +172,6 @@ class TestListRoles:
         assert data["roles"][0]["MaxSessionDuration"] == 3600
 
 
-class TestGetRoleDetail:
-    @patch("backend.routes.iam.get_client")
-    def test_get_role_detail(self, mock_get_client):
-        mock_iam = MagicMock()
-        mock_get_client.return_value = mock_iam
-        mock_iam.get_role.return_value = {
-            "Role": {
-                "RoleName": "lambda-exec",
-                "RoleId": "AROAEXAMPLE",
-                "Arn": "arn:aws:iam::000:role/lambda-exec",
-                "Path": "/",
-                "CreateDate": NOW,
-                "MaxSessionDuration": 3600,
-                "AssumeRolePolicyDocument": '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}',
-            }
-        }
-        mock_iam.list_attached_role_policies.return_value = {
-            "AttachedPolicies": [
-                {"PolicyName": "AWSLambdaBasicExecutionRole", "PolicyArn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"}
-            ]
-        }
-        mock_iam.list_role_policies.return_value = {"PolicyNames": []}
-        mock_iam.list_role_tags.return_value = {"Tags": []}
-
-        resp = client.get("/api/iam/roles/lambda-exec")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["role"]["RoleName"] == "lambda-exec"
-        assert data["trust_policy"]["Version"] == "2012-10-17"
-        assert len(data["attached_policies"]) == 1
-        assert data["inline_policies"] == []
-
-
 class TestListGroups:
     @patch("backend.routes.iam.get_client")
     def test_list_groups_empty(self, mock_get_client):
@@ -216,50 +204,6 @@ class TestListGroups:
         data = resp.json()
         assert len(data["groups"]) == 1
         assert data["groups"][0]["GroupName"] == "admins"
-
-
-class TestGetGroupDetail:
-    @patch("backend.routes.iam.get_client")
-    def test_get_group_detail(self, mock_get_client):
-        mock_iam = MagicMock()
-        mock_get_client.return_value = mock_iam
-        mock_iam.get_group.return_value = {
-            "Group": {
-                "GroupName": "admins",
-                "GroupId": "AGPAEXAMPLE",
-                "Arn": "arn:aws:iam::000:group/admins",
-                "Path": "/",
-                "CreateDate": NOW,
-            },
-            "Users": [
-                {
-                    "UserName": "alice",
-                    "UserId": "AIDAEXAMPLE1",
-                    "Arn": "arn:aws:iam::000:user/alice",
-                    "Path": "/",
-                    "CreateDate": NOW,
-                }
-            ],
-        }
-        mock_iam.list_attached_group_policies.return_value = {
-            "AttachedPolicies": [
-                {"PolicyName": "AdminAccess", "PolicyArn": "arn:aws:iam::000:policy/AdminAccess"}
-            ]
-        }
-        mock_iam.list_group_policies.return_value = {"PolicyNames": ["inline-group"]}
-        mock_iam.get_group_policy.return_value = {
-            "PolicyDocument": '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}'
-        }
-
-        resp = client.get("/api/iam/groups/admins")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["group"]["GroupName"] == "admins"
-        assert len(data["users"]) == 1
-        assert data["users"][0]["UserName"] == "alice"
-        assert len(data["attached_policies"]) == 1
-        assert len(data["inline_policies"]) == 1
-        assert data["inline_policies"][0]["document"]["Statement"][0]["Effect"] == "Allow"
 
 
 class TestListPolicies:
@@ -311,47 +255,6 @@ class TestListPolicies:
 
 
 class TestGetPolicyDetail:
-    @patch("backend.routes.iam.get_client")
-    def test_get_policy_detail(self, mock_get_client):
-        mock_iam = MagicMock()
-        mock_get_client.return_value = mock_iam
-        arn = "arn:aws:iam::000:policy/MyPolicy"
-        mock_iam.get_policy.return_value = {
-            "Policy": {
-                "PolicyName": "MyPolicy",
-                "PolicyId": "ANPAEXAMPLE",
-                "Arn": arn,
-                "Path": "/",
-                "DefaultVersionId": "v1",
-                "AttachmentCount": 3,
-                "CreateDate": NOW,
-                "UpdateDate": NOW,
-            }
-        }
-        mock_iam.get_policy_version.return_value = {
-            "PolicyVersion": {
-                "Document": '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}'
-            }
-        }
-        mock_iam.list_entities_for_policy.return_value = {
-            "PolicyUsers": [{"UserName": "alice"}],
-            "PolicyRoles": [{"RoleName": "lambda-exec"}],
-            "PolicyGroups": [{"GroupName": "admins"}],
-        }
-        mock_iam.list_policy_tags.return_value = {
-            "Tags": [{"Key": "managed", "Value": "true"}]
-        }
-
-        resp = client.get(f"/api/iam/policies/{arn}")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["policy"]["PolicyName"] == "MyPolicy"
-        assert data["document"]["Statement"][0]["Action"] == "s3:GetObject"
-        assert len(data["attached_to"]["users"]) == 1
-        assert len(data["attached_to"]["roles"]) == 1
-        assert len(data["attached_to"]["groups"]) == 1
-        assert data["tags"] == {"managed": "true"}
-
     @patch("backend.routes.iam.get_client")
     def test_get_policy_no_version(self, mock_get_client):
         mock_iam = MagicMock()

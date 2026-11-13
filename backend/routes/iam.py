@@ -1,6 +1,4 @@
-import json
 import logging
-from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, Query
 
@@ -12,14 +10,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _decode_policy_document(encoded_doc: str) -> dict:
-    """Decode URL-encoded policy document JSON."""
-    try:
-        decoded = unquote(encoded_doc)
-        return json.loads(decoded)
-    except Exception:
-        logger.debug("Failed to decode policy document", exc_info=True)
-        return {}
+def _policy_document(document: object) -> dict:
+    """A policy document from an IAM response.
+
+    IAM sends policy documents as URL-encoded JSON, and botocore decodes and
+    parses them into dicts. One it couldn't parse is left as the text that came,
+    which isn't a document to show.
+    """
+    if isinstance(document, dict):
+        return document
+    if document:
+        logger.debug("The endpoint sent a policy document that isn't JSON: %.200r", document)
+    return {}
 
 
 @router.get("/users")
@@ -57,7 +59,7 @@ def get_user_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     for policy_name in inline_names_resp.get("PolicyNames", []):
         try:
             policy_resp = iam.get_user_policy(UserName=name, PolicyName=policy_name)
-            doc = _decode_policy_document(policy_resp["PolicyDocument"])
+            doc = _policy_document(policy_resp["PolicyDocument"])
             inline_policies.append({"name": policy_name, "document": doc})
         except Exception:
             logger.debug("Failed to get inline policy %s for user %s", policy_name, name, exc_info=True)
@@ -124,7 +126,7 @@ def get_role_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     # Get role detail (includes AssumeRolePolicyDocument)
     role_resp = iam.get_role(RoleName=name)
     role = role_resp["Role"]
-    trust_policy = _decode_policy_document(role.get("AssumeRolePolicyDocument", ""))
+    trust_policy = _policy_document(role.get("AssumeRolePolicyDocument"))
 
     # Get attached managed policies
     attached_resp = iam.list_attached_role_policies(RoleName=name)
@@ -136,7 +138,7 @@ def get_role_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     for policy_name in inline_names_resp.get("PolicyNames", []):
         try:
             policy_resp = iam.get_role_policy(RoleName=name, PolicyName=policy_name)
-            doc = _decode_policy_document(policy_resp["PolicyDocument"])
+            doc = _policy_document(policy_resp["PolicyDocument"])
             inline_policies.append({"name": policy_name, "document": doc})
         except Exception:
             logger.debug("Failed to get inline policy %s for role %s", policy_name, name, exc_info=True)
@@ -201,7 +203,7 @@ def get_group_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     for policy_name in inline_names_resp.get("PolicyNames", []):
         try:
             policy_resp = iam.get_group_policy(GroupName=name, PolicyName=policy_name)
-            doc = _decode_policy_document(policy_resp["PolicyDocument"])
+            doc = _policy_document(policy_resp["PolicyDocument"])
             inline_policies.append({"name": policy_name, "document": doc})
         except Exception:
             logger.debug("Failed to get inline policy %s for group %s", policy_name, name, exc_info=True)
@@ -258,7 +260,7 @@ def get_policy_detail(arn: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     if version_id:
         try:
             version_resp = iam.get_policy_version(PolicyArn=arn, VersionId=version_id)
-            document = _decode_policy_document(version_resp["PolicyVersion"]["Document"])
+            document = _policy_document(version_resp["PolicyVersion"]["Document"])
         except Exception:
             logger.debug("Failed to get policy document for %s", arn, exc_info=True)
 
