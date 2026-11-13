@@ -23,14 +23,20 @@ cd ui && npx eslint .
 docker compose up                                        # StackPort + MiniStack
 ```
 
-Requires a running AWS-compatible emulator on :4566. No emulator is the default: the root compose file uses MiniStack, `examples/docker-compose.floci.yml` uses Floci, and the docs present them side by side rather than naming a default. The rule lives in `CONTRIBUTING.md#supported-emulators`; keep any emulator-related docs change consistent with it.
+Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves HTTPS on :9297). No emulator is the default: the root compose file uses MiniStack, `examples/docker-compose.floci.yml` uses Floci, `examples/docker-compose.aws-emulator.yml` uses AWS Emulator, and the docs present them side by side rather than naming a default. The rule lives in `CONTRIBUTING.md#supported-emulators`; keep any emulator-related docs change consistent with it.
 
 ## Architecture
 
 **Backend** (`backend/`):
 - `main.py` — FastAPI app, CORS, static file mount for SPA, CLI entry point
 - `config.py` — All settings from env vars (`AWS_ENDPOINT_URL`, `AWS_REGION`, `STACKPORT_PORT`, `STACKPORT_SERVICES`, `STACKPORT_ENDPOINTS`)
-- `aws_client.py` — `get_client(service, endpoint_url)` with `@lru_cache(maxsize=256)` keyed on `(service, endpoint_url)`
+- `aws_client.py` — `get_client(service, **EndpointInfo.client_kwargs())`, clients cached per `(service, ConnectionPlan)`; local endpoints get `inject_host_prefix=False`, a `STACKPORT_PROBE_TIMEOUT` connect timeout and a single attempt
+- `connection.py` — `EndpointInfo` → `plan_connection()` → hashable `ConnectionPlan`. Credential and TLS precedence live in its docstring; `ssl_context_for(plan)` for plain HTTP requests to an endpoint
+- `aws_emulator.py` — `discover(url)` finds AWS Emulator's `ca.pem` + `emulator_credentials` in `<STACKPORT_AWS_EMULATOR_DIR>/<port>/` for `https://<loopback>:<port>`; their stat stamp is in the plan, so a restarted emulator's new keys are picked up
+- `aws_errors.py` — `classify(exc)` → `ClassifiedError` (`not_implemented | credentials | forbidden | tls | unreachable | other`), walking the exception chain
+- `error_handlers.py` — Installed in `main.py`: classified boto errors become 501/401/403/502 with `{"detail": str, "error": ClassifiedError}`
+- `origins.py` — Outermost middlewares: `HostGuard` (browser requests must use localhost, an IP, or `STACKPORT_ALLOWED_HOSTS`: DNS rebinding) and `CrossSiteGuard` (refuses cross-site requests to `/api` and `/ws` via Fetch Metadata and Origin, since CORS doesn't cover simple requests or WebSocket handshakes)
+- `emulators.py` — `DETECTORS` registry identifying MiniStack, Floci, LocalStack, Moto and AWS Emulator by an unauthenticated GET each; `detect_emulator` (cached) for connection checks, `detect_emulator_quickly` (bounded wait) for `/api/health`
 - `routes/common.py` — `get_endpoint_url` FastAPI dependency resolves `?endpoint=` query param → endpoint URL
 - `cache.py` — Thread-safe `TTLCache` singleton (dict + timestamps + threading.Lock)
 - `routes/stats.py` — `GET /api/stats` — probes 35 services concurrently via ThreadPoolExecutor, cached 5s
@@ -66,17 +72,21 @@ Requires a running AWS-compatible emulator on :4566. No emulator is the default:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `AWS_ENDPOINT_URL` | `http://localhost:4566` | AWS-compatible endpoint |
+| `AWS_ENDPOINT_URL` | *(unset: real AWS)* | AWS-compatible endpoint; overrides the saved `default` endpoint's URL for that run (empty = unset) |
 | `AWS_REGION` | `us-east-1` | Region for boto3 clients |
-| `AWS_ACCESS_KEY_ID` | `test` | Credentials |
-| `AWS_SECRET_ACCESS_KEY` | `test` | Credentials |
+| `AWS_ACCESS_KEY_ID` | *(unset: default chain)* | Credentials |
+| `AWS_SECRET_ACCESS_KEY` | *(unset: default chain)* | Credentials |
 | `STACKPORT_PORT` | `8080` | HTTP port |
+| `STACKPORT_HOST` | `127.0.0.1` | Interface to listen on; the Docker image sets `0.0.0.0` |
 | `STACKPORT_S3_MAX_UPLOAD_MB` | `100` | Max S3 upload size per object (whole mebibytes; × 1024²) |
 | `STACKPORT_SERVICES` | *(35 services)* | Comma-separated list to probe |
-| `STACKPORT_PROBE_TIMEOUT` | `5` | Seconds before a service probe times out |
+| `STACKPORT_PROBE_TIMEOUT` | `5` | Seconds to wait when connecting to a local emulator; calls to local emulators aren't retried |
 | `STACKPORT_CACHE_TTL` | `5` | Seconds to cache service stats |
 | `STACKPORT_PROBE_WORKERS` | `10` | ThreadPoolExecutor max workers for concurrent probing |
 | `STACKPORT_LEARN` | `true` | Mount the Learn routes and show the tutorial UI |
+| `STACKPORT_ALLOWED_HOSTS` | *(empty)* | Extra Host names browsers may use (localhost and IPs always work; `*` for any). Probes and scripts aren't checked |
+| `STACKPORT_CORS_ORIGINS` | *(empty)* | Origins allowed to call the API from another site (comma-separated); also checked on WebSocket handshakes. Empty: same-origin only |
+| `STACKPORT_AWS_EMULATOR_DIR` | `~/.aws/emulator` | Where StackPort looks for the per-port keys and `ca.pem` AWS Emulator writes; empty disables the lookup |
 | `LOG_LEVEL` | `INFO` | Python log level (DEBUG shows healthcheck logs) |
 
 ## Learn Module
