@@ -1,184 +1,126 @@
 """Tests for S3 API routes (write operations and reads)."""
 
+import hashlib
 import io
 import os
 from datetime import datetime, timezone
 
 os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 
+import pytest
 from botocore.exceptions import ClientError
+from moto import mock_aws
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.routes import s3 as s3_routes
+from tests.moto_inprocess import moto_client
 
 client = TestClient(app)
 
+BUCKET = "my-bucket"
+MIB = 1024 * 1024
 
-class MemoryS3Store:
-    """Minimal in-memory S3 for API round-trip tests."""
 
-    _FIXED_DT = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+@pytest.fixture
+def s3(monkeypatch):
+    """One S3 client on moto for the routes and the test, so the test sees what the routes send."""
+    with mock_aws():
+        s3_client = moto_client("s3")
+        s3_client.create_bucket(Bucket=BUCKET)
+        monkeypatch.setattr(s3_routes, "get_client", lambda *_args, **_kwargs: s3_client)
+        yield s3_client
 
-    def __init__(self):
-        self._objects: dict[tuple[str, str], dict] = {}
 
-    def put_object(self, Bucket, Key, Body, ContentType=None):
-        raw = Body if isinstance(Body, (bytes, bytearray)) else Body.read()
-        self._objects[(Bucket, Key)] = {
-            "body": bytes(raw),
-            "ContentType": ContentType or "application/octet-stream",
-        }
+def sent_operations(s3_client) -> list[str]:
+    """The names of the operations ``s3_client`` sends from now on, in order."""
+    sent: list[str] = []
+    s3_client.meta.events.register("before-call.s3", lambda model, **_: sent.append(model.name))
+    return sent
 
-    def delete_object(self, Bucket, Key):
-        self._objects.pop((Bucket, Key), None)
 
-    def head_object(self, Bucket, Key):
-        k = (Bucket, Key)
-        if k not in self._objects:
-            raise ClientError(
-                {
-                    "Error": {"Code": "404", "Message": "Not Found"},
-                    "ResponseMetadata": {"HTTPStatusCode": 404},
-                },
-                "HeadObject",
-            )
-        o = self._objects[k]
-        blob = o["body"]
-        return {
-            "ContentLength": len(blob),
-            "ContentType": o["ContentType"],
-            "ETag": '"etag"',
-            "LastModified": self._FIXED_DT,
-        }
+def upload(filename: str, data: bytes, browser_type: str, prefix: str = ""):
+    return client.post(
+        f"/api/s3/buckets/{BUCKET}/objects",
+        files={"file": (filename, io.BytesIO(data), browser_type)},
+        params={"prefix": prefix} if prefix else None,
+    )
 
-    def get_object(self, Bucket, Key):
-        k = (Bucket, Key)
-        if k not in self._objects:
-            raise ClientError(
-                {
-                    "Error": {"Code": "NoSuchKey", "Message": "Not Found"},
-                    "ResponseMetadata": {"HTTPStatusCode": 404},
-                },
-                "GetObject",
-            )
-        o = self._objects[k]
-        return {"Body": io.BytesIO(o["body"]), "ContentType": o["ContentType"]}
 
-    def get_object_tagging(self, Bucket, Key):
-        return {"TagSet": []}
-
-    def get_paginator(self, operation_name):
-        assert operation_name == "list_objects_v2"
-        parent = self
-
-        class Paginator:
-            def paginate(self, **kwargs):
-                bucket = kwargs["Bucket"]
-                prefix = kwargs.get("Prefix") or ""
-                delimiter = kwargs.get("Delimiter") or ""
-
-                contents = []
-                common_prefixes_set: set[str] = set()
-
-                for (b, key), meta in parent._objects.items():
-                    if b != bucket or not key.startswith(prefix):
-                        continue
-                    if key == prefix:
-                        continue
-                    rel = key[len(prefix) :] if prefix else key
-                    if delimiter and delimiter in rel:
-                        idx = rel.index(delimiter)
-                        cp = prefix + rel[: idx] + delimiter
-                        common_prefixes_set.add(cp)
-                        continue
-                    contents.append(
-                        {
-                            "Key": key,
-                            "Size": len(meta["body"]),
-                            "LastModified": parent._FIXED_DT,
-                            "ETag": '"x"',
-                        }
-                    )
-
-                yield {
-                    "Contents": contents,
-                    "CommonPrefixes": [{"Prefix": p} for p in sorted(common_prefixes_set)],
-                }
-
-        return Paginator()
+def multipart_etag(data: bytes, part_size: int) -> str:
+    """The ETag S3 gives an object uploaded in parts of ``part_size``: the MD5 of the parts' MD5s, and the part count."""
+    digests = [hashlib.md5(data[i : i + part_size]).digest() for i in range(0, len(data), part_size)]
+    return f'"{hashlib.md5(b"".join(digests)).hexdigest()}-{len(digests)}"'
 
 
 class TestUploadObject:
-    @patch("backend.routes.s3.get_client")
-    def test_upload_puts_object(self, mock_get_client):
-        mock_s3 = MagicMock()
-        mock_get_client.return_value = mock_s3
+    def test_upload_puts_object(self, s3):
+        sent = sent_operations(s3)
 
-        files = {"file": ("hello.txt", io.BytesIO(b"hello world"), "text/plain")}
-        resp = client.post(
-            "/api/s3/buckets/my-bucket/objects",
-            files=files,
-            params={"prefix": "p/"},
-        )
+        resp = upload("hello.txt", b"hello world", "text/plain", prefix="p/")
+
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["bucket"] == "my-bucket"
-        assert data["key"] == "p/hello.txt"
-        assert data["size"] == 11
-        mock_s3.put_object.assert_called_once()
-        call_kw = mock_s3.put_object.call_args.kwargs
-        assert call_kw["Bucket"] == "my-bucket"
-        assert call_kw["Key"] == "p/hello.txt"
-        assert call_kw["Body"] == b"hello world"
-        assert call_kw["ContentType"] == "text/plain"
+        assert resp.json() == {"bucket": BUCKET, "key": "p/hello.txt", "size": 11, "content_type": "text/plain"}
+        assert sent == ["PutObject"]
+        stored = s3.get_object(Bucket=BUCKET, Key="p/hello.txt")
+        assert stored["Body"].read() == b"hello world"
+        assert stored["ContentType"] == "text/plain"
 
-    @patch("backend.routes.s3.get_client")
-    def test_upload_uses_guess_when_browser_octet_stream(self, mock_get_client):
-        mock_s3 = MagicMock()
-        mock_get_client.return_value = mock_s3
-        files = {"file": ("note.txt", io.BytesIO(b"x"), "application/octet-stream")}
-        resp = client.post("/api/s3/buckets/b/objects", files=files)
+    def test_upload_uses_guess_when_browser_octet_stream(self, s3):
+        resp = upload("note.txt", b"x", "application/octet-stream")
         assert resp.status_code == 200
         assert resp.json()["content_type"] == "text/plain"
-        assert mock_s3.put_object.call_args.kwargs["ContentType"] == "text/plain"
+        assert s3.head_object(Bucket=BUCKET, Key="note.txt")["ContentType"] == "text/plain"
 
-    @patch("backend.routes.s3.get_client")
-    def test_upload_prefers_extension_when_browser_disagrees(self, mock_get_client):
-        mock_s3 = MagicMock()
-        mock_get_client.return_value = mock_s3
-        files = {"file": ("photo.png", io.BytesIO(b"x"), "image/jpeg")}
-        resp = client.post("/api/s3/buckets/b/objects", files=files)
+    def test_upload_prefers_extension_when_browser_disagrees(self, s3):
+        resp = upload("photo.png", b"x", "image/jpeg")
         assert resp.status_code == 200
         assert resp.json()["content_type"] == "image/png"
-        assert mock_s3.put_object.call_args.kwargs["ContentType"] == "image/png"
+        assert s3.head_object(Bucket=BUCKET, Key="photo.png")["ContentType"] == "image/png"
 
-    @patch("backend.routes.s3.S3_MAX_UPLOAD_BYTES", 10)
-    @patch("backend.routes.s3.get_client")
-    def test_upload_rejects_large_file(self, mock_get_client):
-        mock_s3 = MagicMock()
-        mock_get_client.return_value = mock_s3
+    def test_upload_rejects_large_file(self, s3, monkeypatch):
+        monkeypatch.setattr(s3_routes, "S3_MAX_UPLOAD_BYTES", 10)
+        sent = sent_operations(s3)
 
-        files = {"file": ("big.bin", io.BytesIO(b"x" * 11), "application/octet-stream")}
-        resp = client.post("/api/s3/buckets/b/objects", files=files)
+        resp = upload("big.bin", b"x" * 11, "application/octet-stream")
+
         assert resp.status_code == 413
+        assert resp.json()["detail"] == "File exceeds maximum size of 10 bytes"
+        assert sent == []
 
-    @patch("backend.routes.s3.get_client")
-    def test_upload_strips_path_traversal_from_filename(self, mock_get_client):
+    def test_upload_strips_path_traversal_from_filename(self, s3):
         """Malicious upload names must not create keys with `..` segments (basename is safe)."""
-        mock_s3 = MagicMock()
-        mock_get_client.return_value = mock_s3
-
-        files = {"file": ("../../etc/passwd", io.BytesIO(b"secret"), "text/plain")}
-        resp = client.post(
-            "/api/s3/buckets/bucket/objects",
-            files=files,
-            params={"prefix": "p/"},
-        )
+        resp = upload("../../etc/passwd", b"secret", "text/plain", prefix="p/")
         assert resp.status_code == 200
-        assert mock_s3.put_object.call_args.kwargs["Key"] == "p/passwd"
-        assert ".." not in mock_s3.put_object.call_args.kwargs["Key"]
+        assert [obj["Key"] for obj in s3.list_objects_v2(Bucket=BUCKET)["Contents"]] == ["p/passwd"]
+
+    def test_file_under_the_part_size_goes_up_in_one_request(self, s3):
+        data = os.urandom(8 * MIB - 1)
+        sent = sent_operations(s3)
+
+        resp = upload("data.bin", data, "application/octet-stream")
+
+        assert resp.status_code == 200
+        assert sent == ["PutObject"]
+        assert s3.head_object(Bucket=BUCKET, Key="data.bin")["ETag"] == f'"{hashlib.md5(data).hexdigest()}"'
+
+    def test_large_file_goes_up_in_parts_every_s3_accepts(self, s3):
+        """8 MiB parts: over AWS's 5 MiB minimum, under the 16 MiB AWS Emulator takes in one request."""
+        data = os.urandom(20 * MIB)
+        sent = sent_operations(s3)
+
+        resp = upload("report.csv", data, "application/octet-stream", prefix="exports/")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"bucket": BUCKET, "key": "exports/report.csv", "size": 20 * MIB, "content_type": "text/csv"}
+        assert sent == ["CreateMultipartUpload", "UploadPart", "UploadPart", "UploadPart", "CompleteMultipartUpload"]
+        stored = s3.head_object(Bucket=BUCKET, Key="exports/report.csv")
+        assert stored["ETag"] == multipart_etag(data, 8 * MIB)
+        assert stored["ContentLength"] == 20 * MIB
+        assert stored["ContentType"] == "text/csv"
+        assert s3.list_multipart_uploads(Bucket=BUCKET).get("Uploads", []) == []
 
 
 class TestS3UploadConfig:
@@ -309,34 +251,29 @@ class TestObjectDetailAfterWrite:
         assert resp.status_code == 404
 
 
-class TestS3RoundTripMemory:
-    @patch("backend.routes.s3.get_client")
-    def test_upload_list_download_delete_flow(self, mock_get_client):
-        store = MemoryS3Store()
-        mock_get_client.return_value = store
-
-        files = {"file": ("doc.txt", io.BytesIO(b"payload"), "text/plain")}
-        up = client.post("/api/s3/buckets/rt-bucket/objects", files=files)
+class TestS3RoundTrip:
+    def test_upload_list_download_delete_flow(self, s3):
+        up = upload("doc.txt", b"payload", "text/plain")
         assert up.status_code == 200
         assert up.json()["key"] == "doc.txt"
 
-        lst = client.get("/api/s3/buckets/rt-bucket/objects")
+        lst = client.get(f"/api/s3/buckets/{BUCKET}/objects")
         assert lst.status_code == 200
         names = [f["name"] for f in lst.json()["files"]]
         assert "doc.txt" in names
 
-        detail = client.get("/api/s3/buckets/rt-bucket/objects/doc.txt")
+        detail = client.get(f"/api/s3/buckets/{BUCKET}/objects/doc.txt")
         assert detail.status_code == 200
         assert detail.json()["size"] == 7
 
-        dl = client.get("/api/s3/buckets/rt-bucket/objects/doc.txt?download=1")
+        dl = client.get(f"/api/s3/buckets/{BUCKET}/objects/doc.txt?download=1")
         assert dl.status_code == 200
         assert dl.content == b"payload"
 
-        rm = client.delete("/api/s3/buckets/rt-bucket/objects/doc.txt")
+        rm = client.delete(f"/api/s3/buckets/{BUCKET}/objects/doc.txt")
         assert rm.status_code == 200
 
-        gone = client.get("/api/s3/buckets/rt-bucket/objects/doc.txt")
+        gone = client.get(f"/api/s3/buckets/{BUCKET}/objects/doc.txt")
         assert gone.status_code == 404
 
 
