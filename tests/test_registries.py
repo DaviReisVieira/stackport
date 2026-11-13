@@ -10,13 +10,19 @@ from click.testing import CliRunner
 
 from backend.cli import cli
 from backend.routes.resources import (
+    _DESCRIBE_FROM_LISTING,
+    _DESCRIBE_KWARGS,
     _ID_FIELDS,
     _PREFERRED_ID_FIELD,
     DESCRIBE_REGISTRY,
     _extract_id,
     _summarize_item,
 )
-from backend.routes.stats import _METHOD_KWARGS, SERVICE_REGISTRY
+from backend.routes.stats import _GROUPED_ITEMS, _METHOD_KWARGS, _PER_PARENT, SERVICE_REGISTRY
+
+
+def _registry_methods() -> set[tuple[str, str]]:
+    return {(boto3_service, method) for entries in SERVICE_REGISTRY.values() for _, boto3_service, method, _ in entries}
 
 
 class TestServiceRegistry:
@@ -75,6 +81,29 @@ class TestMethodKwargs:
             assert isinstance(value, dict), f"{key}: value is not a dict"
 
 
+class TestListingQuirks:
+    def test_grouped_items_belong_to_registered_list_calls(self):
+        assert set(_GROUPED_ITEMS) <= _registry_methods()
+
+    def test_per_parent_calls_and_their_parents_are_registered(self):
+        methods = _registry_methods()
+        for (boto3_service, method), (parent_method, *_) in _PER_PARENT.items():
+            assert (boto3_service, method) in methods
+            assert (boto3_service, parent_method) in methods
+
+
+class TestDetailQuirks:
+    def test_keys_are_registered_lookups(self):
+        assert set(_DESCRIBE_KWARGS) <= set(DESCRIBE_REGISTRY)
+        assert set(_DESCRIBE_FROM_LISTING) <= set(DESCRIBE_REGISTRY)
+
+    def test_lookups_through_the_listing_list_with_the_same_client(self):
+        # The detail call's client lists the resource first.
+        for (service, resource_type), _fields in _DESCRIBE_FROM_LISTING.items():
+            list_service = next(e[1] for e in SERVICE_REGISTRY[service] if e[0] == resource_type)
+            assert DESCRIBE_REGISTRY[(service, resource_type)][0] == list_service
+
+
 class TestIdFields:
     def test_id_fields_are_strings(self):
         for field in _ID_FIELDS:
@@ -92,6 +121,8 @@ class TestPreferredIdField:
         ("ec2", "security_groups", "GroupId", "GroupIds"),
         ("elasticfilesystem", "file_systems", "FileSystemId", "FileSystemId"),
         ("rds", "db_clusters", "DBClusterIdentifier", "DBClusterIdentifier"),
+        ("elasticloadbalancing", "load_balancers", "LoadBalancerArn", "LoadBalancerArns"),
+        ("cloudformation", "stacks", "StackId", "StackName"),
     ], ids=lambda case: f"{case[0]}/{case[1]}")
     def resource_case(self, request):
         service, resource_type, id_field, id_param = request.param

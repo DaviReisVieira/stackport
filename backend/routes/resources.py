@@ -1,11 +1,15 @@
 import logging
+from collections.abc import Callable
+from typing import Any
 
+from botocore.exceptions import ParamValidationError
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.aws_client import get_client
+from backend.aws_errors import shorten
 from backend.cache import cache
 from backend.routes.common import EndpointInfo, get_endpoint_info
-from backend.routes.stats import SERVICE_REGISTRY, _METHOD_KWARGS
+from backend.routes.stats import SERVICE_REGISTRY, list_items, ungroup
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,7 @@ DESCRIBE_REGISTRY: dict[tuple[str, str], tuple[str, str, str, str | None]] = {
     ("acm", "certificates"): ("acm", "describe_certificate", "CertificateArn", "Certificate"),
     ("cognito-idp", "user_pools"): ("cognito-idp", "describe_user_pool", "UserPoolId", "UserPool"),
     ("cognito-identity", "identity_pools"): ("cognito-identity", "describe_identity_pool", "IdentityPoolId", None),
+    ("wafv2", "web_acls"): ("wafv2", "get_web_acl", "Name", "WebACL"),
     # Management
     ("logs", "log_groups"): ("logs", "describe_log_groups", "logGroupNamePrefix", "logGroups"),
     ("ssm", "parameters"): ("ssm", "get_parameter", "Name", "Parameter"),
@@ -73,11 +78,34 @@ DESCRIBE_REGISTRY: dict[tuple[str, str], tuple[str, str, str, str | None]] = {
     ("elasticmapreduce", "clusters"): ("emr", "describe_cluster", "ClusterId", "Cluster"),
 }
 
+# Extra parameters some detail calls need besides the id.
+_DESCRIBE_KWARGS: dict[tuple[str, str], dict] = {
+    # Without AttributeNames, GetQueueAttributes answers with no attributes at all.
+    ("sqs", "queues"): {"AttributeNames": ["All"]},
+    ("wafv2", "web_acls"): {"Scope": "REGIONAL"},
+}
+
+# Detail calls that need more of the resource than its id. The resource is found
+# in its listing by id, and the detail call's id parameter and these are passed
+# the listed item's fields of the same names. A rule is only found on its own
+# event bus (rules on two buses can share a name); a web ACL needs its Id too.
+_DESCRIBE_FROM_LISTING: dict[tuple[str, str], tuple[str, ...]] = {
+    ("events", "rules"): ("EventBusName",),
+    ("wafv2", "web_acls"): ("Id",),
+}
+
+# Detail parameters that take a list of ids, given the one id.
+_LIST_PARAMS = frozenset({
+    "InstanceIds", "VpcIds", "SubnetIds", "GroupIds", "VolumeIds",
+    "repositoryNames", "clusters", "AlarmNames", "LoadBalancerArns",
+})
+
 # Override the generic _ID_FIELDS for services where the default order picks
 # the wrong field (e.g. Arn before Name, or Name before Id).
 _PREFERRED_ID_FIELD: dict[tuple[str, str], str] = {
     ("route53", "hosted_zones"): "Id",
-    ("events", "rules"): "Name",
+    # Unique across event buses, unlike the name.
+    ("events", "rules"): "Arn",
     ("events", "event_buses"): "Name",
     ("wafv2", "web_acls"): "Name",
     ("appsync", "graphql_apis"): "apiId",
@@ -90,6 +118,11 @@ _PREFERRED_ID_FIELD: dict[tuple[str, str], str] = {
     ("ec2", "security_groups"): "GroupId",
     ("elasticfilesystem", "file_systems"): "FileSystemId",
     ("rds", "db_clusters"): "DBClusterIdentifier",
+    # VpcId comes first in _ID_FIELDS.
+    ("elasticloadbalancing", "load_balancers"): "LoadBalancerArn",
+    # Deleted stacks are listed too, and a new stack can reuse a deleted one's
+    # name; DescribeStacks takes the id for both.
+    ("cloudformation", "stacks"): "StackId",
 }
 
 # Known ID field names for extracting a resource identifier from list results
@@ -174,6 +207,81 @@ def _summarize_item(item, preferred_field: str | None = None) -> dict:
     return {"id": str(item)}
 
 
+class UnknownResourceType(LookupError):
+    """No detail lookup is registered for the service and resource type."""
+
+
+class ResourceNotFound(LookupError):
+    """Nothing in a resource type's listing has the id asked for."""
+
+
+def _find_listed(client, service: str, res_type: str, res_id: str) -> dict:
+    """The item of ``res_type``'s listing whose id is ``res_id``."""
+    _, boto3_service, method_name, response_key = next(
+        entry for entry in SERVICE_REGISTRY[service] if entry[0] == res_type
+    )
+    preferred = _PREFERRED_ID_FIELD.get((service, res_type))
+    for item in list_items(client, boto3_service, method_name, response_key):
+        if _extract_id(item, preferred) == res_id:
+            return item
+    raise ResourceNotFound(f"'{res_id}' wasn't found in {service} {res_type}.")
+
+
+def _describe_ses_identity(client, identity: str) -> dict:
+    """SES identities are plain strings: put their detail together from two calls."""
+    verification = client.get_identity_verification_attributes(Identities=[identity])
+    attrs = verification.get("VerificationAttributes", {}).get(identity, {})
+    dkim = client.get_identity_dkim_attributes(Identities=[identity])
+    dkim_attrs = dkim.get("DkimAttributes", {}).get(identity, {})
+    return {
+        "Identity": identity,
+        "VerificationStatus": attrs.get("VerificationStatus", "Unknown"),
+        "VerificationToken": attrs.get("VerificationToken"),
+        "DkimEnabled": dkim_attrs.get("DkimEnabled", False),
+        "DkimVerificationStatus": dkim_attrs.get("DkimVerificationStatus", "Unknown"),
+        "DkimTokens": dkim_attrs.get("DkimTokens", []),
+    }
+
+
+def describe_resource(client_for: Callable[[str], Any], service: str, res_type: str, res_id: str):
+    """The detail of one listed resource, ready for JSON: what the detail route and ``stackport describe`` show.
+
+    ``client_for(boto3_service)`` returns a client for the endpoint to ask.
+
+    Raises:
+        UnknownResourceType: no detail lookup is registered for ``service``/``res_type``.
+        ResourceNotFound: the lookup goes through the listing, and nothing listed has ``res_id``.
+        botocore errors from the calls, for the caller to report.
+    """
+    if (service, res_type) == ("ses", "identities"):
+        return _serialize(_describe_ses_identity(client_for("ses"), res_id))
+
+    lookup = DESCRIBE_REGISTRY.get((service, res_type))
+    if lookup is None:
+        raise UnknownResourceType(f"No detail lookup registered for {service}/{res_type}")
+    boto3_service, method_name, id_param, response_key = lookup
+    client = client_for(boto3_service)
+
+    params = dict(_DESCRIBE_KWARGS.get((service, res_type), {}))
+    from_listing = _DESCRIBE_FROM_LISTING.get((service, res_type))
+    if from_listing is not None:
+        item = _find_listed(client, service, res_type, res_id)
+        params.update({field: item[field] for field in (id_param, *from_listing)})
+    elif id_param in _LIST_PARAMS:
+        params[id_param] = [res_id]
+    else:
+        params[id_param] = res_id
+
+    resp = getattr(client, method_name)(**params)
+    resp.pop("ResponseMetadata", None)
+    if response_key is None:
+        return _serialize(resp)
+    detail = resp.get(response_key, resp)
+    if isinstance(detail, list):
+        detail = ungroup(detail, boto3_service, method_name)
+    return _serialize(detail)
+
+
 @router.get("/resources/{service}")
 def list_resources(service: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     cache_key = f"{ep.cache_scope()}:resources:{service}"
@@ -189,13 +297,7 @@ def list_resources(service: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     for resource_type, boto3_service, method_name, response_key in registry_entries:
         try:
             client = get_client(boto3_service, **ep.client_kwargs())
-            method = getattr(client, method_name)
-            kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
-            resp = method(**kwargs)
-            items = resp.get(response_key, [])
-            # Handle nested structures (e.g., cloudfront DistributionList.Items)
-            if isinstance(items, dict) and "Items" in items:
-                items = items.get("Items", []) or []
+            items = list_items(client, boto3_service, method_name, response_key)
             preferred = _PREFERRED_ID_FIELD.get((service, resource_type))
             resources[resource_type] = [_summarize_item(item, preferred) for item in items]
         except Exception:
@@ -214,94 +316,19 @@ def get_resource_detail(service: str, res_type: str, res_id: str, ep: EndpointIn
     if cached is not None:
         return cached
 
-    # SES identities are plain strings — aggregate detail from multiple APIs
-    if (service, res_type) == ("ses", "identities"):
-        try:
-            client = get_client("ses", **ep.client_kwargs())
-            verif = client.get_identity_verification_attributes(Identities=[res_id])
-            attrs = verif.get("VerificationAttributes", {}).get(res_id, {})
-            dkim = client.get_identity_dkim_attributes(Identities=[res_id])
-            dkim_attrs = dkim.get("DkimAttributes", {}).get(res_id, {})
-            detail = _serialize({
-                "Identity": res_id,
-                "VerificationStatus": attrs.get("VerificationStatus", "Unknown"),
-                "VerificationToken": attrs.get("VerificationToken"),
-                "DkimEnabled": dkim_attrs.get("DkimEnabled", False),
-                "DkimVerificationStatus": dkim_attrs.get("DkimVerificationStatus", "Unknown"),
-                "DkimTokens": dkim_attrs.get("DkimTokens", []),
-            })
-            result = {"service": service, "type": res_type, "id": res_id, "detail": detail}
-            cache.set(cache_key, result, ttl=5)
-            return result
-        except Exception as exc:
-            logger.warning("Failed to get detail for %s/%s/%s", service, res_type, res_id, exc_info=True)
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    # WAFv2 get_web_acl requires Name, Scope, AND Id — resolve Id from list first
-    if (service, res_type) == ("wafv2", "web_acls"):
-        try:
-            client = get_client("wafv2", **ep.client_kwargs())
-            acls = client.list_web_acls(Scope="REGIONAL").get("WebACLs", [])
-            match = next((a for a in acls if a.get("Name") == res_id), None)
-            if not match:
-                raise HTTPException(404, f"Web ACL '{res_id}' not found")
-            resp = client.get_web_acl(Name=res_id, Scope="REGIONAL", Id=match["Id"])
-            resp.pop("ResponseMetadata", None)
-            detail = _serialize(resp.get("WebACL", resp))
-            result = {"service": service, "type": res_type, "id": res_id, "detail": detail}
-            cache.set(cache_key, result, ttl=5)
-            return result
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.warning("Failed to get detail for %s/%s/%s", service, res_type, res_id, exc_info=True)
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    lookup = DESCRIBE_REGISTRY.get((service, res_type))
-    if not lookup:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No detail lookup registered for {service}/{res_type}",
-        )
-
-    boto3_service, method_name, id_param, response_key = lookup
-
-    # Some APIs take list parameters (e.g., InstanceIds, VpcIds)
-    _LIST_PARAMS = {
-        "InstanceIds", "VpcIds", "SubnetIds", "GroupIds", "VolumeIds",
-        "repositoryNames", "clusters", "AlarmNames", "LoadBalancerArns",
-    }
-
+    # Errors from the endpoint (a missing resource, a malformed id, an operation
+    # it lacks) go to the app's AWS error handlers, which answer with its status.
     try:
-        client = get_client(boto3_service, **ep.client_kwargs())
-        method = getattr(client, method_name)
-        if id_param in _LIST_PARAMS:
-            resp = method(**{id_param: [res_id]})
-        else:
-            resp = method(**{id_param: res_id})
+        detail = describe_resource(lambda name: get_client(name, **ep.client_kwargs()), service, res_type, res_id)
+    except (UnknownResourceType, ResourceNotFound) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ParamValidationError as exc:
+        # botocore refused the id before sending it (one too short, for instance).
+        raise HTTPException(status_code=400, detail=shorten(str(exc))) from exc
 
-        # Remove boto3 metadata
-        resp.pop("ResponseMetadata", None)
-
-        if response_key is not None:
-            detail = resp.get(response_key, resp)
-        else:
-            detail = resp
-
-        # Convert datetime objects for JSON serialization
-        detail = _serialize(detail)
-
-        result = {
-            "service": service,
-            "type": res_type,
-            "id": res_id,
-            "detail": detail,
-        }
-        cache.set(cache_key, result, ttl=5)
-        return result
-    except Exception as exc:
-        logger.warning("Failed to get detail for %s/%s/%s", service, res_type, res_id, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    result = {"service": service, "type": res_type, "id": res_id, "detail": detail}
+    cache.set(cache_key, result, ttl=5)
+    return result
 
 
 def _serialize(obj):

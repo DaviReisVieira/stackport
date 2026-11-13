@@ -78,13 +78,15 @@ StackPort takes part in Hacktoberfest. Pull requests are welcome all year, and i
    ```python
    "myservice": [("resource_type", "boto3_service", "list_method", "ResponseKey")],
    ```
-2. If the list API needs extra parameters, add them to `_METHOD_KWARGS` in the same file.
+2. If the list API needs extra parameters, add them to `_METHOD_KWARGS` in the same file. If its response groups the resources (EC2 reservations hold instances), add it to `_GROUPED_ITEMS`; if each call only covers one parent (EventBridge rules, one event bus at a time), add it to `_PER_PARENT`.
 3. **`backend/routes/resources.py`**: add to `DESCRIBE_REGISTRY`:
    ```python
    ("myservice", "resource_type"): ("boto3_service", "describe_method", "IdParam", "ResponseKey"),
    ```
-4. Add the resource's ID field names to `_ID_FIELDS` in `resources.py`.
+   Extra parameters for the detail call go in `_DESCRIBE_KWARGS`. If it needs more of the resource than its id, list the fields in `_DESCRIBE_FROM_LISTING`.
+4. Add the resource's ID field names to `_ID_FIELDS` in `resources.py`. If an item has another field from that list first (a `VpcId` before the `LoadBalancerArn`), set the right one in `_PREFERRED_ID_FIELD`.
 5. **`backend/config.py`**: add the service to the `STACKPORT_SERVICES` default string.
+6. **`tests/test_generic_resources.py`**: add a creator for the new resource type. The test creates it in moto, lists the type and opens the detail of every id the listing gives.
 
 ### Frontend
 

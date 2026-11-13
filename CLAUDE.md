@@ -51,8 +51,11 @@ Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves 
 
 **Key registries in backend:**
 - `SERVICE_REGISTRY` (stats.py) — maps service name → list of `(resource_type, boto3_service, method, response_key)` tuples. 35 services.
-- `DESCRIBE_REGISTRY` (resources.py) — maps `(service, resource_type)` → boto3 describe call for detail views. 19 entries.
-- `_METHOD_KWARGS` (stats.py) — extra params for APIs that require them (cognito `MaxResults`, wafv2 `Scope`).
+- `DESCRIBE_REGISTRY` (resources.py) — maps `(service, resource_type)` → boto3 describe call for detail views.
+- `_METHOD_KWARGS` (stats.py) — extra params for APIs that require them (cognito `MaxResults`, wafv2 `Scope`, iam `Scope=Local`).
+- `_GROUPED_ITEMS` / `_PER_PARENT` (stats.py) — list calls whose resources sit inside groups (EC2 reservations) or that cover one parent per call (EventBridge rules per bus). `list_items()` applies them; the dashboard count, generic listing, CLI and Learn checks all go through it.
+- `_DESCRIBE_KWARGS` / `_DESCRIBE_FROM_LISTING` (resources.py) — extra params for detail calls (SQS `AttributeNames`), and detail calls that need more of the resource than its id (a rule's event bus), found through the listing. `describe_resource()` serves both the detail route and `stackport describe`.
+- `tests/test_generic_resources.py` creates one resource per detail lookup in moto and opens every listed id: a new `DESCRIBE_REGISTRY` entry needs a creator there.
 
 **Frontend** (`ui/src/`):
 - React 18 + Vite 5 + TypeScript + Cloudscape Design System (`@cloudscape-design/components`), Tailwind CSS 3 kept as a small utility layer
@@ -118,10 +121,11 @@ Adding an anchor: add the id to **both** `backend/learn/hotspots.py` and `ui/src
 ## Adding a New Service to the Backend
 
 1. Add entries to `SERVICE_REGISTRY` in `backend/routes/stats.py` — `(resource_type, boto3_service, method, response_key)`
-2. If the list API needs extra kwargs, add to `_METHOD_KWARGS` in `stats.py`
-3. Add detail lookup to `DESCRIBE_REGISTRY` in `backend/routes/resources.py`
-4. Add ID field names to `_ID_FIELDS` in `resources.py`
+2. If the list API needs extra kwargs, add to `_METHOD_KWARGS` in `stats.py` (and `_GROUPED_ITEMS` / `_PER_PARENT` for grouped or per-parent listings)
+3. Add detail lookup to `DESCRIBE_REGISTRY` in `backend/routes/resources.py` (plus `_DESCRIBE_KWARGS` / `_DESCRIBE_FROM_LISTING` if the id alone isn't enough)
+4. Add ID field names to `_ID_FIELDS` in `resources.py`, or a `_PREFERRED_ID_FIELD` entry when another field of the item comes first
 5. Add the service to `STACKPORT_SERVICES` default in `backend/config.py`
+6. Add a creator for each new detail lookup in `tests/test_generic_resources.py`
 
 ## Adding a Service-Specific UI View
 
