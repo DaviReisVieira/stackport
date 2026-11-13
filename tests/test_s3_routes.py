@@ -4,6 +4,7 @@ import hashlib
 import io
 import os
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 
@@ -275,6 +276,40 @@ class TestS3RoundTrip:
 
         gone = client.get(f"/api/s3/buckets/{BUCKET}/objects/doc.txt")
         assert gone.status_code == 404
+
+
+class TestDownloadObject:
+    @pytest.mark.parametrize(
+        ("key", "disposition"),
+        [
+            ("exports/summary_2026-01.csv", 'attachment; filename="summary_2026-01.csv"'),
+            ("docs/報告 ☕.txt", "attachment; filename=\"____.txt\"; filename*=UTF-8''%E5%A0%B1%E5%91%8A%20%E2%98%95.txt"),
+            ("café.txt", "attachment; filename=\"caf_.txt\"; filename*=UTF-8''caf%C3%A9.txt"),
+            (
+                'docs/say "hi"\\there;.txt',
+                "attachment; filename=\"say__hi__there_.txt\"; filename*=UTF-8''say%20%22hi%22%5Cthere%3B.txt",
+            ),
+        ],
+    )
+    def test_any_key_downloads_under_its_own_name(self, s3, key, disposition):
+        """RFC 6266: the exact name in filename* as UTF-8, an ASCII fallback that quotes and backslashes can't break."""
+        s3.put_object(Bucket=BUCKET, Key=key, Body="contenu ☕".encode(), ContentType="text/plain")
+
+        resp = client.get(f"/api/s3/buckets/{BUCKET}/objects/{quote(key)}", params={"download": 1})
+
+        assert resp.status_code == 200
+        assert resp.headers["content-disposition"] == disposition
+        assert resp.content == "contenu ☕".encode()
+
+    def test_download_declares_its_length(self, s3):
+        """So the browser shows progress, and a download cut short can't pass for a whole one."""
+        s3.put_object(Bucket=BUCKET, Key="data.bin", Body=b"x" * 300_000, ContentType="application/octet-stream")
+
+        resp = client.get(f"/api/s3/buckets/{BUCKET}/objects/data.bin", params={"download": 1})
+
+        assert resp.headers["content-length"] == "300000"
+        assert resp.headers["content-type"] == "application/octet-stream"
+        assert len(resp.content) == 300_000
 
 
 class TestValidation:

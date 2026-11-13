@@ -6,10 +6,10 @@ from typing import Annotated
 from boto3.s3.transfer import TransferConfig
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import StreamingResponse
 from backend.aws_client import get_client
 from backend.cache import cache
 from backend.config import AWS_REGION, S3_MAX_UPLOAD_BYTES, is_local_endpoint
+from backend.downloads import RELAY_CHUNK_BYTES, RelayResponse, attachment
 from backend.routes.common import EndpointInfo, get_endpoint_info
 from backend.schemas.s3 import (
     CreateBucketBody,
@@ -386,11 +386,16 @@ def get_object_detail(
             if _is_s3_not_found(e):
                 raise HTTPException(status_code=404, detail="Object not found") from e
             raise
-        filename = key.rsplit("/", 1)[-1] or key
-        return StreamingResponse(
-            resp["Body"],
+        body = resp["Body"]
+        headers = {"Content-Disposition": attachment(key.rsplit("/", 1)[-1] or key)}
+        if "ContentLength" in resp:
+            headers["Content-Length"] = str(resp["ContentLength"])
+        return RelayResponse(
+            # Iterating the body itself would yield 1 KiB chunks, each a hop through the thread pool.
+            body.iter_chunks(RELAY_CHUNK_BYTES),
+            upstream=body,
             media_type=resp.get("ContentType", "application/octet-stream"),
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers=headers,
         )
 
     try:
