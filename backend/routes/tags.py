@@ -11,6 +11,42 @@ from backend.schemas.tags import BulkDeleteRequest, BulkTagRequest, TagUpdateReq
 router = APIRouter()
 
 
+# --- Identifier resolution ---
+#
+# A resource reaches these routes under whichever identifier its caller had: the
+# generic resource list hands out SQS queue URLs and log group names, the SQS
+# view queue names, the Logs view the log group ARN from DescribeLogGroups.
+# Each handler takes every form it can be given and resolves what its API needs.
+
+
+def _queue_url(client: Any, resource_id: str) -> str:
+    """The URL SQS calls take, from a queue URL or a queue name."""
+    if resource_id.startswith(("http://", "https://")):
+        return resource_id
+    return client.get_queue_url(QueueName=resource_id)["QueueUrl"]
+
+
+def _log_group_arn(client: Any, resource_id: str) -> str:
+    """The ARN the CloudWatch Logs tagging calls take, from a log group name or ARN.
+
+    DescribeLogGroups' ``arn`` ends in ``:*``; the tagging calls want the ARN
+    without it, which newer responses also return as ``logGroupArn``. A log
+    group name can't contain a colon, so anything starting ``arn:`` is an ARN.
+    """
+    if resource_id.startswith("arn:"):
+        return resource_id.removesuffix(":*")
+    pages = client.get_paginator("describe_log_groups").paginate(logGroupNamePrefix=resource_id)
+    for page in pages:
+        for group in page.get("logGroups", []):
+            if group["logGroupName"] == resource_id:
+                return group.get("logGroupArn") or group["arn"].removesuffix(":*")
+    raise HTTPException(status_code=404, detail=f"Log group '{resource_id}' not found")
+
+
+def _rest_api_arn(client: Any, resource_id: str) -> str:
+    return f"arn:{client.meta.partition}:apigateway:{client.meta.region_name}::/restapis/{resource_id}"
+
+
 # --- Tag getters: (service, type) -> callable(client, resource_id) -> dict ---
 
 def _get_tags_s3_bucket(client: Any, resource_id: str) -> dict[str, str]:
@@ -22,9 +58,7 @@ def _get_tags_s3_bucket(client: Any, resource_id: str) -> dict[str, str]:
 
 
 def _get_tags_sqs_queue(client: Any, resource_id: str) -> dict[str, str]:
-    url_resp = client.get_queue_url(QueueName=resource_id)
-    queue_url = url_resp["QueueUrl"]
-    resp = client.list_queue_tags(QueueUrl=queue_url)
+    resp = client.list_queue_tags(QueueUrl=_queue_url(client, resource_id))
     return resp.get("Tags", {})
 
 
@@ -46,7 +80,7 @@ def _get_tags_secretsmanager(client: Any, resource_id: str) -> dict[str, str]:
 
 
 def _get_tags_logs(client: Any, resource_id: str) -> dict[str, str]:
-    resp = client.list_tags_for_resource(resourceArn=resource_id)
+    resp = client.list_tags_for_resource(resourceArn=_log_group_arn(client, resource_id))
     return resp.get("tags", {})
 
 
@@ -154,8 +188,7 @@ def _set_tags_s3_bucket(client: Any, resource_id: str, tags: dict[str, str]) -> 
 
 
 def _set_tags_sqs_queue(client: Any, resource_id: str, tags: dict[str, str]) -> None:
-    url_resp = client.get_queue_url(QueueName=resource_id)
-    queue_url = url_resp["QueueUrl"]
+    queue_url = _queue_url(client, resource_id)
     # SQS: untag all existing, then tag with new set
     existing = client.list_queue_tags(QueueUrl=queue_url).get("Tags", {})
     if existing:
@@ -197,17 +230,12 @@ def _set_tags_secretsmanager(client: Any, resource_id: str, tags: dict[str, str]
 
 
 def _set_tags_logs(client: Any, resource_id: str, tags: dict[str, str]) -> None:
-    # resource_id is the log group ARN or name
-    # First get existing tags to remove them
-    try:
-        existing = client.list_tags_for_resource(resourceArn=resource_id)
-        existing_keys = list(existing.get("tags", {}).keys())
-        if existing_keys:
-            client.untag_resource(resourceArn=resource_id, tagKeys=existing_keys)
-    except Exception:
-        pass
+    arn = _log_group_arn(client, resource_id)
+    existing = client.list_tags_for_resource(resourceArn=arn).get("tags", {})
+    if existing:
+        client.untag_resource(resourceArn=arn, tagKeys=list(existing.keys()))
     if tags:
-        client.tag_resource(resourceArn=resource_id, tags=tags)
+        client.tag_resource(resourceArn=arn, tags=tags)
 
 
 def _set_tags_ec2_instance(client: Any, resource_id: str, tags: dict[str, str]) -> None:
@@ -369,8 +397,7 @@ def _get_tags_emr_cluster(client: Any, resource_id: str) -> dict[str, str]:
 
 
 def _get_tags_apigateway_rest_api(client: Any, resource_id: str) -> dict[str, str]:
-    arn = f"arn:aws:apigateway:{client.meta.region_name}::/restapis/{resource_id}"
-    resp = client.get_tags(resourceArn=arn)
+    resp = client.get_tags(resourceArn=_rest_api_arn(client, resource_id))
     return resp.get("tags", {})
 
 
@@ -394,7 +421,7 @@ def _set_tags_emr_cluster(client: Any, resource_id: str, tags: dict[str, str]) -
 
 
 def _set_tags_apigateway_rest_api(client: Any, resource_id: str, tags: dict[str, str]) -> None:
-    arn = f"arn:aws:apigateway:{client.meta.region_name}::/restapis/{resource_id}"
+    arn = _rest_api_arn(client, resource_id)
     existing = client.get_tags(resourceArn=arn).get("tags", {})
     if existing:
         client.untag_resource(resourceArn=arn, tagKeys=list(existing.keys()))
@@ -460,7 +487,7 @@ TAG_SETTER_REGISTRY: dict[tuple[str, str], tuple[str, Any]] = {
 # Delete registry: (service, type) -> (boto3_service, callable(client, resource_id))
 DELETE_REGISTRY: dict[tuple[str, str], tuple[str, Any]] = {
     ("s3", "buckets"): ("s3", lambda c, rid: c.delete_bucket(Bucket=rid)),
-    ("sqs", "queues"): ("sqs", lambda c, rid: c.delete_queue(QueueUrl=c.get_queue_url(QueueName=rid)["QueueUrl"])),
+    ("sqs", "queues"): ("sqs", lambda c, rid: c.delete_queue(QueueUrl=_queue_url(c, rid))),
     ("lambda", "functions"): ("lambda", lambda c, rid: c.delete_function(FunctionName=rid)),
     ("dynamodb", "tables"): ("dynamodb", lambda c, rid: c.delete_table(TableName=rid)),
     ("secretsmanager", "secrets"): ("secretsmanager", lambda c, rid: c.delete_secret(SecretId=rid, ForceDeleteWithoutRecovery=True)),
@@ -492,6 +519,8 @@ def get_resource_tags(service: str, resource_type: str, resource_id: str, ep: En
         client = get_client(boto3_service, **ep.client_kwargs())
         tags = getter_fn(client, resource_id)
         return {"service": service, "type": resource_type, "id": resource_id, "tags": tags}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -508,6 +537,8 @@ def update_resource_tags(service: str, resource_type: str, resource_id: str, bod
         client = get_client(boto3_service, **ep.client_kwargs())
         setter_fn(client, resource_id, body.tags)
         return {"success": True, "service": service, "type": resource_type, "id": resource_id, "tags": body.tags}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
