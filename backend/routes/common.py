@@ -9,7 +9,6 @@ __all__ = [
     "EndpointInfo",
     "UnknownEndpoint",
     "endpoint_info_for",
-    "endpoint_info_for_url",
     "get_endpoint_info",
     "get_endpoint_url",
 ]
@@ -57,17 +56,6 @@ def endpoint_info_for(endpoint: str | None, strict: bool = False) -> EndpointInf
 
     url, region = endpoint_store.resolve_with_region(endpoint)
     return EndpointInfo(url=url, region=region)
-
-
-def endpoint_info_for_url(url: str | None) -> EndpointInfo:
-    """Connection info for a URL, using the first saved endpoint with that URL, if any.
-
-    For callers that only kept the URL, such as the WebSocket probe loop.
-    """
-    for entry in endpoint_store.list_all().values():
-        if entry["url"] == url:
-            return EndpointInfo.from_entry(entry)
-    return EndpointInfo(url=url, region=None)
 
 
 def get_endpoint_info(endpoint: str | None = Query(None, description="Endpoint name or URL")) -> EndpointInfo:

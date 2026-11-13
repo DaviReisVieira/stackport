@@ -301,26 +301,28 @@ class TestConnectionManagerEndpointTracking:
 
         mgr = ConnectionManager()
         assert len(mgr.active_connections) == 0
-        assert mgr.get_active_endpoints() == set()
+        assert mgr.subscribers_by_scope() == {}
 
     @pytest.mark.anyio
-    async def test_broadcast_to_specific_endpoint(self):
+    async def test_send_to_nobody(self):
         from backend.websocket import ConnectionManager
 
         mgr = ConnectionManager()
-        await mgr.broadcast_to_endpoint("http://a:4566", {"type": "stats", "data": {}})
+        await mgr.send_to([], {"type": "stats", "data": {}})
 
     def test_set_endpoint_updates_tracking(self):
         from backend.websocket import ConnectionManager
 
         mgr = ConnectionManager()
         mock_ws = MagicMock()
-        mgr.active_connections[mock_ws] = "http://default:4566"
+        mgr.active_connections[mock_ws] = None
         mgr.set_endpoint(mock_ws, "http://other:4566")
         assert mgr.active_connections[mock_ws] == "http://other:4566"
-        assert "http://other:4566" in mgr.get_active_endpoints()
+        ((ep, sockets),) = mgr.subscribers_by_scope().values()
+        assert ep.url == "http://other:4566"
+        assert sockets == [mock_ws]
 
-    def test_get_active_endpoints_returns_unique(self):
+    def test_subscribers_with_the_same_endpoint_share_a_scope(self):
         from backend.websocket import ConnectionManager
 
         mgr = ConnectionManager()
@@ -328,5 +330,6 @@ class TestConnectionManagerEndpointTracking:
         mgr.active_connections[ws1] = "http://a:4566"
         mgr.active_connections[ws2] = "http://a:4566"
         mgr.active_connections[ws3] = "http://b:4566"
-        endpoints = mgr.get_active_endpoints()
-        assert endpoints == {"http://a:4566", "http://b:4566"}
+        groups = mgr.subscribers_by_scope()
+        assert sorted(ep.url for ep, _ in groups.values()) == ["http://a:4566", "http://b:4566"]
+        assert sorted(len(sockets) for _, sockets in groups.values()) == [1, 2]
