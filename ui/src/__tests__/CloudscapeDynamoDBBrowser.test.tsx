@@ -12,6 +12,9 @@ vi.mock('@/hooks/useEndpoint', () => ({
   }),
 }))
 
+/** What health says the active endpoint is; reset to a local emulator before each test. */
+let connectionType: 'local' | 'aws' = 'local'
+
 vi.mock('@/hooks/useHealth', () => ({
   useHealth: () => ({
     data: {
@@ -21,7 +24,7 @@ vi.mock('@/hooks/useHealth', () => ({
       endpoint_url: 'http://localhost:4566',
       region: 'us-east-1',
       services_count: 1,
-      connection_type: 'local',
+      connection_type: connectionType,
       writes_enabled: true,
     },
     loading: false,
@@ -124,8 +127,11 @@ function renderDynamo(path = '/resources/dynamodb') {
 
 beforeEach(() => {
   localStorage.clear()
+  connectionType = 'local'
   mockFetchByUrl()
 })
+
+const itemCountCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('/item-count'))
 
 describe('CloudscapeDynamoDBBrowser (via registry dispatch)', () => {
   it('lists tables with keys and billing', async () => {
@@ -146,23 +152,45 @@ describe('CloudscapeDynamoDBBrowser (via registry dispatch)', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/tags/dynamodb/'))).toBe(false)
   })
 
-  it('labels the stored item count as approximate and gets the live count on request', async () => {
+  it('labels the stored item count as approximate and, on an emulator, gets the live count in one click', async () => {
     renderDynamo('/resources/dynamodb?table=learners')
 
     const approximate = (await screen.findByText('Item count (approximate)')).parentElement as HTMLElement
     expect(within(approximate).getByText('2')).toBeInTheDocument()
     const live = screen.getByText('Live item count').parentElement as HTMLElement
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/item-count'))).toBe(false)
+    expect(itemCountCalls()).toHaveLength(0)
 
     fireEvent.click(within(live).getByRole('button', { name: 'Get live item count' }))
 
     expect(await within(live).findByText('5')).toBeInTheDocument()
-    const countCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes('/item-count'))
-    expect(countCalls).toHaveLength(1)
-    const [url, init] = countCalls[0]
+    expect(screen.queryByRole('button', { name: 'Start scan' })).not.toBeInTheDocument()
+    expect(itemCountCalls()).toHaveLength(1)
+    const [url, init] = itemCountCalls()[0]
     expect(String(url)).toBe('/api/dynamodb/tables/learners/item-count?endpoint=local')
     expect((init as RequestInit | undefined)?.method ?? 'GET').toBe('GET')
     expect(within(live).getByRole('button', { name: 'Count items again' })).toBeInTheDocument()
+  })
+
+  it('on real AWS, scans for the live count only once confirmed', async () => {
+    connectionType = 'aws'
+    renderDynamo('/resources/dynamodb?table=learners')
+    const live = (await screen.findByText('Live item count')).parentElement as HTMLElement
+
+    fireEvent.click(within(live).getByRole('button', { name: 'Get live item count' }))
+    expect(await screen.findByText(/consumes read capacity on your AWS account/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Start scan' })).not.toBeInTheDocument())
+    expect(itemCountCalls()).toHaveLength(0)
+
+    fireEvent.click(within(live).getByRole('button', { name: 'Get live item count' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Start scan' }))
+
+    expect(await within(live).findByText('5')).toBeInTheDocument()
+    expect(itemCountCalls()).toHaveLength(1)
+    const [url, init] = itemCountCalls()[0]
+    expect(String(url)).toBe('/api/dynamodb/tables/learners/item-count?endpoint=local')
+    expect((init as RequestInit | undefined)?.method ?? 'GET').toBe('GET')
+    expect(screen.queryByRole('button', { name: 'Start scan' })).not.toBeInTheDocument()
   })
 
   it('opens the table and scans items', async () => {

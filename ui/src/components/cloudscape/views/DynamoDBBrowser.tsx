@@ -41,6 +41,7 @@ import type { DynamoDBItem, DynamoDBTable, DynamoDBTableDetail } from '@/lib/typ
 import { dynamoItemToPlainMap, extractKeyDynamo, plainItemToDynamoMap } from '@/lib/dynamodb-marshal'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
+import { useHealth } from '@/hooks/useHealth'
 
 const SORT_OPERATORS = ['=', '<', '<=', '>', '>=', 'BEGINS_WITH'].map((op) => ({ value: op, label: op }))
 const PAGE_SIZES = [25, 50, 100].map((n) => ({ value: String(n), label: `${n} items` }))
@@ -403,13 +404,19 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
  * The table's item count, counted on request with a scan, like the console's "Get live item count".
  * DescribeTable's figures are approximate: AWS refreshes them about every six hours, and some
  * emulators always report 0.
+ *
+ * On AWS the scan reads, and bills, every item, so it starts only once confirmed. Until health
+ * says the endpoint is a local emulator, it's treated as AWS.
  */
 function LiveItemCount({ tableName }: { tableName: string }) {
   const { activeEndpoint } = useEndpoint()
+  const { data: health } = useHealth()
   const [count, setCount] = useState<number | null>(null)
   const [counting, setCounting] = useState(false)
+  const [confirming, setConfirming] = useState(false)
 
   const countItems = async () => {
+    setConfirming(false)
     setCounting(true)
     try {
       const data = await fetchDynamoDBItemCount(tableName, activeEndpoint)
@@ -420,21 +427,49 @@ function LiveItemCount({ tableName }: { tableName: string }) {
       setCounting(false)
     }
   }
+  const requestCount = () => {
+    if (health?.connection_type === 'local') void countItems()
+    else setConfirming(true)
+  }
 
   return (
-    <SpaceBetween size="xxs">
-      {count === null ? (
-        <Button onClick={countItems} loading={counting}>
-          Get live item count
-        </Button>
-      ) : (
-        <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-          <span>{count}</span>
-          <Button variant="inline-icon" iconName="refresh" ariaLabel="Count items again" onClick={countItems} loading={counting} />
-        </SpaceBetween>
+    <>
+      <SpaceBetween size="xxs">
+        {count === null ? (
+          <Button onClick={requestCount} loading={counting}>
+            Get live item count
+          </Button>
+        ) : (
+          <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+            <span>{count}</span>
+            <Button variant="inline-icon" iconName="refresh" ariaLabel="Count items again" onClick={requestCount} loading={counting} />
+          </SpaceBetween>
+        )}
+        <Box variant="small">DynamoDB updates the approximate figures about every six hours. Counting scans the whole table.</Box>
+      </SpaceBetween>
+      {confirming && (
+        <Modal
+          visible
+          onDismiss={() => setConfirming(false)}
+          header="Get live item count"
+          footer={
+            <Box float="right">
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button variant="link" onClick={() => setConfirming(false)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={countItems}>
+                  Start scan
+                </Button>
+              </SpaceBetween>
+            </Box>
+          }
+        >
+          Counting scans every item in {tableName} and consumes read capacity on your AWS account, which is billed like
+          any other read. On a large table it can take a while.
+        </Modal>
       )}
-      <Box variant="small">DynamoDB updates the approximate figures about every six hours. Counting scans the whole table.</Box>
-    </SpaceBetween>
+    </>
   )
 }
 
