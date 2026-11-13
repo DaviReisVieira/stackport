@@ -134,7 +134,7 @@ def create_queue(body: CreateQueueRequest, ep: EndpointInfo = Depends(get_endpoi
         if body.maximum_message_size is not None:
             attributes["MaximumMessageSize"] = str(body.maximum_message_size)
         if body.receive_message_wait_time is not None:
-            attributes["ReceiveMessageWaitTime"] = str(body.receive_message_wait_time)
+            attributes["ReceiveMessageWaitTimeSeconds"] = str(body.receive_message_wait_time)
 
         dlq_queue_name = None
 
@@ -455,7 +455,7 @@ def update_queue_attributes(queue_name: str, body: UpdateAttributesRequest, ep: 
         if body.maximum_message_size is not None:
             attributes["MaximumMessageSize"] = str(body.maximum_message_size)
         if body.receive_message_wait_time is not None:
-            attributes["ReceiveMessageWaitTime"] = str(body.receive_message_wait_time)
+            attributes["ReceiveMessageWaitTimeSeconds"] = str(body.receive_message_wait_time)
 
         if not attributes:
             raise HTTPException(status_code=400, detail="No attributes provided")

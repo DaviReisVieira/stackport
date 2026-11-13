@@ -6,6 +6,7 @@ os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 
 from unittest.mock import MagicMock, patch
 
+import botocore.session
 from fastapi.testclient import TestClient
 
 from backend.main import app
@@ -13,6 +14,21 @@ from backend.main import app
 client = TestClient(app)
 
 QUEUE_URL = "http://localhost:4566/000000000000/test-queue"
+
+# Attribute names real SQS accepts. botocore does not reject unknown map keys
+# client-side, and emulators often store them as-is, so a misspelled name only
+# fails on AWS (InvalidAttributeName). Check against the service model instead.
+VALID_QUEUE_ATTRIBUTES = set(
+    botocore.session.get_session()
+    .get_service_model("sqs")
+    .shape_for("QueueAttributeName")
+    .enum
+)
+
+
+def assert_valid_queue_attributes(attributes):
+    unknown = set(attributes) - VALID_QUEUE_ATTRIBUTES
+    assert not unknown, f"Unknown SQS queue attribute names: {sorted(unknown)}"
 
 
 class TestListQueues:
@@ -376,6 +392,60 @@ class TestCreateQueue:
         assert attrs["DelaySeconds"] == "10"
 
     @patch("backend.routes.sqs.get_client")
+    def test_create_queue_sends_receive_wait_time_seconds(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.create_queue.return_value = {"QueueUrl": QUEUE_URL}
+        mock_sqs.get_queue_attributes.return_value = {
+            "Attributes": {"QueueArn": "arn:aws:sqs:us-east-1:000:test-queue"}
+        }
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={"queueName": "test-queue", "receiveMessageWaitTime": 10},
+        )
+        assert resp.status_code == 200
+        attrs = mock_sqs.create_queue.call_args[1]["Attributes"]
+        assert attrs["ReceiveMessageWaitTimeSeconds"] == "10"
+        assert "ReceiveMessageWaitTime" not in attrs
+
+    @patch("backend.routes.sqs.get_client")
+    def test_create_queue_attribute_names_are_valid(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.side_effect = mock_sqs.exceptions.QueueDoesNotExist()
+        mock_sqs.create_queue.side_effect = [
+            {"QueueUrl": "http://localhost:4566/000000000000/orders-dlq.fifo"},
+            {"QueueUrl": "http://localhost:4566/000000000000/orders.fifo"},
+        ]
+        mock_sqs.get_queue_attributes.return_value = {
+            "Attributes": {"QueueArn": "arn:aws:sqs:us-east-1:000:orders.fifo"}
+        }
+
+        resp = client.post(
+            "/api/sqs/queues",
+            json={
+                "queueName": "orders",
+                "queueType": "FIFO",
+                "contentBasedDeduplication": True,
+                "visibilityTimeout": 60,
+                "messageRetentionPeriod": 86400,
+                "delaySeconds": 5,
+                "maximumMessageSize": 2048,
+                "receiveMessageWaitTime": 10,
+                "dlqEnabled": True,
+                "sqsManagedSseEnabled": False,
+                "kmsMasterKeyId": "alias/aws/sqs",
+            },
+        )
+        assert resp.status_code == 200
+        assert mock_sqs.create_queue.call_count == 2
+        for call in mock_sqs.create_queue.call_args_list:
+            assert_valid_queue_attributes(call[1]["Attributes"])
+
+    @patch("backend.routes.sqs.get_client")
     def test_create_queue_with_redrive_policy(self, mock_get_client):
         mock_sqs = MagicMock()
         mock_get_client.return_value = mock_sqs
@@ -590,6 +660,37 @@ class TestUpdateQueueAttributes:
         assert data["success"] is True
 
     @patch("backend.routes.sqs.get_client")
+    def test_update_queue_attributes_sends_valid_names(self, mock_get_client):
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.put(
+            "/api/sqs/queues/test-queue/attributes",
+            json={
+                "visibilityTimeout": 90,
+                "messageRetentionPeriod": 604800,
+                "delaySeconds": 15,
+                "maximumMessageSize": 4096,
+                "receiveMessageWaitTime": 10,
+            },
+        )
+        assert resp.status_code == 200
+        mock_sqs.set_queue_attributes.assert_called_once_with(
+            QueueUrl=QUEUE_URL,
+            Attributes={
+                "VisibilityTimeout": "90",
+                "MessageRetentionPeriod": "604800",
+                "DelaySeconds": "15",
+                "MaximumMessageSize": "4096",
+                "ReceiveMessageWaitTimeSeconds": "10",
+            },
+        )
+        attrs = mock_sqs.set_queue_attributes.call_args[1]["Attributes"]
+        assert_valid_queue_attributes(attrs)
+
+    @patch("backend.routes.sqs.get_client")
     def test_update_queue_attributes_empty(self, mock_get_client):
         mock_sqs = MagicMock()
         mock_get_client.return_value = mock_sqs
@@ -745,6 +846,7 @@ class TestUpdateRedrivePolicy:
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
+        assert_valid_queue_attributes(mock_sqs.set_queue_attributes.call_args[1]["Attributes"])
 
     @patch("backend.routes.sqs.get_client")
     def test_update_redrive_policy_missing_arn(self, mock_get_client):
