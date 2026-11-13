@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import anyio
 import pytest
-from botocore.exceptions import ResponseStreamingError
+from botocore.exceptions import IncompleteReadError, ResponseStreamingError
 from fastapi.testclient import TestClient
 
 from backend.downloads import RELAY_CHUNK_BYTES
@@ -253,7 +253,9 @@ class TestDownloadStreaming:
         with pytest.raises(Exception) as raised:
             await run_download(sent, "half.bin", endpoint=server.origin)
 
-        assert any(isinstance(exc, ResponseStreamingError) for exc in chain(raised.value))
+        # Depending on the botocore release, the short body surfaces from urllib3
+        # (ResponseStreamingError) or from botocore's own Content-Length check (IncompleteReadError).
+        assert any(isinstance(exc, (ResponseStreamingError, IncompleteReadError)) for exc in chain(raised.value))
         assert sent[0]["status"] == 200
         assert (b"content-length", str(whole).encode()) in sent[0]["headers"]
         assert 0 < sum(len(message["body"]) for message in bodies(sent)) <= whole // 2
