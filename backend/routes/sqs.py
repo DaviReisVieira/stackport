@@ -1,9 +1,15 @@
-"""SQS service-specific routes."""
+"""SQS service-specific routes.
+
+A ``ClientError`` is the endpoint's answer to the call (InvalidParameterValue,
+InvalidAttributeValue, ...), so routes let it through: the app-wide handlers
+reply with the endpoint's status and message instead of a StackPort 500.
+"""
 
 import json
 from typing import Any
 from urllib.parse import unquote
 
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
@@ -42,8 +48,8 @@ def list_queues(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]
 
     Returns queue name, URL, message counts, type, and key attributes.
     """
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
         response = client.list_queues()
         queue_urls = response.get("QueueUrls", [])
 
@@ -96,6 +102,8 @@ def list_queues(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]
                 continue
 
         return {"queues": queues}
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -103,9 +111,8 @@ def list_queues(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]
 @router.post("/queues")
 def create_queue(body: CreateQueueRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Create a new SQS queue."""
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         queue_name = body.queue_name
         is_fifo = body.queue_type == "FIFO"
 
@@ -211,6 +218,8 @@ def create_queue(body: CreateQueueRequest, ep: EndpointInfo = Depends(get_endpoi
         return result
     except HTTPException:
         raise
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -218,9 +227,8 @@ def create_queue(body: CreateQueueRequest, ep: EndpointInfo = Depends(get_endpoi
 @router.get("/queues/{queue_name}")
 def get_queue_detail(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Get detailed attributes and tags for a specific queue."""
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         # Get queue URL from name
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
@@ -265,6 +273,8 @@ def get_queue_detail(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_in
         }
     except client.exceptions.QueueDoesNotExist:
         raise HTTPException(status_code=404, detail=f"Queue {queue_name} not found")
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -272,9 +282,8 @@ def get_queue_detail(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_in
 @router.post("/queues/{queue_name}/messages")
 def send_message(queue_name: str, body: SendMessageRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Send a message to the queue."""
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
 
@@ -287,13 +296,10 @@ def send_message(queue_name: str, body: SendMessageRequest, ep: EndpointInfo = D
             send_kwargs["DelaySeconds"] = body.delay_seconds
 
         if body.message_attributes:
-            attrs = {}
-            for key, value in body.message_attributes.items():
-                attrs[key] = {
-                    "StringValue": str(value.get("stringValue", "")),
-                    "DataType": value.get("dataType", "String"),
-                }
-            send_kwargs["MessageAttributes"] = attrs
+            send_kwargs["MessageAttributes"] = {
+                name: {"StringValue": attribute.string_value, "DataType": attribute.data_type}
+                for name, attribute in body.message_attributes.items()
+            }
 
         if body.message_deduplication_id:
             send_kwargs["MessageDeduplicationId"] = body.message_deduplication_id
@@ -309,6 +315,8 @@ def send_message(queue_name: str, body: SendMessageRequest, ep: EndpointInfo = D
         }
     except client.exceptions.QueueDoesNotExist:
         raise HTTPException(status_code=404, detail=f"Queue {queue_name} not found")
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -325,9 +333,8 @@ def receive_messages(
     Use visibility_timeout=0 to peek without consuming messages.
     Use visibility_timeout > 0 to prevent redelivery during inspection.
     """
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         # Get queue URL from name
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
@@ -359,6 +366,8 @@ def receive_messages(
         return {"messages": formatted_messages}
     except client.exceptions.QueueDoesNotExist:
         raise HTTPException(status_code=404, detail=f"Queue {queue_name} not found")
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -366,9 +375,8 @@ def receive_messages(
 @router.delete("/queues/{queue_name}/messages")
 def delete_message(queue_name: str, receipt_handle: str = Query(...), ep: EndpointInfo = Depends(get_endpoint_info)) -> Response:
     """Delete a message from the queue using its receipt handle."""
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         # Get queue URL from name
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
@@ -383,6 +391,8 @@ def delete_message(queue_name: str, receipt_handle: str = Query(...), ep: Endpoi
         raise HTTPException(status_code=404, detail=f"Queue {queue_name} not found")
     except client.exceptions.ReceiptHandleIsInvalid:
         raise HTTPException(status_code=400, detail="Receipt handle is invalid or expired")
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -393,9 +403,8 @@ def purge_queue(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) 
 
     Note: Can only be called once every 60 seconds.
     """
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         # Get queue URL from name
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
@@ -410,6 +419,8 @@ def purge_queue(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_info)) 
             status_code=409,
             detail="Purge already in progress. Wait 60 seconds before purging again.",
         )
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -420,9 +431,8 @@ def delete_queue(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_info))
 
     Permanently deletes the queue and all its messages.
     """
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         # Get queue URL from name
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
@@ -432,6 +442,8 @@ def delete_queue(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_info))
         return Response(status_code=204)
     except client.exceptions.QueueDoesNotExist:
         raise HTTPException(status_code=404, detail=f"Queue {queue_name} not found")
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -439,9 +451,8 @@ def delete_queue(queue_name: str, ep: EndpointInfo = Depends(get_endpoint_info))
 @router.put("/queues/{queue_name}/attributes")
 def update_queue_attributes(queue_name: str, body: UpdateAttributesRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Update queue attributes."""
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
 
@@ -471,6 +482,8 @@ def update_queue_attributes(queue_name: str, body: UpdateAttributesRequest, ep: 
         raise HTTPException(status_code=404, detail=f"Queue {queue_name} not found")
     except HTTPException:
         raise
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -478,9 +491,8 @@ def update_queue_attributes(queue_name: str, body: UpdateAttributesRequest, ep: 
 @router.post("/queues/{queue_name}/messages/batch")
 def send_messages_batch(queue_name: str, body: BatchSendRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Send multiple messages to the queue in one operation (max 10)."""
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
 
@@ -520,6 +532,8 @@ def send_messages_batch(queue_name: str, body: BatchSendRequest, ep: EndpointInf
         return {"successful": successful, "failed": failed}
     except client.exceptions.QueueDoesNotExist:
         raise HTTPException(status_code=404, detail=f"Queue {queue_name} not found")
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -527,9 +541,8 @@ def send_messages_batch(queue_name: str, body: BatchSendRequest, ep: EndpointInf
 @router.delete("/queues/{queue_name}/messages/batch")
 def delete_messages_batch(queue_name: str, body: BatchDeleteRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> Response:
     """Delete multiple messages from the queue in one operation (max 10)."""
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
 
@@ -545,6 +558,8 @@ def delete_messages_batch(queue_name: str, body: BatchDeleteRequest, ep: Endpoin
         return Response(status_code=204)
     except client.exceptions.QueueDoesNotExist:
         raise HTTPException(status_code=404, detail=f"Queue {queue_name} not found")
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -552,9 +567,8 @@ def delete_messages_batch(queue_name: str, body: BatchDeleteRequest, ep: Endpoin
 @router.put("/queues/{queue_name}/redrive-policy")
 def update_redrive_policy(queue_name: str, body: UpdateRedrivePolicyRequest, ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
     """Update the dead-letter queue redrive policy."""
+    client = get_client("sqs", **ep.client_kwargs())
     try:
-        client = get_client("sqs", **ep.client_kwargs())
-
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
 
@@ -572,5 +586,7 @@ def update_redrive_policy(queue_name: str, body: UpdateRedrivePolicyRequest, ep:
         }
     except client.exceptions.QueueDoesNotExist:
         raise HTTPException(status_code=404, detail=f"Queue {queue_name} not found")
+    except ClientError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
