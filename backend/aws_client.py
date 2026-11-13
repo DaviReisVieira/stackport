@@ -47,6 +47,8 @@ def _build_client(service_name: str, plan: ConnectionPlan):
             session_kwargs["aws_access_key_id"] = plan.access_key_id
         if plan.secret_access_key is not None:
             session_kwargs["aws_secret_access_key"] = plan.secret_access_key
+        if plan.session_token is not None:
+            session_kwargs["aws_session_token"] = plan.session_token
         session = boto3.Session(**session_kwargs)
 
     client_kwargs: dict = {"service_name": service_name}

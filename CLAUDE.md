@@ -76,6 +76,7 @@ Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves 
 | `AWS_REGION` | `us-east-1` | Region for boto3 clients |
 | `AWS_ACCESS_KEY_ID` | *(unset: default chain)* | Credentials |
 | `AWS_SECRET_ACCESS_KEY` | *(unset: default chain)* | Credentials |
+| `AWS_SESSION_TOKEN` | *(unset)* | Session token for temporary credentials; only sent with the two keys above, never with endpoint or AWS Emulator keys |
 | `STACKPORT_PORT` | `8080` | HTTP port |
 | `STACKPORT_HOST` | `127.0.0.1` | Interface to listen on; the Docker image sets `0.0.0.0` |
 | `STACKPORT_S3_MAX_UPLOAD_MB` | `100` | Max S3 upload size per object (whole mebibytes; × 1024²) |
