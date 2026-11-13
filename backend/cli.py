@@ -12,13 +12,14 @@ import uvicorn
 from backend.aws_client import get_client
 from backend.config import (
     AWS_ENDPOINT_URL,
-    AWS_REGION,
     LOG_LEVEL,
     STACKPORT_HOST,
     STACKPORT_PORT,
     STACKPORT_SERVICES,
     endpoint_store,
 )
+from backend.connection import InvalidEndpointUrl
+from backend.routes.common import endpoint_info_for, endpoint_info_for_url
 from backend.routes.resources import (
     DESCRIBE_REGISTRY,
     _PREFERRED_ID_FIELD,
@@ -31,15 +32,35 @@ logger = logging.getLogger(__name__)
 
 
 def _client_kwargs(endpoint: str | None, region: str | None) -> dict:
-    """Resolve where a CLI command talks to.
+    """Resolve where a CLI command talks to, the way the web app does.
 
-    An explicit --endpoint (or AWS_ENDPOINT_URL at startup) wins. Without one,
-    fall back to the saved default endpoint, the same one the web UI uses.
-    Passing the result to get_client explicitly is what makes the flag work
-    once ~/.stackport/endpoints.json exists.
+    ``endpoint`` is a saved endpoint's name or a URL. Without it, AWS_ENDPOINT_URL
+    at startup wins (with the settings of a saved endpoint that has that URL),
+    then the saved default endpoint. A saved endpoint brings its auth and TLS
+    settings along; an explicit ``region`` overrides its region. Passing the
+    result to get_client explicitly is what makes the flag work once
+    ~/.stackport/endpoints.json exists.
+
+    Raises:
+        click.BadParameter: the name matches no saved endpoint, or the URL is refused.
     """
-    url = endpoint if endpoint is not None else endpoint_store.get_default_url()
-    return {"endpoint_url": url, "region": region}
+    try:
+        if endpoint is None and AWS_ENDPOINT_URL is not None:
+            info = endpoint_info_for_url(AWS_ENDPOINT_URL)
+        else:
+            if endpoint is not None and not endpoint.startswith(("http://", "https://")) and endpoint_store.get(endpoint) is None:
+                known = ", ".join(sorted(endpoint_store.list_all())) or "none"
+                raise click.BadParameter(
+                    f"'{endpoint}' is not a saved endpoint name or an http(s) URL. Saved endpoints: {known}.",
+                    param_hint="--endpoint",
+                )
+            info = endpoint_info_for(endpoint)
+    except InvalidEndpointUrl as exc:
+        raise click.BadParameter(str(exc), param_hint="--endpoint") from exc
+    kwargs = info.client_kwargs()
+    if region is not None:
+        kwargs["region"] = region
+    return kwargs
 
 
 @click.group(invoke_without_command=True)
@@ -60,8 +81,8 @@ def serve(port, host):
 
 
 @cli.command()
-@click.option("--endpoint", default=AWS_ENDPOINT_URL, help="AWS endpoint URL", envvar="AWS_ENDPOINT_URL")
-@click.option("--region", default=AWS_REGION, help="AWS region", envvar="AWS_REGION")
+@click.option("--endpoint", default=None, help="Saved endpoint name or endpoint URL (default: the saved default endpoint)")
+@click.option("--region", default=None, help="AWS region (default: the endpoint's region, then AWS_REGION)")
 @click.option("--output", type=click.Choice(["json", "table"]), default="table", help="Output format")
 def status(endpoint, region, output):
     """Show all services with availability and resource counts."""
@@ -102,8 +123,8 @@ def status(endpoint, region, output):
 
 @cli.command()
 @click.argument("service")
-@click.option("--endpoint", default=AWS_ENDPOINT_URL, help="AWS endpoint URL", envvar="AWS_ENDPOINT_URL")
-@click.option("--region", default=AWS_REGION, help="AWS region", envvar="AWS_REGION")
+@click.option("--endpoint", default=None, help="Saved endpoint name or endpoint URL (default: the saved default endpoint)")
+@click.option("--region", default=None, help="AWS region (default: the endpoint's region, then AWS_REGION)")
 @click.option("--output", type=click.Choice(["json", "table", "csv"]), default="table", help="Output format")
 def list(service, endpoint, region, output):
     """List resources for a service."""
@@ -171,8 +192,8 @@ def list(service, endpoint, region, output):
 @click.argument("service")
 @click.argument("resource_type")
 @click.argument("resource_id")
-@click.option("--endpoint", default=AWS_ENDPOINT_URL, help="AWS endpoint URL", envvar="AWS_ENDPOINT_URL")
-@click.option("--region", default=AWS_REGION, help="AWS region", envvar="AWS_REGION")
+@click.option("--endpoint", default=None, help="Saved endpoint name or endpoint URL (default: the saved default endpoint)")
+@click.option("--region", default=None, help="AWS region (default: the endpoint's region, then AWS_REGION)")
 @click.option("--output", type=click.Choice(["json", "table"]), default="json", help="Output format")
 def describe(service, resource_type, resource_id, endpoint, region, output):
     """Describe a specific resource."""
@@ -253,8 +274,8 @@ def describe(service, resource_type, resource_id, endpoint, region, output):
 
 @cli.command()
 @click.argument("service")
-@click.option("--endpoint", default=AWS_ENDPOINT_URL, help="AWS endpoint URL", envvar="AWS_ENDPOINT_URL")
-@click.option("--region", default=AWS_REGION, help="AWS region", envvar="AWS_REGION")
+@click.option("--endpoint", default=None, help="Saved endpoint name or endpoint URL (default: the saved default endpoint)")
+@click.option("--region", default=None, help="AWS region (default: the endpoint's region, then AWS_REGION)")
 @click.option("--format", "format_", type=click.Choice(["json", "csv"]), default="json", help="Output format")
 @click.pass_context
 def export(ctx, service, endpoint, region, format_):
