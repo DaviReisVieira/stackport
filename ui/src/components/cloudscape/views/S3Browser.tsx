@@ -59,6 +59,16 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }
 
+/**
+ * The Type column, as the S3 console shows it: the extension of the object's name.
+ * Listing objects doesn't return their content type; the detail modal shows it.
+ */
+function fileType(key: string): string {
+  const name = key.slice(key.lastIndexOf('/') + 1)
+  const dot = name.lastIndexOf('.')
+  return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1) : '—'
+}
+
 function formatDate(iso: string): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleString(undefined, {
@@ -862,7 +872,7 @@ function ObjectBrowser({ bucket, prefix }: { bucket: string; prefix: string }) {
                     {
                       id: 'type',
                       header: 'Type',
-                      cell: (row) => (row.kind === 'folder' ? 'Folder' : row.file.content_type),
+                      cell: (row) => (row.kind === 'folder' ? 'Folder' : fileType(row.file.key)),
                     },
                     {
                       id: 'size',

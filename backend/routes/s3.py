@@ -243,7 +243,8 @@ def list_objects(
                     "key": key,
                     "name": file_name,
                     "size": obj["Size"],
-                    "content_type": "application/octet-stream",
+                    # ListObjectsV2 doesn't return it; the object's detail (HeadObject) does.
+                    "content_type": None,
                     "etag": obj["ETag"].strip('"'),
                     "last_modified": obj["LastModified"].isoformat(),
                 }

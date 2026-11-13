@@ -167,7 +167,8 @@ export interface S3File {
   key: string
   name: string
   size: number
-  content_type: string
+  /** Always null: listing objects doesn't return their type, `S3ObjectDetail` has it. */
+  content_type: null
   etag: string
   last_modified: string
 }
