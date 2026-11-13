@@ -2,7 +2,8 @@ import base64
 import binascii
 import json
 import logging
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Iterator
+from contextlib import contextmanager
 from decimal import Decimal, DecimalException
 from typing import Any
 
@@ -124,12 +125,43 @@ def _key_value(attr_type: str, value: str, name: str) -> dict[str, Any]:
     return {attr_type: value}
 
 
-def _get_partition_sort_keys(dynamodb: Any, table_name: str) -> tuple[str | None, str | None]:
-    table_resp = dynamodb.describe_table(TableName=table_name)
-    key_schema = table_resp["Table"].get("KeySchema", [])
+@contextmanager
+def _table_must_exist(name: str) -> Iterator[None]:
+    """Answer 404 when DynamoDB says the table doesn't exist.
+
+    Any other error reaches the app-wide handlers, which answer with the
+    endpoint's status and message.
+    """
+    try:
+        yield
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+            raise HTTPException(status_code=404, detail=f"Table '{name}' not found") from e
+        raise
+
+
+def _describe_table(dynamodb: Any, name: str) -> dict[str, Any]:
+    with _table_must_exist(name):
+        return dynamodb.describe_table(TableName=name)["Table"]
+
+
+def _key_names(table: dict[str, Any]) -> tuple[str | None, str | None]:
+    """The partition and sort key attribute names of a described table."""
+    key_schema = table.get("KeySchema", [])
     partition_key = next((k["AttributeName"] for k in key_schema if k["KeyType"] == "HASH"), None)
     sort_key = next((k["AttributeName"] for k in key_schema if k["KeyType"] == "RANGE"), None)
     return partition_key, sort_key
+
+
+def _decode_page_token(token: str) -> dict[str, Any]:
+    """The ExclusiveStartKey behind a next_token that scan_table returned."""
+    try:
+        key = json.loads(base64.b64decode(token, validate=True))
+    except ValueError:  # binascii.Error, UnicodeDecodeError and JSONDecodeError all are
+        key = None
+    if not isinstance(key, dict):
+        raise HTTPException(status_code=400, detail="Invalid exclusive_start_key: pass the next_token of the previous page")
+    return _item_from_json(key)
 
 
 def _require_key_attributes(
@@ -247,10 +279,7 @@ def list_tables(ep: EndpointInfo = Depends(get_endpoint_info)):
             table = resp["Table"]
             item_count = table.get("ItemCount", 0)
             table_size = table.get("TableSizeBytes", 0)
-
-            key_schema = table.get("KeySchema", [])
-            partition_key = next((k["AttributeName"] for k in key_schema if k["KeyType"] == "HASH"), None)
-            sort_key = next((k["AttributeName"] for k in key_schema if k["KeyType"] == "RANGE"), None)
+            partition_key, sort_key = _key_names(table)
 
             tables.append(
                 {
@@ -274,36 +303,26 @@ def list_tables(ep: EndpointInfo = Depends(get_endpoint_info)):
 @router.get("/tables/{name}")
 def get_table_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     dynamodb = get_client("dynamodb", **ep.client_kwargs())
+    table = _describe_table(dynamodb, name)
+    attribute_defs = {attr["AttributeName"]: attr["AttributeType"] for attr in table.get("AttributeDefinitions", [])}
+    partition_key, sort_key = _key_names(table)
 
-    try:
-        resp = dynamodb.describe_table(TableName=name)
-        table = resp["Table"]
-
-        key_schema = table.get("KeySchema", [])
-        attribute_defs = {attr["AttributeName"]: attr["AttributeType"] for attr in table.get("AttributeDefinitions", [])}
-
-        partition_key = next((k["AttributeName"] for k in key_schema if k["KeyType"] == "HASH"), None)
-        sort_key = next((k["AttributeName"] for k in key_schema if k["KeyType"] == "RANGE"), None)
-
-        return {
-            "name": name,
-            "status": table.get("TableStatus", "UNKNOWN"),
-            "item_count": table.get("ItemCount", 0),
-            "size_bytes": table.get("TableSizeBytes", 0),
-            "partition_key": partition_key,
-            "partition_key_type": attribute_defs.get(partition_key) if partition_key else None,
-            "sort_key": sort_key,
-            "sort_key_type": attribute_defs.get(sort_key) if sort_key else None,
-            "billing_mode": table.get("BillingModeSummary", {}).get("BillingMode", "PROVISIONED"),
-            "created": table.get("CreationDateTime").isoformat() if table.get("CreationDateTime") else None,
-            "attribute_definitions": attribute_defs,
-            "key_schema": key_schema,
-            "global_secondary_indexes": table.get("GlobalSecondaryIndexes", []),
-            "local_secondary_indexes": table.get("LocalSecondaryIndexes", []),
-        }
-    except Exception as e:
-        logger.error("Failed to get table detail for %s: %s", name, e, exc_info=True)
-        return {"error": str(e)}
+    return {
+        "name": name,
+        "status": table.get("TableStatus", "UNKNOWN"),
+        "item_count": table.get("ItemCount", 0),
+        "size_bytes": table.get("TableSizeBytes", 0),
+        "partition_key": partition_key,
+        "partition_key_type": attribute_defs.get(partition_key) if partition_key else None,
+        "sort_key": sort_key,
+        "sort_key_type": attribute_defs.get(sort_key) if sort_key else None,
+        "billing_mode": table.get("BillingModeSummary", {}).get("BillingMode", "PROVISIONED"),
+        "created": table.get("CreationDateTime").isoformat() if table.get("CreationDateTime") else None,
+        "attribute_definitions": attribute_defs,
+        "key_schema": table.get("KeySchema", []),
+        "global_secondary_indexes": table.get("GlobalSecondaryIndexes", []),
+        "local_secondary_indexes": table.get("LocalSecondaryIndexes", []),
+    }
 
 
 @router.get("/tables/{name}/items")
@@ -321,93 +340,74 @@ def scan_table(
     }
 
     if exclusive_start_key:
-        try:
-            decoded = base64.b64decode(exclusive_start_key).decode("utf-8")
-            scan_params["ExclusiveStartKey"] = _item_from_json(json.loads(decoded))
-        except Exception:
-            logger.debug("Invalid exclusive_start_key", exc_info=True)
+        scan_params["ExclusiveStartKey"] = _decode_page_token(exclusive_start_key)
 
-    try:
+    with _table_must_exist(name):
         resp = dynamodb.scan(**scan_params)
-        items = resp.get("Items", [])
+    items = resp.get("Items", [])
 
-        last_evaluated_key = resp.get("LastEvaluatedKey")
-        next_token = None
-        if last_evaluated_key:
-            next_token = base64.b64encode(json.dumps(_to_json_safe(last_evaluated_key)).encode("utf-8")).decode("utf-8")
+    last_evaluated_key = resp.get("LastEvaluatedKey")
+    next_token = None
+    if last_evaluated_key:
+        next_token = base64.b64encode(json.dumps(_to_json_safe(last_evaluated_key)).encode("utf-8")).decode("utf-8")
 
-        return {
-            "table": name,
-            "items": _to_json_safe(items),
-            "count": len(items),
-            "scanned_count": resp.get("ScannedCount", len(items)),
-            "next_token": next_token,
-        }
-    except Exception as e:
-        logger.error("Failed to scan table %s: %s", name, e, exc_info=True)
-        return {"error": str(e), "items": [], "count": 0}
-
+    return {
+        "table": name,
+        "items": _to_json_safe(items),
+        "count": len(items),
+        "scanned_count": resp.get("ScannedCount", len(items)),
+        "next_token": next_token,
+    }
 
 
 @router.post("/tables/{name}/query")
 def query_table(name: str, request: QueryRequest, ep: EndpointInfo = Depends(get_endpoint_info)):
     dynamodb = get_client("dynamodb", **ep.client_kwargs())
+    table = _describe_table(dynamodb, name)
+    attribute_defs = {attr["AttributeName"]: attr["AttributeType"] for attr in table.get("AttributeDefinitions", [])}
+    partition_key, sort_key = _key_names(table)
 
-    try:
-        # Get table key schema
-        table_resp = dynamodb.describe_table(TableName=name)
-        table = table_resp["Table"]
-        key_schema = table.get("KeySchema", [])
-        attribute_defs = {attr["AttributeName"]: attr["AttributeType"] for attr in table.get("AttributeDefinitions", [])}
+    if not partition_key:
+        raise HTTPException(status_code=400, detail="Table has no partition key in key schema")
 
-        partition_key = next((k["AttributeName"] for k in key_schema if k["KeyType"] == "HASH"), None)
-        sort_key = next((k["AttributeName"] for k in key_schema if k["KeyType"] == "RANGE"), None)
+    partition_key_type = attribute_defs.get(partition_key, "S")
 
-        if not partition_key:
-            return {"error": "No partition key found in table schema", "items": [], "count": 0}
+    # Build key condition expression
+    key_condition = f"#{partition_key} = :pk"
+    expression_attr_names = {f"#{partition_key}": partition_key}
+    expression_attr_values = {":pk": _key_value(partition_key_type, request.partition_key_value, partition_key)}
 
-        partition_key_type = attribute_defs.get(partition_key, "S")
+    if sort_key and request.sort_key_value:
+        sort_key_type = attribute_defs.get(sort_key, "S")
+        if request.sort_key_operator == "=":
+            key_condition += f" AND #{sort_key} = :sk"
+            expression_attr_values[":sk"] = _key_value(sort_key_type, request.sort_key_value, sort_key)
+        elif request.sort_key_operator in ("<", "<=", ">", ">="):
+            key_condition += f" AND #{sort_key} {request.sort_key_operator} :sk"
+            expression_attr_values[":sk"] = _key_value(sort_key_type, request.sort_key_value, sort_key)
+        elif request.sort_key_operator == "BEGINS_WITH":
+            key_condition += f" AND begins_with(#{sort_key}, :sk)"
+            expression_attr_values[":sk"] = _key_value(sort_key_type, request.sort_key_value, sort_key)
+        expression_attr_names[f"#{sort_key}"] = sort_key
 
-        # Build key condition expression
-        key_condition = f"#{partition_key} = :pk"
-        expression_attr_names = {f"#{partition_key}": partition_key}
-        expression_attr_values = {":pk": _key_value(partition_key_type, request.partition_key_value, partition_key)}
+    query_params = {
+        "TableName": name,
+        "KeyConditionExpression": key_condition,
+        "ExpressionAttributeNames": expression_attr_names,
+        "ExpressionAttributeValues": expression_attr_values,
+        "Limit": request.limit,
+    }
 
-        if sort_key and request.sort_key_value:
-            sort_key_type = attribute_defs.get(sort_key, "S")
-            if request.sort_key_operator == "=":
-                key_condition += f" AND #{sort_key} = :sk"
-                expression_attr_values[":sk"] = _key_value(sort_key_type, request.sort_key_value, sort_key)
-            elif request.sort_key_operator in ("<", "<=", ">", ">="):
-                key_condition += f" AND #{sort_key} {request.sort_key_operator} :sk"
-                expression_attr_values[":sk"] = _key_value(sort_key_type, request.sort_key_value, sort_key)
-            elif request.sort_key_operator == "BEGINS_WITH":
-                key_condition += f" AND begins_with(#{sort_key}, :sk)"
-                expression_attr_values[":sk"] = _key_value(sort_key_type, request.sort_key_value, sort_key)
-            expression_attr_names[f"#{sort_key}"] = sort_key
-
-        query_params = {
-            "TableName": name,
-            "KeyConditionExpression": key_condition,
-            "ExpressionAttributeNames": expression_attr_names,
-            "ExpressionAttributeValues": expression_attr_values,
-            "Limit": request.limit,
-        }
-
+    with _table_must_exist(name):
         resp = dynamodb.query(**query_params)
-        items = resp.get("Items", [])
+    items = resp.get("Items", [])
 
-        return {
-            "table": name,
-            "items": _to_json_safe(items),
-            "count": len(items),
-            "scanned_count": resp.get("ScannedCount", len(items)),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Failed to query table %s: %s", name, e, exc_info=True)
-        return {"error": str(e), "items": [], "count": 0}
+    return {
+        "table": name,
+        "items": _to_json_safe(items),
+        "count": len(items),
+        "scanned_count": resp.get("ScannedCount", len(items)),
+    }
 
 
 @router.api_route("/tables/{name}/items", methods=["POST", "PUT"])
@@ -418,11 +418,7 @@ def put_table_item(
 ) -> dict[str, Any]:
     """Create or replace an item (DynamoDB PutItem)."""
     dynamodb = get_client("dynamodb", **ep.client_kwargs())
-    try:
-        partition_key, sort_key = _get_partition_sort_keys(dynamodb, name)
-    except Exception as e:
-        logger.error("put_item describe failed for %s: %s", name, e, exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Failed to read table: {e}") from e
+    partition_key, sort_key = _key_names(_describe_table(dynamodb, name))
 
     item = _coerce_attributes(request.item, request.item_format, "item")
     _require_key_attributes(item, partition_key, sort_key, label="item")
@@ -445,10 +441,7 @@ def delete_table_item(
     ep: EndpointInfo = Depends(get_endpoint_info),
 ) -> dict[str, Any]:
     dynamodb = get_client("dynamodb", **ep.client_kwargs())
-    try:
-        partition_key, sort_key = _get_partition_sort_keys(dynamodb, name)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read table: {e}") from e
+    partition_key, sort_key = _key_names(_describe_table(dynamodb, name))
 
     key = _coerce_attributes(request.key, request.item_format, "key")
     _require_key_attributes(key, partition_key, sort_key, label="key")
@@ -470,10 +463,7 @@ def batch_write_items(
     ep: EndpointInfo = Depends(get_endpoint_info),
 ) -> dict[str, Any]:
     dynamodb = get_client("dynamodb", **ep.client_kwargs())
-    try:
-        partition_key, sort_key = _get_partition_sort_keys(dynamodb, name)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read table: {e}") from e
+    partition_key, sort_key = _key_names(_describe_table(dynamodb, name))
 
     batch_requests: list[dict[str, Any]] = []
     for op in request.operations:

@@ -724,3 +724,90 @@ class TestPlainJsonNumbers:
 
         assert resp.status_code == 400
         assert "NaN" in resp.json()["detail"]
+
+
+def table_missing(stub: Stubber, operation: str) -> None:
+    """DynamoDB's answer for a table that doesn't exist (HTTP 400, like AWS and the emulators)."""
+    stub.add_client_error(
+        operation,
+        service_error_code="ResourceNotFoundException",
+        service_message="Requested resource not found",
+        http_status_code=400,
+    )
+
+
+class TestMissingTable:
+    """A table that doesn't exist is a 404 with a readable message, never a 200 carrying an error."""
+
+    def test_scan(self, stubber):
+        table_missing(stubber, "scan")
+
+        resp = client.get("/api/dynamodb/tables/NoSuchTable/items")
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Table 'NoSuchTable' not found"
+
+    def test_detail(self, stubber):
+        table_missing(stubber, "describe_table")
+
+        resp = client.get("/api/dynamodb/tables/NoSuchTable")
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Table 'NoSuchTable' not found"
+
+    def test_query(self, stubber):
+        table_missing(stubber, "describe_table")
+
+        resp = client.post("/api/dynamodb/tables/NoSuchTable/query", json={"partition_key_value": "a"})
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Table 'NoSuchTable' not found"
+
+    @pytest.mark.parametrize(
+        ("method", "path", "body"),
+        [
+            ("POST", "/items", {"item": {"pk": {"S": "a"}}}),
+            ("PUT", "/items", {"item": {"pk": {"S": "a"}}}),
+            ("DELETE", "/items", {"key": {"pk": {"S": "a"}}}),
+            ("POST", "/items/batch", {"operations": [{"op": "put", "item": {"pk": {"S": "a"}}}]}),
+        ],
+    )
+    def test_writes(self, stubber, method, path, body):
+        table_missing(stubber, "describe_table")
+
+        resp = client.request(method, f"/api/dynamodb/tables/NoSuchTable{path}", json=body)
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Table 'NoSuchTable' not found"
+
+
+class TestReadFailures:
+    def test_another_scan_error_keeps_its_status_and_message(self, stubber):
+        stubber.add_client_error(
+            "scan",
+            service_error_code="ProvisionedThroughputExceededException",
+            service_message="The level of configured provisioned throughput for the table was exceeded.",
+            http_status_code=400,
+        )
+
+        resp = client.get("/api/dynamodb/tables/Orders/items")
+
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "The level of configured provisioned throughput for the table was exceeded."
+
+    def test_query_error_keeps_its_status_and_message(self, stubber):
+        describes(stubber, "Orders", ("pk", "S"))
+        stubber.add_client_error(
+            "query", service_error_code="ValidationException", service_message="Invalid KeyConditionExpression", http_status_code=400
+        )
+
+        resp = client.post("/api/dynamodb/tables/Orders/query", json={"partition_key_value": "a"})
+
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "Invalid KeyConditionExpression"
+
+    def test_invalid_page_token_is_a_400_not_the_first_page_again(self, stubber):
+        resp = client.get("/api/dynamodb/tables/Orders/items", params={"exclusive_start_key": "not-a-token"})
+
+        assert resp.status_code == 400
+        assert "exclusive_start_key" in resp.json()["detail"]

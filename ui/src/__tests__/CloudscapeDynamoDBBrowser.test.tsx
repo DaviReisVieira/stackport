@@ -100,6 +100,17 @@ function mockFetchByUrl() {
   globalThis.fetch = fetchMock as unknown as typeof fetch
 }
 
+/** Answer requests whose URL contains `fragment` with an error, the rest as before. */
+function failFor(fragment: string, status: number, detail: string) {
+  const answer = globalThis.fetch
+  fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+    String(input).includes(fragment)
+      ? Promise.resolve({ ok: false, status, statusText: '', json: () => Promise.resolve({ detail }) } as Response)
+      : answer(input, init),
+  )
+  globalThis.fetch = fetchMock as unknown as typeof fetch
+}
+
 function renderDynamo(path = '/resources/dynamodb') {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -121,6 +132,15 @@ describe('CloudscapeDynamoDBBrowser (via registry dispatch)', () => {
     expect(await screen.findByText('learners')).toBeInTheDocument()
     expect(await screen.findByText('PAY_PER_REQUEST')).toBeInTheDocument()
     expect(await screen.findByText('2.0 KB')).toBeInTheDocument()
+  })
+
+  it('says a table does not exist instead of showing it empty', async () => {
+    failFor('/api/dynamodb/tables/NoSuchTable', 404, "Table 'NoSuchTable' not found")
+    renderDynamo('/resources/dynamodb?table=NoSuchTable')
+
+    expect(await screen.findByText('Could not load table')).toBeInTheDocument()
+    expect(screen.getByText("Table 'NoSuchTable' not found")).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
   it('opens the table and scans items', async () => {
