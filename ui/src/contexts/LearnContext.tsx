@@ -8,6 +8,7 @@ import type { LearnRun, LearnStepState } from '@/contexts/learn-context'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useHealth } from '@/hooks/useHealth'
 import {
+  fetchLearnCliSetup,
   fetchLearnTrail,
   markLearnStep,
   resetLearnProgress,
@@ -70,9 +71,9 @@ export function LearnProvider({ children }: { children: ReactNode }) {
       setCompleted(data.completed ?? {})
       setSkipped(data.skipped ?? {})
       setVariables(data.variables ?? {})
-      setCliSetup(data.cliSetup ?? null)
     } catch {
       setTrail(null)
+      setCliSetup(null)
     } finally {
       setLoading(false)
     }
@@ -81,6 +82,32 @@ export function LearnProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void load()
   }, [load])
+
+  // The emulator is identified in the background, so the first answer can be
+  // empty. Asking again when a lesson starts and when health reports a
+  // different emulator catches it, and only touches this state: the tutorial
+  // object must not be rebuilt (see CLAUDE.md, Learn Module).
+  const runLessonId = run?.lesson.id
+  const emulatorId = health?.emulator?.id
+  useEffect(() => {
+    // another endpoint's setup must never show against this one
+    setCliSetup(null)
+  }, [activeEndpoint])
+
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    fetchLearnCliSetup(activeEndpoint)
+      .then((setup) => {
+        if (!cancelled) setCliSetup(setup)
+      })
+      .catch(() => {
+        if (!cancelled) setCliSetup(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, activeEndpoint, runLessonId, emulatorId])
 
   const isStepDone = useCallback(
     (lessonId: string, stepId: string) => (completed[lessonId] ?? []).includes(stepId),

@@ -77,10 +77,14 @@ type Options = {
   skipped?: Record<string, string[]>
   verify?: { passed: boolean; verifyStatus: string; message: string }
   trailMissing?: boolean
-  cliSetup?: { emulator: string; variables: { name: string; value: string }[] } | null
+  cliSetup?: { emulator: string; script: string; note: string | null } | null
+  /** Answers for successive /api/learn/cli-setup calls; the last one repeats. */
+  cliSetupAnswers?: ({ emulator: string; script: string; note: string | null } | null)[]
+  cliSetupFails?: boolean
 }
 
 let fetchMock: ReturnType<typeof vi.fn>
+let cliSetupCalls = 0
 let progress: { completed: Record<string, string[]>; skipped: Record<string, string[]> }
 
 function mockFetch(options: Options = {}) {
@@ -89,6 +93,7 @@ function mockFetch(options: Options = {}) {
     connectionType = 'local',
     verify = { passed: true, verifyStatus: 'ok', message: "Bucket 'learn-bucket-a1' found." },
   } = options
+  cliSetupCalls = 0
   progress = { completed: options.completed ?? {}, skipped: options.skipped ?? {} }
 
   fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -134,14 +139,21 @@ function mockFetch(options: Options = {}) {
       } else {
         payload = { variables: { bucket: body.value } }
       }
+    } else if (url.includes('/api/learn/cli-setup')) {
+      if (options.cliSetupFails) {
+        ok = false
+        payload = { detail: 'nope' }
+      } else {
+        const answers = options.cliSetupAnswers ?? [options.cliSetup ?? null]
+        payload = { cliSetup: answers[Math.min(cliSetupCalls, answers.length - 1)] }
+        cliSetupCalls += 1
+      }
     } else if (url.includes('/api/learn/trails/')) {
       if (options.trailMissing) {
         ok = false
         payload = { detail: 'Trail not found' }
       } else {
-        payload = { trail: TRAIL, ...progress, variables: { 's3-store-a-file': { bucket: 'learn-bucket-a1' } },
-          cliSetup: options.cliSetup ?? null,
-        }
+        payload = { trail: TRAIL, ...progress, variables: { 's3-store-a-file': { bucket: 'learn-bucket-a1' } } }
       }
     } else if (url.includes('/api/stats')) {
       payload = {
@@ -292,25 +304,42 @@ describe('Running a lesson', () => {
     mockFetch({
       cliSetup: {
         emulator: 'AWS Emulator',
-        variables: [
-          { name: 'AWS_SHARED_CREDENTIALS_FILE', value: '~/.aws/emulator/4566/emulator_credentials' },
-          { name: 'AWS_CA_BUNDLE', value: '~/.aws/emulator/4566/ca.pem' },
-          { name: 'AWS_DISABLE_HOST_PREFIX_INJECTION', value: 'true' },
-        ],
+        script: 'unset AWS_PROFILE\nexport AWS_CA_BUNDLE=~/.aws/emulator/4566/ca.pem',
+        note: 'StackPort runs in a container, so copy them out with `docker compose cp`.',
       },
     })
     renderApp()
     await startLesson()
     const step = await panel()
-    expect(step.queryByTestId('learn-cli-setup')).not.toBeInTheDocument()
     fireEvent.click(step.getByRole('tab', { name: 'With the CLI' }))
 
     const setup = await step.findByTestId('learn-cli-setup')
     expect(setup).toHaveTextContent('AWS Emulator needs a little setup first')
-    expect(setup).toHaveTextContent('export AWS_SHARED_CREDENTIALS_FILE=~/.aws/emulator/4566/emulator_credentials')
+    expect(setup).toHaveTextContent('unset AWS_PROFILE')
     expect(setup).toHaveTextContent('export AWS_CA_BUNDLE=~/.aws/emulator/4566/ca.pem')
-    expect(setup).toHaveTextContent('export AWS_DISABLE_HOST_PREFIX_INJECTION=true')
+    expect(setup).toHaveTextContent('StackPort runs in a container')
     expect(step.getByText(/s3api create-bucket --bucket learn-bucket-a1/)).toBeInTheDocument()
+  })
+
+  it('asks again when the lesson starts, in case the emulator was not identified yet', async () => {
+    mockFetch({
+      cliSetupAnswers: [null, { emulator: 'AWS Emulator', script: 'export AWS_CA_BUNDLE=/x/ca.pem', note: null }],
+    })
+    renderApp()
+    await startLesson()
+    const step = await panel()
+    fireEvent.click(step.getByRole('tab', { name: 'With the CLI' }))
+    expect(await step.findByTestId('learn-cli-setup')).toHaveTextContent('export AWS_CA_BUNDLE=/x/ca.pem')
+  })
+
+  it('shows nothing when the setup cannot be fetched', async () => {
+    mockFetch({ cliSetupFails: true })
+    renderApp()
+    await startLesson()
+    const step = await panel()
+    fireEvent.click(step.getByRole('tab', { name: 'With the CLI' }))
+    await waitFor(() => expect(step.getByText(/s3api create-bucket --bucket learn-bucket-a1/)).toBeInTheDocument())
+    expect(step.queryByTestId('learn-cli-setup')).not.toBeInTheDocument()
   })
 })
 
