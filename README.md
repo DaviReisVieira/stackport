@@ -278,7 +278,7 @@ stackport export lambda --format json
 stackport export ec2 --format csv
 ```
 
-`status`, `list`, `describe`, and `export` accept `--endpoint URL` and `--region REGION`. Without them they use `AWS_ENDPOINT_URL` and `AWS_REGION`, or the default endpoint saved in Settings.
+`status`, `list`, `describe`, and `export` accept `--endpoint` (a saved endpoint name or a URL) and `--region REGION`. Without `--endpoint` they use `AWS_ENDPOINT_URL` or the default endpoint saved in Settings. A saved endpoint brings its profile or keys, region and TLS settings (CA bundle, verification off) with it, and `--region` overrides its region. A URL passed directly uses no saved settings.
 
 ## Keyboard shortcuts
 

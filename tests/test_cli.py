@@ -2,9 +2,11 @@
 
 import json
 
+import pytest
 from click.testing import CliRunner
 
 from backend.cli import cli
+from backend.endpoint_store import EndpointStore
 
 
 class TestCLI:
@@ -129,6 +131,15 @@ class _FakeClient:
         return lambda **kwargs: {}
 
 
+def _store(tmp_path, monkeypatch, env_url=None):
+    """A throwaway endpoint store, used by both the CLI and the route helpers it shares."""
+    store = EndpointStore(tmp_path / "endpoints.json", {"default": env_url} if env_url else {})
+    monkeypatch.setattr("backend.cli.endpoint_store", store)
+    monkeypatch.setattr("backend.routes.common.endpoint_store", store)
+    monkeypatch.setattr("backend.cli.AWS_ENDPOINT_URL", env_url)
+    return store
+
+
 class TestEndpointResolution:
     """--endpoint must reach get_client even when ~/.stackport has a saved default (#171)."""
 
@@ -142,9 +153,9 @@ class TestEndpointResolution:
         monkeypatch.setattr("backend.cli.get_client", fake_get_client)
         return calls
 
-    def test_list_passes_explicit_endpoint(self, monkeypatch):
+    def test_list_passes_explicit_endpoint(self, monkeypatch, tmp_path):
         calls = self._capture_get_client(monkeypatch)
-        monkeypatch.setattr("backend.cli.endpoint_store.get_default_url", lambda: "http://saved:4566")
+        _store(tmp_path, monkeypatch).add("saved", "http://saved:4566")
         result = CliRunner().invoke(cli, ["list", "s3", "--endpoint", "http://flag:4599", "--region", "eu-west-1"])
         assert result.exit_code == 0, result.output
         assert calls, "list never created a client"
@@ -152,27 +163,22 @@ class TestEndpointResolution:
             assert kwargs["endpoint_url"] == "http://flag:4599"
             assert kwargs["region"] == "eu-west-1"
 
-    def test_list_falls_back_to_saved_default(self, monkeypatch):
+    def test_list_falls_back_to_saved_default(self, monkeypatch, tmp_path):
         calls = self._capture_get_client(monkeypatch)
-        # Other test modules put AWS_ENDPOINT_URL back into the environment; click reads it via envvar.
-        monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
-        monkeypatch.setattr("backend.cli.AWS_ENDPOINT_URL", None)
-        monkeypatch.setattr("backend.cli.endpoint_store.get_default_url", lambda: "http://saved:4566")
-        # Rebuild the option default: click captured AWS_ENDPOINT_URL at import time.
-        for param in cli.commands["list"].params:
-            if param.name == "endpoint":
-                monkeypatch.setattr(param, "default", None)
+        _store(tmp_path, monkeypatch).add("saved", "http://saved:4566")
         result = CliRunner().invoke(cli, ["list", "s3"])
         assert result.exit_code == 0, result.output
         assert calls and all(kwargs["endpoint_url"] == "http://saved:4566" for _, kwargs in calls)
 
-    def test_describe_passes_explicit_endpoint(self, monkeypatch):
+    def test_describe_passes_explicit_endpoint(self, monkeypatch, tmp_path):
         calls = self._capture_get_client(monkeypatch)
+        _store(tmp_path, monkeypatch)
         result = CliRunner().invoke(cli, ["describe", "s3", "buckets", "demo", "--endpoint", "http://flag:4599"])
         assert result.exit_code == 0, result.output
         assert calls and all(kwargs["endpoint_url"] == "http://flag:4599" for _, kwargs in calls)
 
-    def test_status_probes_every_service_at_the_given_endpoint(self, monkeypatch):
+    def test_status_probes_every_service_at_the_given_endpoint(self, monkeypatch, tmp_path):
+        _store(tmp_path, monkeypatch)
         probed = []
 
         def fake_probe(service, endpoint_url, region=None, **_):
@@ -185,6 +191,145 @@ class TestEndpointResolution:
         assert probed, "status never probed anything"
         assert {url for _, url, _ in probed} == {"http://flag:4599"}
         assert isinstance(json.loads(result.output), dict)
+
+
+class TestSavedEndpointSettings:
+    """A saved endpoint's auth, TLS and region reach get_client from every command (#189)."""
+
+    def _capture_get_client(self, monkeypatch):
+        calls = []
+
+        def fake_get_client(service_name, **kwargs):
+            calls.append(kwargs)
+            return _FakeClient()
+
+        monkeypatch.setattr("backend.cli.get_client", fake_get_client)
+        return calls
+
+    def _saved_endpoints(self, tmp_path, monkeypatch):
+        store = _store(tmp_path, monkeypatch)
+        store.add("plain", "http://plain:4566")
+        store.add(
+            "prod",
+            "https://prod:4566",
+            region="eu-west-2",
+            auth_type="profile",
+            auth_profile="staging",
+            ca_bundle="/certs/ca.pem",
+        )
+        store.add(
+            "keys",
+            "https://keys:4566",
+            auth_type="credentials",
+            auth_access_key_id="AKIAEXAMPLE",
+            auth_secret_access_key="s3cret",
+            tls_verify=False,
+        )
+        return store
+
+    def test_default_endpoint_profile_and_ca_bundle(self, monkeypatch, tmp_path):
+        calls = self._capture_get_client(monkeypatch)
+        store = self._saved_endpoints(tmp_path, monkeypatch)
+        store.set_default("prod")
+        result = CliRunner().invoke(cli, ["list", "s3"])
+        assert result.exit_code == 0, result.output
+        assert calls
+        for kwargs in calls:
+            assert kwargs["endpoint_url"] == "https://prod:4566"
+            assert kwargs["region"] == "eu-west-2"
+            assert kwargs["auth_type"] == "profile"
+            assert kwargs["auth_profile"] == "staging"
+            assert kwargs["ca_bundle"] == "/certs/ca.pem"
+            assert kwargs["tls_verify"] is True
+
+    def test_named_endpoint_keys_and_verify_off(self, monkeypatch, tmp_path):
+        calls = self._capture_get_client(monkeypatch)
+        self._saved_endpoints(tmp_path, monkeypatch)
+        result = CliRunner().invoke(cli, ["list", "s3", "--endpoint", "keys"])
+        assert result.exit_code == 0, result.output
+        assert calls
+        for kwargs in calls:
+            assert kwargs["endpoint_url"] == "https://keys:4566"
+            assert kwargs["auth_type"] == "credentials"
+            assert kwargs["auth_access_key_id"] == "AKIAEXAMPLE"
+            assert kwargs["auth_secret_access_key"] == "s3cret"
+            assert kwargs["tls_verify"] is False
+
+    def test_describe_uses_named_endpoint(self, monkeypatch, tmp_path):
+        calls = self._capture_get_client(monkeypatch)
+        self._saved_endpoints(tmp_path, monkeypatch)
+        result = CliRunner().invoke(cli, ["describe", "s3", "buckets", "demo", "--endpoint", "prod"])
+        assert result.exit_code == 0, result.output
+        assert calls and all(k["auth_profile"] == "staging" and k["ca_bundle"] == "/certs/ca.pem" for k in calls)
+
+    def test_status_passes_settings_to_every_probe(self, monkeypatch, tmp_path):
+        self._saved_endpoints(tmp_path, monkeypatch)
+        probes = []
+
+        def fake_probe(service, **kwargs):
+            probes.append(kwargs)
+            return service, {"status": "available", "resources": {}}
+
+        monkeypatch.setattr("backend.cli._probe_service", fake_probe)
+        result = CliRunner().invoke(cli, ["status", "--endpoint", "keys", "--output", "json"])
+        assert result.exit_code == 0, result.output
+        assert probes
+        assert all(p["auth_access_key_id"] == "AKIAEXAMPLE" and p["tls_verify"] is False for p in probes)
+
+    def test_export_uses_named_endpoint(self, monkeypatch, tmp_path):
+        calls = self._capture_get_client(monkeypatch)
+        self._saved_endpoints(tmp_path, monkeypatch)
+        result = CliRunner().invoke(cli, ["export", "s3", "--endpoint", "prod"])
+        assert result.exit_code == 0, result.output
+        assert calls and all(k["auth_profile"] == "staging" for k in calls)
+
+    def test_region_flag_overrides_the_saved_region(self, monkeypatch, tmp_path):
+        calls = self._capture_get_client(monkeypatch)
+        self._saved_endpoints(tmp_path, monkeypatch)
+        result = CliRunner().invoke(cli, ["list", "s3", "--endpoint", "prod", "--region", "ap-south-1"])
+        assert result.exit_code == 0, result.output
+        assert calls and all(k["region"] == "ap-south-1" and k["auth_profile"] == "staging" for k in calls)
+
+    def test_url_flag_uses_no_saved_settings(self, monkeypatch, tmp_path):
+        calls = self._capture_get_client(monkeypatch)
+        store = self._saved_endpoints(tmp_path, monkeypatch)
+        store.set_default("prod")
+        result = CliRunner().invoke(cli, ["list", "s3", "--endpoint", "http://flag:4599"])
+        assert result.exit_code == 0, result.output
+        assert calls
+        assert all(k["auth_type"] == "default" and k["ca_bundle"] is None and k["region"] is None for k in calls)
+
+    def test_startup_endpoint_url_keeps_its_saved_settings(self, monkeypatch, tmp_path):
+        calls = self._capture_get_client(monkeypatch)
+        store = _store(tmp_path, monkeypatch)
+        store.add("other", "http://other:4566")
+        store.add("tls", "https://env:4566", auth_type="profile", auth_profile="dev", ca_bundle="/certs/env.pem")
+        store.set_default("other")
+        monkeypatch.setattr("backend.cli.AWS_ENDPOINT_URL", "https://env:4566")
+        result = CliRunner().invoke(cli, ["list", "s3"])
+        assert result.exit_code == 0, result.output
+        assert calls and all(k["endpoint_url"] == "https://env:4566" and k["auth_profile"] == "dev" for k in calls)
+
+    @pytest.mark.parametrize("command", [["list", "s3"], ["status"], ["describe", "s3", "buckets", "demo"], ["export", "s3"]])
+    def test_unknown_endpoint_name_is_a_usage_error(self, monkeypatch, tmp_path, command):
+        calls = self._capture_get_client(monkeypatch)
+        self._saved_endpoints(tmp_path, monkeypatch)
+        result = CliRunner().invoke(cli, [*command, "--endpoint", "prodd"])
+        assert result.exit_code == 2
+        assert "'prodd' is not a saved endpoint name" in result.output
+        assert "Saved endpoints: keys, plain, prod." in result.output
+        assert isinstance(result.exception, SystemExit)
+        assert not calls
+
+    @pytest.mark.parametrize("url", ["http://a\\@b:4566", "http://host:0", "http://host with space"])
+    def test_refused_url_is_a_clear_error_not_a_traceback(self, monkeypatch, tmp_path, url):
+        calls = self._capture_get_client(monkeypatch)
+        _store(tmp_path, monkeypatch)
+        result = CliRunner().invoke(cli, ["list", "s3", "--endpoint", url])
+        assert result.exit_code == 2
+        assert "--endpoint" in result.output
+        assert isinstance(result.exception, SystemExit)
+        assert not calls
 
 
 class TestServeBinding:
