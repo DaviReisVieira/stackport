@@ -336,6 +336,14 @@ class TestCacheScope:
                           auth_access_key_id="AKID", auth_secret_access_key="TOPSECRET")
         assert "TOPSECRET" not in ep.cache_scope()
 
+    def test_differs_by_secret_without_revealing_it(self):
+        def with_secret(secret):
+            return EndpointInfo(url="http://x:4566", region=None, auth_type="credentials",
+                                auth_access_key_id="AKID", auth_secret_access_key=secret)
+
+        assert with_secret("one").cache_scope() != with_secret("two").cache_scope()
+        assert with_secret("one").cache_scope() == with_secret("one").cache_scope()
+
 
 @pytest.mark.parametrize(
     ("value", "expected"),
