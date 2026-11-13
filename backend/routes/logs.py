@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,11 +16,32 @@ router = APIRouter()
 VALID_RETENTION_DAYS = {1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653}
 
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
 def _epoch_millis_to_iso(timestamp: Optional[int]) -> Optional[str]:
-    """Convert epoch milliseconds to ISO string."""
+    """Epoch milliseconds, as CloudWatch Logs reports times, to ISO 8601 in UTC.
+
+    The offset is explicit (``2026-11-13T19:51:35.671+00:00``) so the browser
+    shows the instant in its own time zone, whatever zone StackPort runs in.
+    """
     if timestamp is None:
         return None
-    return datetime.fromtimestamp(timestamp / 1000.0).isoformat()
+    return (_EPOCH + timedelta(milliseconds=timestamp)).isoformat(timespec="milliseconds")
+
+
+def serialize_log_event(event: dict) -> dict:
+    """A GetLogEvents or FilterLogEvents event as the console shows it.
+
+    Only FilterLogEvents events carry an ``eventId``.
+    """
+    return {
+        "timestamp": _epoch_millis_to_iso(event["timestamp"]),
+        "timestamp_millis": event["timestamp"],
+        "message": event["message"],
+        "ingestion_time": _epoch_millis_to_iso(event.get("ingestionTime")),
+        "event_id": event.get("eventId", ""),
+    }
 
 
 @router.get("/groups")
@@ -111,7 +132,7 @@ def list_log_streams(
                 "name": stream["logStreamName"],
                 "creation_time": _epoch_millis_to_iso(stream.get("creationTime")),
                 "first_event_time": _epoch_millis_to_iso(stream.get("firstEventTimestamp")),
-                "last_event_time": _epoch_millis_to_iso(stream.get("lastEventTime")),
+                "last_event_time": _epoch_millis_to_iso(stream.get("lastEventTimestamp")),
                 "last_ingestion_time": _epoch_millis_to_iso(stream.get("lastIngestionTime")),
                 "stored_bytes": stream.get("storedBytes", 0),
             }
@@ -165,22 +186,10 @@ def get_log_events(
             logger.debug("Failed to filter log events for %s/%s", name, stream, exc_info=True)
             return {"events": [], "next_token": None}
 
-        events = []
-        for event in response.get("events", []):
-            events.append(
-                {
-                    "timestamp": _epoch_millis_to_iso(event["timestamp"]),
-                    "timestamp_millis": event["timestamp"],
-                    "message": event["message"],
-                    "ingestion_time": _epoch_millis_to_iso(event.get("ingestionTime")),
-                    "event_id": event.get("eventId", ""),
-                }
-            )
-
         return {
             "log_group": name,
             "log_stream": stream,
-            "events": events,
+            "events": [serialize_log_event(event) for event in response.get("events", [])],
             "next_token": response.get("nextToken"),
         }
     else:
@@ -203,22 +212,10 @@ def get_log_events(
             logger.debug("Failed to get log events for %s/%s", name, stream, exc_info=True)
             return {"events": [], "next_token": None}
 
-        events = []
-        for event in response.get("events", []):
-            events.append(
-                {
-                    "timestamp": _epoch_millis_to_iso(event["timestamp"]),
-                    "timestamp_millis": event["timestamp"],
-                    "message": event["message"],
-                    "ingestion_time": None,
-                    "event_id": "",
-                }
-            )
-
         return {
             "log_group": name,
             "log_stream": stream,
-            "events": events,
+            "events": [serialize_log_event(event) for event in response.get("events", [])],
             "next_token": response.get("nextForwardToken"),
         }
 

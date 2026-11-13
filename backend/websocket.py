@@ -13,7 +13,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from backend.aws_client import get_client
 from backend.connection import EndpointInfo, InvalidEndpointUrl
 from backend.routes.common import UnknownEndpoint, endpoint_info_for
-from backend.routes.logs import _epoch_millis_to_iso
+from backend.routes.logs import serialize_log_event
 from backend.routes.stats import collect_stats
 
 logger = logging.getLogger(__name__)
@@ -227,16 +227,7 @@ def _fetch_new_events(
         logger.debug("Tail fetch failed for %s/%s", group, stream, exc_info=True)
         return []
 
-    return [
-        {
-            "timestamp": _epoch_millis_to_iso(event["timestamp"]),
-            "timestamp_millis": event["timestamp"],
-            "message": event["message"],
-            "ingestion_time": _epoch_millis_to_iso(event.get("ingestionTime")),
-            "event_id": event.get("eventId", ""),
-        }
-        for event in raw
-    ]
+    return [serialize_log_event(event) for event in raw]
 
 
 async def logs_tail_endpoint(websocket: WebSocket):
