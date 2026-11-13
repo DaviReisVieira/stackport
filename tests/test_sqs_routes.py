@@ -5,6 +5,7 @@ import os
 os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 
 from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -13,6 +14,7 @@ import pytest
 from botocore.stub import Stubber
 from fastapi.testclient import TestClient
 
+from backend.aws_emulator import AwsEmulatorFilesError
 from backend.main import app
 from backend.routes import sqs as sqs_routes
 
@@ -918,3 +920,121 @@ class TestQueueDetailFromTheEndpoint:
         resp = client.get("/api/sqs/queues/test-queue")
         assert resp.status_code == 200
         assert resp.json()["receiveMessageWaitTime"] == 10
+
+
+class TestSendMessageValidation:
+    """Malformed messages are refused before anything reaches the endpoint."""
+
+    @pytest.mark.parametrize(
+        ("attributes", "bad_field"),
+        [
+            # AWS's own casing: the attribute used to arrive with an empty value
+            # (AWS Emulator answered a 500, moto stored an empty attribute).
+            ({"priority": {"DataType": "String", "StringValue": "high"}}, "StringValue"),
+            ({"priority": {"dataType": "String", "stringValue": ""}}, "stringValue"),
+            # The route only sends string values, so a binary attribute can't work.
+            ({"payload": {"dataType": "Binary", "stringValue": "aGk="}}, "dataType"),
+        ],
+    )
+    def test_invalid_message_attributes(self, sqs_stub, attributes, bad_field):
+        resp = client.post(
+            "/api/sqs/queues/test-queue/messages",
+            json={"messageBody": "x", "messageAttributes": attributes},
+        )
+        assert resp.status_code == 422
+        (name,) = attributes
+        assert ["body", "messageAttributes", name, bad_field] in [err["loc"] for err in resp.json()["detail"]]
+
+    def test_unknown_top_level_field(self, sqs_stub):
+        # Dropping it silently sent the message without its attributes.
+        resp = client.post(
+            "/api/sqs/queues/test-queue/messages",
+            json={"messageBody": "x", "MessageAttributes": {"priority": {"DataType": "String", "StringValue": "high"}}},
+        )
+        assert resp.status_code == 422
+        assert ["body", "MessageAttributes"] in [err["loc"] for err in resp.json()["detail"]]
+
+    def test_valid_message_attributes_are_sent(self, sqs_stub):
+        sqs_stub.add_response("get_queue_url", {"QueueUrl": QUEUE_URL})
+        sqs_stub.add_response(
+            "send_message",
+            {"MessageId": "m-1", "MD5OfMessageBody": "md5"},
+            {
+                "QueueUrl": QUEUE_URL,
+                "MessageBody": "x",
+                "MessageAttributes": {
+                    "priority": {"DataType": "String", "StringValue": "high"},
+                    "attempt": {"DataType": "Number.int", "StringValue": "2"},
+                },
+            },
+        )
+        resp = client.post(
+            "/api/sqs/queues/test-queue/messages",
+            json={
+                "messageBody": "x",
+                "messageAttributes": {
+                    "priority": {"stringValue": "high"},
+                    "attempt": {"dataType": "Number.int", "stringValue": "2"},
+                },
+            },
+        )
+        assert resp.status_code == 200
+
+
+ENDPOINT_ERROR = "Value 10 for parameter MessageRetentionPeriod is invalid."
+
+# (method, path, body, the operation the endpoint refuses). All but the first
+# two look the queue URL up first.
+SQS_CALLS = [
+    ("GET", "/api/sqs/queues", None, "list_queues"),
+    ("POST", "/api/sqs/queues", {"queueName": "q"}, "create_queue"),
+    ("GET", "/api/sqs/queues/q", None, "get_queue_attributes"),
+    ("POST", "/api/sqs/queues/q/messages", {"messageBody": "x"}, "send_message"),
+    ("GET", "/api/sqs/queues/q/messages", None, "receive_message"),
+    ("DELETE", "/api/sqs/queues/q/messages?receipt_handle=rh", None, "delete_message"),
+    ("POST", "/api/sqs/queues/q/purge", None, "purge_queue"),
+    ("DELETE", "/api/sqs/queues/q", None, "delete_queue"),
+    ("PUT", "/api/sqs/queues/q/attributes", {"messageRetentionPeriod": 10}, "set_queue_attributes"),
+    ("POST", "/api/sqs/queues/q/messages/batch", {"entries": [{"id": "1", "messageBody": "x"}]}, "send_message_batch"),
+    ("DELETE", "/api/sqs/queues/q/messages/batch", {"receiptHandles": ["rh"]}, "delete_message_batch"),
+    (
+        "PUT",
+        "/api/sqs/queues/q/redrive-policy",
+        {"deadLetterTargetArn": "arn:aws:sqs:us-east-1:000000000000:dlq", "maxReceiveCount": 3},
+        "set_queue_attributes",
+    ),
+]
+
+
+class TestEndpointErrors:
+    @pytest.mark.parametrize(("method", "path", "body", "operation"), SQS_CALLS)
+    def test_the_endpoints_4xx_is_the_answer(self, sqs_stub, method, path, body, operation):
+        """A request the endpoint refuses is a 4xx with its message, not a StackPort 500."""
+        if operation not in ("list_queues", "create_queue"):
+            sqs_stub.add_response("get_queue_url", {"QueueUrl": QUEUE_URL})
+        sqs_stub.add_client_error(
+            operation, service_error_code="InvalidParameterValue", service_message=ENDPOINT_ERROR, http_status_code=400
+        )
+
+        resp = client.request(method, path, json=body)
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == ENDPOINT_ERROR
+        assert resp.json()["error"]["code"] == "InvalidParameterValue"
+
+    def test_a_missing_queue_is_still_a_404(self, sqs_stub):
+        sqs_stub.add_client_error("get_queue_url", service_error_code="QueueDoesNotExist", http_status_code=400)
+        resp = client.post("/api/sqs/queues/q/messages", json={"messageBody": "x"})
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Queue q not found"
+
+    @pytest.mark.parametrize(("method", "path", "body"), [call[:3] for call in SQS_CALLS])
+    def test_unreadable_aws_emulator_files(self, monkeypatch, method, path, body):
+        """Building the client can fail too: that is a credentials problem with a hint, not a bare 500."""
+
+        def get_client(service_name, **_kwargs):
+            raise AwsEmulatorFilesError(Path("/home/me/.aws/emulator/9297/emulator_credentials"), "permission denied")
+
+        monkeypatch.setattr(sqs_routes, "get_client", get_client)
+        resp = client.request(method, path, json=body)
+        assert resp.status_code == 401
+        assert resp.json()["error"]["kind"] == "credentials"
