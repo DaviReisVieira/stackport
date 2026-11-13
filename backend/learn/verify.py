@@ -98,7 +98,7 @@ def _dynamodb_item_count(ep: EndpointInfo, params: dict) -> dict:
 
 def _resource_exists(ep: EndpointInfo, params: dict) -> dict:
     """Generic existence check driven by SERVICE_REGISTRY (no cache)."""
-    from backend.routes.stats import _METHOD_KWARGS, SERVICE_REGISTRY
+    from backend.routes.stats import SERVICE_REGISTRY, list_items
 
     service = params["service"]
     resource_type = params["resource_type"]
@@ -108,12 +108,7 @@ def _resource_exists(ep: EndpointInfo, params: dict) -> dict:
         if rtype != resource_type:
             continue
         client = get_client(boto_service, **ep.client_kwargs())
-        kwargs = _METHOD_KWARGS.get((boto_service, method), {})
-        response = getattr(client, method)(**kwargs)
-        items = response.get(response_key, [])
-        if isinstance(items, dict) and "Items" in items:
-            items = items["Items"]
-        for item in items:
+        for item in list_items(client, boto_service, method, response_key):
             if isinstance(item, str) and target in item:
                 return {"passed": True, "message": f"Found {resource_type[:-1] if resource_type.endswith('s') else resource_type} '{target}'."}
             if isinstance(item, dict) and any(target in str(v) for v in item.values() if isinstance(v, str)):

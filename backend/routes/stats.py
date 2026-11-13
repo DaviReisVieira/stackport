@@ -141,16 +141,55 @@ _METHOD_KWARGS: dict[tuple[str, str], dict] = {
     ("iam", "list_policies"): {"Scope": "Local"},
 }
 
+# Responses that group their resources: (boto3 service, method) -> the key that
+# holds the resources inside each group. describe_instances answers with
+# reservations, each holding the instances launched together.
+_GROUPED_ITEMS: dict[tuple[str, str], str] = {
+    ("ec2", "describe_instances"): "Instances",
+}
 
-def _count_items(resp, response_key: str) -> int:
-    """Extract item count from a response, handling nested structures."""
-    items = resp.get(response_key, [])
+# List calls that only cover one parent per call, so they're made once for each
+# parent another call lists: (boto3 service, method) -> (parent list method, its
+# response key, the parent's field, the parameter that field is passed as).
+# Each item keeps its parent under that parameter's name. Without EventBusName,
+# list_rules only sees the default event bus.
+_PER_PARENT: dict[tuple[str, str], tuple[str, str, str, str]] = {
+    ("events", "list_rules"): ("list_event_buses", "EventBuses", "Name", "EventBusName"),
+}
+
+
+def ungroup(items: list, boto3_service: str, method_name: str) -> list:
+    """The resources inside the groups a grouping response returns, or ``items`` unchanged."""
+    group_key = _GROUPED_ITEMS.get((boto3_service, method_name))
+    if group_key is None:
+        return items
+    return [item for group in items for item in group.get(group_key) or []]
+
+
+def _response_items(resp: dict, boto3_service: str, method_name: str, response_key: str) -> list:
+    items = resp.get(response_key) or []
     # cloudfront list_distributions returns {"DistributionList": {"Items": [...]}}
-    if isinstance(items, dict) and "Items" in items:
-        return len(items.get("Items", []) or [])
-    if isinstance(items, list):
-        return len(items)
-    return 0
+    if isinstance(items, dict):
+        items = items.get("Items") or []
+    return ungroup(items, boto3_service, method_name)
+
+
+def list_items(client, boto3_service: str, method_name: str, response_key: str) -> list:
+    """Every resource one SERVICE_REGISTRY entry lists. ``client`` is a ``boto3_service`` client."""
+    kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
+    method = getattr(client, method_name)
+    per_parent = _PER_PARENT.get((boto3_service, method_name))
+    if per_parent is None:
+        return _response_items(method(**kwargs), boto3_service, method_name, response_key)
+
+    parent_method, parent_key, parent_field, parameter = per_parent
+    items = []
+    for parent in list_items(client, boto3_service, parent_method, parent_key):
+        value = parent[parent_field]
+        resp = method(**kwargs, **{parameter: value})
+        for item in _response_items(resp, boto3_service, method_name, response_key):
+            items.append({parameter: value, **item})
+    return items
 
 
 def _service_result(resources: dict[str, int], errors: dict[str, ClassifiedError]) -> dict:
@@ -194,9 +233,7 @@ def _probe_service(service: str, endpoint_url: str, region: str | None = None, *
     for index, (resource_type, boto3_service, method_name, response_key) in enumerate(registry_entries):
         try:
             client = get_client(boto3_service, endpoint_url=endpoint_url, region=region, **client_kwargs)
-            method = getattr(client, method_name)
-            kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
-            resources[resource_type] = _count_items(method(**kwargs), response_key)
+            resources[resource_type] = len(list_items(client, boto3_service, method_name, response_key))
         except Exception as exc:
             logger.debug("Failed to probe %s/%s", service, resource_type, exc_info=True)
             error = classify(exc) or ClassifiedError(ErrorKind.OTHER, shorten(str(exc)))

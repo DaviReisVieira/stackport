@@ -22,12 +22,13 @@ from backend.config import (
 from backend.connection import EndpointInfo, InvalidEndpointUrl
 from backend.routes.common import UnknownEndpoint, endpoint_info_for
 from backend.routes.resources import (
-    DESCRIBE_REGISTRY,
     _PREFERRED_ID_FIELD,
+    UnknownResourceType,
     _extract_id,
     _serialize,
+    describe_resource,
 )
-from backend.routes.stats import SERVICE_REGISTRY, _METHOD_KWARGS, _count_items, _probe_service
+from backend.routes.stats import SERVICE_REGISTRY, _probe_service, list_items
 
 logger = logging.getLogger(__name__)
 
@@ -149,14 +150,7 @@ def list(service, endpoint, region, output):
     for resource_type, boto3_service, method_name, response_key in registry_entries:
         try:
             client = get_client(boto3_service, **client_kwargs)
-            method = getattr(client, method_name)
-            kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
-            resp = method(**kwargs)
-            items = resp.get(response_key, [])
-            # Handle nested structures (e.g., cloudfront DistributionList.Items)
-            if isinstance(items, dict) and "Items" in items:
-                items = items.get("Items", []) or []
-            resources[resource_type] = items
+            resources[resource_type] = list_items(client, boto3_service, method_name, response_key)
         except Exception as exc:
             logger.debug("Failed to list %s/%s: %s", service, resource_type, exc, exc_info=True)
             resources[resource_type] = []
@@ -207,61 +201,16 @@ def describe(service, resource_type, resource_id, endpoint, region, output):
     """Describe a specific resource."""
     client_kwargs = _client_kwargs(endpoint, region)
 
-    # Special case for WAFv2
-    if (service, resource_type) == ("wafv2", "web_acls"):
-        try:
-            client = get_client("wafv2", **client_kwargs)
-            acls = client.list_web_acls(Scope="REGIONAL").get("WebACLs", [])
-            match = next((a for a in acls if a.get("Name") == resource_id), None)
-            if not match:
-                click.echo(f"Error: Web ACL '{resource_id}' not found", err=True)
-                sys.exit(1)
-            resp = client.get_web_acl(Name=resource_id, Scope="REGIONAL", Id=match["Id"])
-            resp.pop("ResponseMetadata", None)
-            detail = _serialize(resp.get("WebACL", resp))
-        except Exception as exc:
-            click.echo(f"Error describing {service}/{resource_type}/{resource_id}: {exc}", err=True)
-            sys.exit(1)
-    else:
-        lookup = DESCRIBE_REGISTRY.get((service, resource_type))
-        if not lookup:
-            click.echo(f"Error: No detail lookup registered for {service}/{resource_type}", err=True)
-            sys.exit(1)
-
-        boto3_service, method_name, id_param, response_key = lookup
-
-        # Some APIs take list parameters
-        _LIST_PARAMS = {
-            "InstanceIds",
-            "VpcIds",
-            "SubnetIds",
-            "GroupIds",
-            "VolumeIds",
-            "repositoryNames",
-            "clusters",
-            "AlarmNames",
-            "LoadBalancerArns",
-        }
-
-        try:
-            client = get_client(boto3_service, **client_kwargs)
-            method = getattr(client, method_name)
-            if id_param in _LIST_PARAMS:
-                resp = method(**{id_param: [resource_id]})
-            else:
-                resp = method(**{id_param: resource_id})
-
-            resp.pop("ResponseMetadata", None)
-
-            if response_key is not None:
-                detail = resp.get(response_key, resp)
-            else:
-                detail = resp
-
-            detail = _serialize(detail)
-        except Exception as exc:
-            click.echo(f"Error describing {service}/{resource_type}/{resource_id}: {exc}", err=True)
-            sys.exit(1)
+    try:
+        detail = describe_resource(
+            lambda boto3_service: get_client(boto3_service, **client_kwargs), service, resource_type, resource_id
+        )
+    except UnknownResourceType as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+    except Exception as exc:
+        click.echo(f"Error describing {service}/{resource_type}/{resource_id}: {exc}", err=True)
+        sys.exit(1)
 
     if output == "json":
         click.echo(json.dumps(detail, indent=2))
