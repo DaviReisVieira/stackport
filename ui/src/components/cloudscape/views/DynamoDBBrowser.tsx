@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCollection } from '@cloudscape-design/collection-hooks'
 import Alert from '@cloudscape-design/components/alert'
@@ -28,6 +28,7 @@ import {
   batchWriteDynamoDBItems,
   createDynamoDBTable,
   deleteDynamoDBItem,
+  fetchDynamoDBItemCount,
   fetchDynamoDBItems,
   fetchDynamoDBTable,
   fetchDynamoDBTables,
@@ -398,6 +399,45 @@ function ItemsPanel({ detail }: { detail: DynamoDBTableDetail }) {
   )
 }
 
+/**
+ * The table's item count, counted on request with a scan, like the console's "Get live item count".
+ * DescribeTable's figures are approximate: AWS refreshes them about every six hours, and some
+ * emulators always report 0.
+ */
+function LiveItemCount({ tableName }: { tableName: string }) {
+  const { activeEndpoint } = useEndpoint()
+  const [count, setCount] = useState<number | null>(null)
+  const [counting, setCounting] = useState(false)
+
+  const countItems = async () => {
+    setCounting(true)
+    try {
+      const data = await fetchDynamoDBItemCount(tableName, activeEndpoint)
+      setCount(data.count)
+    } catch (err) {
+      toast.error(`Could not count items: ${err}`)
+    } finally {
+      setCounting(false)
+    }
+  }
+
+  return (
+    <SpaceBetween size="xxs">
+      {count === null ? (
+        <Button onClick={countItems} loading={counting}>
+          Get live item count
+        </Button>
+      ) : (
+        <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+          <span>{count}</span>
+          <Button variant="inline-icon" iconName="refresh" ariaLabel="Count items again" onClick={countItems} loading={counting} />
+        </SpaceBetween>
+      )}
+      <Box variant="small">DynamoDB updates the approximate figures about every six hours. Counting scans the whole table.</Box>
+    </SpaceBetween>
+  )
+}
+
 function TableDetailView({ tableName, onBack }: { tableName: string; onBack: () => void }) {
   const { activeEndpoint } = useEndpoint()
   const fetcher = useCallback(() => fetchDynamoDBTable(tableName, activeEndpoint), [tableName, activeEndpoint])
@@ -418,13 +458,15 @@ function TableDetailView({ tableName, onBack }: { tableName: string; onBack: () 
   }
   if (!detail) return null
 
-  const overview: Array<[string, string]> = [
+  const overview: Array<[string, ReactNode]> = [
     ['Status', detail.status],
     ['Partition key', detail.partition_key ? `${detail.partition_key} (${detail.partition_key_type})` : '—'],
     ['Sort key', detail.sort_key ? `${detail.sort_key} (${detail.sort_key_type})` : '—'],
     ['Billing mode', detail.billing_mode],
-    ['Item count', String(detail.item_count)],
-    ['Size', formatBytes(detail.size_bytes)],
+    ['Item count (approximate)', String(detail.item_count)],
+    ['Size (approximate)', formatBytes(detail.size_bytes)],
+    // Keyed so another endpoint or table starts without the previous count
+    ['Live item count', <LiveItemCount key={`${activeEndpoint}/${detail.name}`} tableName={detail.name} />],
     ['Global secondary indexes', String(detail.global_secondary_indexes.length)],
     ['Local secondary indexes', String(detail.local_secondary_indexes.length)],
     ['Created', detail.created ? new Date(detail.created).toLocaleString() : '—'],
@@ -760,13 +802,13 @@ export function CloudscapeDynamoDBBrowser() {
           },
           {
             id: 'items',
-            header: 'Items',
+            header: 'Items (approximate)',
             sortingField: 'item_count',
             cell: (t) => t.item_count,
           },
           {
             id: 'size',
-            header: 'Size',
+            header: 'Size (approximate)',
             sortingField: 'size_bytes',
             cell: (t) => formatBytes(t.size_bytes),
           },

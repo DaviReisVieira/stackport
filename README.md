@@ -213,7 +213,7 @@ You can test a connection before saving it with the "Test Connection" button in 
 | Service | Browse | Write operations |
 |---------|--------|------------------|
 | **S3** | Buckets, objects, folder navigation, search | Create buckets and folders, upload, download, delete, batch delete; edit versioning, lifecycle, notifications, CORS, tags |
-| **DynamoDB** | Tables, schema, items, scan and query | Create tables, add, edit and delete items, batch write |
+| **DynamoDB** | Tables, schema, items, scan and query, live item count | Create tables, add, edit and delete items, batch write |
 | **Lambda** | Functions, config, aliases, versions, event sources | Invoke with a JSON payload, edit configuration, download code |
 | **SQS** | Queues, messages, attributes | Create and delete queues, send (single or batch), receive, delete messages, purge, edit attributes and redrive policy |
 | **SNS** | Topics, subscriptions | Create and delete topics, subscribe, unsubscribe, publish |

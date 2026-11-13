@@ -6,6 +6,7 @@ import type {
   BulkTagRequest,
   DynamoDBBatchOperation,
   DynamoDBItem,
+  DynamoDBItemCount,
   DynamoDBItemFormat,
   DynamoDBQueryRequest,
   DynamoDBQueryResponse,
@@ -575,6 +576,11 @@ export async function fetchDynamoDBItems(
   const params = new URLSearchParams({ limit: String(limit) })
   if (nextToken) params.set('exclusive_start_key', nextToken)
   return fetchJSON<DynamoDBScanResponse>(buildUrl(`/dynamodb/tables/${encodeURIComponent(name)}/items`, endpoint, params))
+}
+
+/** Count a table's items with a scan, which reads the whole table. */
+export async function fetchDynamoDBItemCount(name: string, endpoint?: string | null): Promise<DynamoDBItemCount> {
+  return fetchJSON<DynamoDBItemCount>(buildUrl(`/dynamodb/tables/${encodeURIComponent(name)}/item-count`, endpoint))
 }
 
 export async function queryDynamoDBTable(name: string, request: DynamoDBQueryRequest, endpoint?: string | null): Promise<DynamoDBQueryResponse> {
