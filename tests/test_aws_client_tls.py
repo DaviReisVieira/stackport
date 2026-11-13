@@ -155,3 +155,46 @@ def test_stopped_emulator_reads_as_unreachable(isolated, monkeypatch):
     with pytest.raises(Exception) as info:
         get_client("s3", endpoint_url=f"https://127.0.0.1:{port}").list_buckets()
     assert classify(info.value).kind is ErrorKind.UNREACHABLE
+
+
+class TestSessionToken:
+    """What reaches the endpoint: x-amz-security-token goes with the environment keys only."""
+
+    TOKEN = "TEMPORARY-SESSION-TOKEN-VALUE"
+
+    @pytest.fixture(autouse=True)
+    def env_token(self, monkeypatch):
+        monkeypatch.setattr(connection, "AWS_SESSION_TOKEN", self.TOKEN)
+
+    def test_environment_keys_send_it(self, server, tls):
+        get_client("s3", endpoint_url=server.url, ca_bundle=str(tls.cert)).list_buckets()
+        assert server.requests[-1].access_key_id == "test"
+        assert server.requests[-1].headers["x-amz-security-token"] == self.TOKEN
+
+    def test_no_header_without_a_token(self, server, tls, monkeypatch):
+        monkeypatch.setattr(connection, "AWS_SESSION_TOKEN", None)
+        get_client("s3", endpoint_url=server.url, ca_bundle=str(tls.cert)).list_buckets()
+        assert "x-amz-security-token" not in server.requests[-1].headers
+
+    def test_endpoint_keys_do_not_send_it(self, server, tls):
+        get_client(
+            "s3", endpoint_url=server.url, ca_bundle=str(tls.cert),
+            auth_type="credentials", auth_access_key_id="MINE", auth_secret_access_key="MINESECRET",
+        ).list_buckets()
+        assert server.requests[-1].access_key_id == "MINE"
+        assert "x-amz-security-token" not in server.requests[-1].headers
+
+    def test_emulator_keys_do_not_send_it(self, server, tls, isolated):
+        start_run(isolated, server.port, tls.cert, FIRST_RUN_KEY)
+        get_client("s3", endpoint_url=server.url).list_buckets()
+        assert server.requests[-1].access_key_id == FIRST_RUN_KEY
+        assert "x-amz-security-token" not in server.requests[-1].headers
+
+    def test_placeholder_keys_do_not_send_it(self, server, tls, isolated, monkeypatch):
+        monkeypatch.setattr(connection, "AWS_ACCESS_KEY_ID", None)
+        monkeypatch.setattr(connection, "AWS_SECRET_ACCESS_KEY", None)
+        run = start_run(isolated, server.port, tls.cert, FIRST_RUN_KEY)
+        (run / "emulator_credentials").unlink()
+        get_client("s3", endpoint_url=server.url).list_buckets()
+        assert server.requests[-1].access_key_id == connection.PLACEHOLDER_ACCESS_KEY_ID
+        assert "x-amz-security-token" not in server.requests[-1].headers

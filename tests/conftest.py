@@ -7,6 +7,8 @@ import tempfile
 os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "test")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
+# An exported SSO session must not leak into the suite: tests that need a token set one.
+os.environ.pop("AWS_SESSION_TOKEN", None)
 
 # Enable writes for all tests (except test_readonly_middleware which overrides this)
 os.environ.setdefault("STACKPORT_ALLOW_WRITES", "true")

@@ -134,3 +134,13 @@ def test_empty_aws_endpoint_url_counts_as_unset(environ, expected):
     from backend.config import _parse_aws_endpoint_url
 
     assert _parse_aws_endpoint_url(environ) == expected
+
+
+@pytest.mark.parametrize(
+    ("environ", "expected"),
+    [({}, None), ({"AWS_SESSION_TOKEN": ""}, None), ({"AWS_SESSION_TOKEN": "  "}, None), ({"AWS_SESSION_TOKEN": " tok "}, "tok")],
+)
+def test_empty_aws_credentials_count_as_unset(environ, expected):
+    from backend.config import _parse_aws_credential
+
+    assert _parse_aws_credential(environ, "AWS_SESSION_TOKEN") == expected

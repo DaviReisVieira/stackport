@@ -3,14 +3,11 @@
 import json
 import os
 import ssl
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 from backend import aws_emulator, config, connection
-from backend.aws_client import get_client
 from backend.connection import EndpointInfo, describe_connection, plan_connection, ssl_context_for
 
 EMULATOR_URL = "https://127.0.0.1:9297"
@@ -30,6 +27,12 @@ def emulator_dir(tmp_path, monkeypatch) -> Path:
     monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", base)
     aws_emulator.read_credentials.cache_clear()
     return run
+
+
+@pytest.fixture(autouse=True)
+def no_emulator_files(tmp_path, monkeypatch):
+    """No AWS Emulator files unless a test (emulator_dir) puts them there."""
+    monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", tmp_path)
 
 
 @pytest.fixture
@@ -192,43 +195,32 @@ def temporary_env_credentials(monkeypatch):
     monkeypatch.setattr(connection, "AWS_ACCESS_KEY_ID", "ASIAEXAMPLE")
     monkeypatch.setattr(connection, "AWS_SECRET_ACCESS_KEY", "envsecret")
     monkeypatch.setattr(connection, "AWS_SESSION_TOKEN", TOKEN)
-    get_client.cache_clear()
-    yield
-    get_client.cache_clear()
 
 
 class TestSessionToken:
-    def test_environment_credentials_carry_the_token(self, temporary_env_credentials, tmp_path, monkeypatch):
-        monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", tmp_path)
+    """The token goes with the environment keys only. test_aws_client_tls.py checks what is sent."""
+
+    def test_environment_credentials_carry_the_token(self, temporary_env_credentials):
         plan = plan_connection(EndpointInfo(url=None, region="us-east-1"))
         assert plan.credential_source == "environment"
         assert plan.session_token == TOKEN
 
-    def test_client_signs_with_the_token(self, temporary_env_credentials, tmp_path, monkeypatch):
-        monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", tmp_path)
-        credentials = get_client("sts", endpoint_url=None, region="us-east-1")._request_signer._credentials
-        assert (credentials.access_key, credentials.secret_key, credentials.token) == ("ASIAEXAMPLE", "envsecret", TOKEN)
-
-    def test_no_token_when_unset(self, temporary_env_credentials, tmp_path, monkeypatch):
-        monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", tmp_path)
+    def test_no_token_when_unset(self, temporary_env_credentials, monkeypatch):
         monkeypatch.setattr(connection, "AWS_SESSION_TOKEN", None)
-        credentials = get_client("sts", endpoint_url=None, region="us-east-1")._request_signer._credentials
-        assert credentials.token is None
+        assert plan_connection(EndpointInfo(url=None, region=None)).session_token is None
 
-    def test_plans_with_different_tokens_get_different_clients(self, temporary_env_credentials, tmp_path, monkeypatch):
-        monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", tmp_path)
-        first = get_client("sts", endpoint_url=None, region="us-east-1")
-        monkeypatch.setattr(connection, "AWS_SESSION_TOKEN", "ROTATED")
-        second = get_client("sts", endpoint_url=None, region="us-east-1")
-        assert second is not first
-        assert second._request_signer._credentials.token == "ROTATED"
+    def test_plans_with_different_tokens_are_distinct(self, temporary_env_credentials, monkeypatch):
+        first = plan_connection(EndpointInfo(url=None, region=None))
+        monkeypatch.setattr(connection, "AWS_SESSION_TOKEN", "OTHER")
+        second = plan_connection(EndpointInfo(url=None, region=None))
+        # The plan is the client cache key, so they can't share a cached client.
+        assert first != second
 
     def test_endpoint_keys_never_get_it(self, temporary_env_credentials):
         ep = EndpointInfo(
-            url=None, region="us-east-1", auth_type="credentials", auth_access_key_id="MINE", auth_secret_access_key="MINESECRET"
+            url=None, region=None, auth_type="credentials", auth_access_key_id="MINE", auth_secret_access_key="MINESECRET"
         )
         assert plan_connection(ep).session_token is None
-        assert get_client("sts", **ep.client_kwargs())._request_signer._credentials.token is None
 
     def test_endpoint_profile_never_gets_it(self, temporary_env_credentials):
         plan = plan_connection(EndpointInfo(url=None, region=None, auth_type="profile", auth_profile="dev"))
@@ -246,27 +238,13 @@ class TestSessionToken:
         assert plan.credential_source == "placeholder"
         assert plan.session_token is None
 
-    def test_a_token_alone_is_not_an_environment_source(self, no_env_keys, tmp_path, monkeypatch):
-        monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", tmp_path)
+    def test_a_token_alone_is_not_an_environment_source(self, no_env_keys, monkeypatch):
         monkeypatch.setattr(connection, "AWS_SESSION_TOKEN", TOKEN)
         plan = plan_connection(EndpointInfo(url=None, region=None))
         assert plan.credential_source == "default-chain"
         assert plan.session_token is None
 
-    @pytest.mark.parametrize(("value", "expected"), [("", "None"), (TOKEN, repr(TOKEN))])
-    def test_read_from_the_environment(self, value, expected):
-        # Config is read at import, so ask a fresh interpreter. An exported but empty variable is unset.
-        result = subprocess.run(
-            [sys.executable, "-c", "from backend.config import AWS_SESSION_TOKEN; print(repr(AWS_SESSION_TOKEN))"],
-            env={**os.environ, "AWS_SESSION_TOKEN": value},
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        assert result.stdout.strip() == expected
-
-    def test_repr_and_description_never_contain_it(self, temporary_env_credentials, tmp_path, monkeypatch):
-        monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", tmp_path)
+    def test_repr_and_description_never_contain_it(self, temporary_env_credentials):
         plan = plan_connection(EndpointInfo(url=None, region=None))
         assert TOKEN not in repr(plan)
         assert TOKEN not in json.dumps(describe_connection(plan))

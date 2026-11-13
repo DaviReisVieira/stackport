@@ -305,7 +305,7 @@ Press `?` anywhere to see all shortcuts.
 | `AWS_REGION` | `us-east-1` | AWS region |
 | `AWS_ACCESS_KEY_ID` | *(unset)* | AWS access key. Unset = use credential chain |
 | `AWS_SECRET_ACCESS_KEY` | *(unset)* | AWS secret key. Unset = use credential chain |
-| `AWS_SESSION_TOKEN` | *(unset)* | Session token for temporary credentials (SSO exports, assumed roles). Sent only with the two keys above |
+| `AWS_SESSION_TOKEN` | *(unset)* | Session token for temporary credentials (SSO exports, assumed roles). Sent only with the two keys above. Read at start-up, so a new token needs a restart |
 | `AWS_PROFILE` | *(unset)* | AWS named profile from `~/.aws/config` |
 | `STACKPORT_PORT` | `8080` | StackPort server port |
 | `STACKPORT_HOST` | `127.0.0.1` | Interface StackPort listens on (`0.0.0.0` in the Docker image). StackPort has no login, so open it to the network only where that's fine |
