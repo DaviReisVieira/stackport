@@ -5,7 +5,12 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-AWS_ENDPOINT_URL: str | None = os.environ.get("AWS_ENDPOINT_URL")  # None = real AWS
+def _parse_aws_endpoint_url(environ: Mapping[str, str]) -> str | None:
+    """None means real AWS. Empty counts as unset (``AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL}`` in Compose)."""
+    return environ.get("AWS_ENDPOINT_URL") or None
+
+
+AWS_ENDPOINT_URL: str | None = _parse_aws_endpoint_url(os.environ)
 
 # Remove AWS_ENDPOINT_URL from the process environment so boto3's internal
 # credential resolution (SSO, AssumeRole) doesn't route to a local emulator.
@@ -16,6 +21,11 @@ AWS_ACCESS_KEY_ID: str | None = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY: str | None = os.environ.get("AWS_SECRET_ACCESS_KEY")
 STACKPORT_ALLOW_WRITES: bool = os.environ.get("STACKPORT_ALLOW_WRITES", "true").lower() in ("1", "true", "yes")
 STACKPORT_PORT: int = int(os.environ.get("STACKPORT_PORT", "8080"))
+# Interface the server listens on. Loopback by default: StackPort has no login
+# and can change any endpoint it has saved, so it isn't offered to the network
+# unless asked. The Docker image sets 0.0.0.0, which a container needs for its
+# port to be published (publish it on 127.0.0.1 to keep it on this machine).
+STACKPORT_HOST: str = os.environ.get("STACKPORT_HOST", "").strip() or "127.0.0.1"
 # Guided tutorials. Set to false to drop the Learn routes and every trace of
 # the tutorial UI, for anyone who wants StackPort as a resource browser only.
 STACKPORT_LEARN: bool = os.environ.get("STACKPORT_LEARN", "true").lower() in ("1", "true", "yes")
@@ -27,6 +37,28 @@ STACKPORT_SERVICES: str = os.environ.get(
     "elasticmapreduce,elasticloadbalancing,elasticfilesystem,cloudfront,appsync",
 )
 LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+# Origins allowed to call the API from another site (comma-separated). Empty by
+# default: the UI is served by StackPort itself, so it never needs CORS, and
+# allowing every origin would let any web page drive the API of a local
+# StackPort. WebSocket connections follow the same rule (see backend/origins.py).
+def _parse_cors_origins(environ: Mapping[str, str]) -> list[str]:
+    raw = environ.get("STACKPORT_CORS_ORIGINS", "")
+    return [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+
+
+STACKPORT_CORS_ORIGINS: list[str] = _parse_cors_origins(os.environ)
+
+
+def _parse_allowed_hosts(environ: Mapping[str, str]) -> list[str]:
+    raw = environ.get("STACKPORT_ALLOWED_HOSTS", "")
+    return [host.strip().lower().rstrip(".") for host in raw.split(",") if host.strip()]
+
+
+# Host names StackPort answers to besides localhost and IP addresses
+# (comma-separated; "*" accepts any). For reverse proxies, Codespaces-style
+# forwarded URLs, or a machine name on the LAN. See backend/origins.py.
+STACKPORT_ALLOWED_HOSTS: list[str] = _parse_allowed_hosts(os.environ)
 
 # Probe and cache configuration
 STACKPORT_PROBE_TIMEOUT: int = int(os.environ.get("STACKPORT_PROBE_TIMEOUT", "5"))
@@ -97,12 +129,29 @@ DEFAULT_ENDPOINT: str | None = next(iter(ENDPOINTS.values()))
 # Data directory for persistent config (endpoints.json, etc.)
 STACKPORT_DATA_DIR: Path = Path(os.environ.get("STACKPORT_DATA_DIR", Path.home() / ".stackport"))
 
+
+def _parse_aws_emulator_dir(environ: Mapping[str, str]) -> Path | None:
+    """Where AWS Emulator writes its per-port credentials and certificate.
+
+    Unset means AWS Emulator's own default, ``~/.aws/emulator``. An empty value
+    turns the lookup off.
+    """
+    raw = environ.get("STACKPORT_AWS_EMULATOR_DIR")
+    if raw is None:
+        return Path.home() / ".aws" / "emulator"
+    raw = raw.strip()
+    return Path(raw).expanduser() if raw else None
+
+
+STACKPORT_AWS_EMULATOR_DIR: Path | None = _parse_aws_emulator_dir(os.environ)
+
 # Initialize endpoint store
 from backend.endpoint_store import EndpointStore
 
 endpoint_store = EndpointStore(
     json_path=STACKPORT_DATA_DIR / "endpoints.json",
     env_endpoints=ENDPOINTS,
+    env_urls_are_explicit=bool(os.environ.get("STACKPORT_ENDPOINTS")) or AWS_ENDPOINT_URL is not None,
 )
 
 

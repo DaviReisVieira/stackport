@@ -14,6 +14,7 @@ from backend.config import (
     AWS_ENDPOINT_URL,
     AWS_REGION,
     LOG_LEVEL,
+    STACKPORT_HOST,
     STACKPORT_PORT,
     STACKPORT_SERVICES,
     endpoint_store,
@@ -52,9 +53,10 @@ def cli(ctx):
 
 @cli.command()
 @click.option("--port", default=STACKPORT_PORT, help="HTTP port")
-def serve(port):
+@click.option("--host", default=STACKPORT_HOST, show_default=True, help="Interface to listen on; 0.0.0.0 opens StackPort to the network")
+def serve(port, host):
     """Start the StackPort web server (default command)."""
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, log_level=LOG_LEVEL.lower(), reload=False)
+    uvicorn.run("backend.main:app", host=host, port=port, log_level=LOG_LEVEL.lower(), reload=False)
 
 
 @cli.command()

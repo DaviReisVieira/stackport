@@ -7,13 +7,64 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
 from backend.aws_client import get_client
+from backend.aws_emulator import AwsEmulatorFilesError
+from backend.aws_errors import ClassifiedError, ErrorKind, classify
 from backend.cache import cache
 from backend.config import AWS_REGION, endpoint_store
+from backend.connection import EndpointInfo, describe_connection, plan_connection
+from backend.emulators import detect_emulator
 from backend.schemas.endpoints import AddEndpointBody, SetDefaultBody, UpdateEndpointBody
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def check_connection(ep: EndpointInfo, *, identify_emulator: bool = False) -> dict:
+    """Try one cheap call against the endpoint and explain the outcome.
+
+    Returns ``health``, ``error`` (a sentence, or None), ``error_detail`` (the
+    classified error), and ``connection`` (where credentials and TLS trust come
+    from, without any key material). With ``identify_emulator``, also
+    ``emulator``: which emulator answers, looked up afresh, or None.
+    """
+    result = _try_endpoint(ep)
+    if identify_emulator:
+        # When nothing answered there is nothing to identify, and no reason to wait again.
+        detail = result["error_detail"]
+        unreachable = detail is not None and detail["kind"] == ErrorKind.UNREACHABLE
+        result["emulator"] = None if unreachable else detect_emulator(ep, refresh=True)
+    return result
+
+
+def _try_endpoint(ep: EndpointInfo) -> dict:
+    try:
+        plan = plan_connection(ep)
+    except AwsEmulatorFilesError as exc:
+        classified = classify(exc)
+        return {"health": "unhealthy", "error": classified.message, "error_detail": classified.to_dict(), "connection": None}
+
+    connection = describe_connection(plan)
+    try:
+        # Every emulator implements ListBuckets, and it needs no parameters.
+        get_client("s3", **ep.client_kwargs()).list_buckets()
+    except Exception as exc:
+        logger.debug("Endpoint %s unhealthy", ep.url, exc_info=True)
+        classified = classify(exc) or ClassifiedError(ErrorKind.OTHER, str(exc))
+        return {"health": "unhealthy", "error": classified.message, "error_detail": classified.to_dict(), "connection": connection}
+    return {"health": "healthy", "error": None, "error_detail": None, "connection": connection}
+
+
+def _public_entry(entry: dict) -> dict:
+    """Fields of a saved endpoint that are safe to return (never the secret key)."""
+    return {
+        "url": entry["url"],
+        "source": entry["source"],
+        "region": entry.get("region") or AWS_REGION,
+        "auth_type": entry.get("auth_type", "default"),
+        "tls_verify": entry.get("tls_verify", True) is not False,
+        "ca_bundle": entry.get("ca_bundle"),
+    }
 
 
 @router.get("/endpoints")
@@ -25,33 +76,13 @@ def list_endpoints():
 
     for name, entry in all_endpoints.items():
         url = entry["url"]
-        auth_type = entry.get("auth_type", "default")
-        health = "unknown"
-        try:
-            s3 = get_client(
-                "s3",
-                endpoint_url=url,
-                region=entry.get("region"),
-                auth_type=auth_type,
-                auth_profile=entry.get("auth_profile"),
-                auth_access_key_id=entry.get("auth_access_key_id"),
-                auth_secret_access_key=entry.get("auth_secret_access_key"),
-            )
-            s3.list_buckets()
-            health = "healthy"
-        except Exception:
-            logger.debug("Endpoint %s (%s) unhealthy", name, url, exc_info=True)
-            health = "unhealthy"
-
+        check = check_connection(EndpointInfo.from_entry(entry))
         results.append({
             "name": name,
-            "url": url,
-            "health": health,
+            **_public_entry(entry),
+            "health": check["health"],
             "active": name == default_name,
             "connection_type": "aws" if url is None or ".amazonaws.com" in url else "local",
-            "region": entry.get("region") or AWS_REGION,
-            "source": entry["source"],
-            "auth_type": auth_type,
         })
 
     return {"endpoints": results}
@@ -69,6 +100,8 @@ async def add_endpoint(body: AddEndpointBody):
             auth_profile=body.auth_profile,
             auth_access_key_id=body.auth_access_key_id,
             auth_secret_access_key=body.auth_secret_access_key,
+            tls_verify=body.tls_verify is not False,
+            ca_bundle=body.ca_bundle,
         )
         entry = endpoint_store.get(body.name)
         if not entry:
@@ -78,13 +111,7 @@ async def add_endpoint(body: AddEndpointBody):
         from backend.websocket import broadcast_endpoints_changed
         asyncio.create_task(broadcast_endpoints_changed())
 
-        return {
-            "name": body.name,
-            "url": entry["url"],
-            "source": entry["source"],
-            "region": entry.get("region") or AWS_REGION,
-            "auth_type": entry.get("auth_type", "default"),
-        }
+        return {"name": body.name, **_public_entry(entry)}
     except ValueError as e:
         error_msg = str(e)
         if "already exists" in error_msg:
@@ -140,6 +167,16 @@ async def update_endpoint(name: str, body: UpdateEndpointBody):
             update_kwargs["auth_access_key_id"] = body.auth_access_key_id
         if "auth_secret_access_key" in body.model_fields_set:
             update_kwargs["auth_secret_access_key"] = body.auth_secret_access_key
+        # A CA bundle only means something with verification on, and turning
+        # verification off makes a CA bundle moot: keep the pair consistent.
+        if "tls_verify" in body.model_fields_set and body.tls_verify is not None:
+            update_kwargs["tls_verify"] = body.tls_verify
+            if body.tls_verify is False:
+                update_kwargs["ca_bundle"] = None
+        if "ca_bundle" in body.model_fields_set:
+            update_kwargs["ca_bundle"] = body.ca_bundle
+            if body.ca_bundle:
+                update_kwargs["tls_verify"] = True
         endpoint_store.update(name, **update_kwargs)
         entry = endpoint_store.get(name)
         if not entry:
@@ -157,13 +194,7 @@ async def update_endpoint(name: str, body: UpdateEndpointBody):
         from backend.websocket import broadcast_endpoints_changed
         asyncio.create_task(broadcast_endpoints_changed())
 
-        return {
-            "name": name,
-            "url": entry["url"],
-            "source": entry["source"],
-            "region": entry.get("region") or AWS_REGION,
-            "auth_type": entry.get("auth_type", "default"),
-        }
+        return {"name": name, **_public_entry(entry)}
     except ValueError as e:
         error_msg = str(e)
         if "not found" in error_msg:
@@ -226,72 +257,29 @@ def list_profiles():
 @router.post("/endpoints/test-connection")
 def test_connection(body: AddEndpointBody):
     """Test a connection with arbitrary params (no save required)."""
-    health = "unknown"
-    error_message = None
-
-    try:
-        # Clear cache to ensure fresh client with new auth
-        get_client.cache_clear()
-        s3 = get_client(
-            "s3",
-            endpoint_url=body.url,
-            region=body.region,
-            auth_type=body.auth_type,
-            auth_profile=body.auth_profile,
-            auth_access_key_id=body.auth_access_key_id,
-            auth_secret_access_key=body.auth_secret_access_key,
-        )
-        s3.list_buckets()
-        health = "healthy"
-    except Exception as e:
-        logger.debug("Test connection failed: %s", e, exc_info=True)
-        health = "unhealthy"
-        error_message = str(e)
-
-    return {
-        "url": body.url,
-        "health": health,
-        "error": error_message,
-    }
+    # Drop cached clients so profile credentials refreshed on disk are re-read.
+    get_client.cache_clear()
+    ep = EndpointInfo(
+        url=body.url,
+        region=body.region,
+        auth_type=body.auth_type,
+        auth_profile=body.auth_profile,
+        auth_access_key_id=body.auth_access_key_id,
+        auth_secret_access_key=body.auth_secret_access_key,
+        tls_verify=body.tls_verify is not False,
+        ca_bundle=body.ca_bundle,
+    )
+    return {"url": body.url, **check_connection(ep, identify_emulator=True)}
 
 
 @router.post("/endpoints/{name}/health")
 def check_endpoint_health(name: str):
     """Check health of a specific endpoint."""
-    try:
-        entry = endpoint_store.get(name)
-        if not entry:
-            raise HTTPException(status_code=404, detail=f"Endpoint '{name}' not found")
-
-        url = entry["url"]
-        health = "unknown"
-        error_message = None
-
-        try:
-            s3 = get_client(
-                "s3",
-                endpoint_url=url,
-                region=entry.get("region"),
-                auth_type=entry.get("auth_type", "default"),
-                auth_profile=entry.get("auth_profile"),
-                auth_access_key_id=entry.get("auth_access_key_id"),
-                auth_secret_access_key=entry.get("auth_secret_access_key"),
-            )
-            s3.list_buckets()
-            health = "healthy"
-        except Exception as e:
-            logger.debug("Endpoint %s (%s) unhealthy", name, url, exc_info=True)
-            health = "unhealthy"
-            error_message = str(e)
-
-        return {
-            "name": name,
-            "url": url,
-            "health": health,
-            "error": error_message,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Failed to check endpoint health: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    entry = endpoint_store.get(name)
+    if not entry:
+        raise HTTPException(status_code=404, detail=f"Endpoint '{name}' not found")
+    return {
+        "name": name,
+        "url": entry["url"],
+        **check_connection(EndpointInfo.from_entry(entry), identify_emulator=True),
+    }

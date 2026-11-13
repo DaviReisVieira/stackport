@@ -185,3 +185,27 @@ class TestEndpointResolution:
         assert probed, "status never probed anything"
         assert {url for _, url, _ in probed} == {"http://flag:4599"}
         assert isinstance(json.loads(result.output), dict)
+
+
+class TestServeBinding:
+    """StackPort has no login, so it listens on this machine only unless asked."""
+
+    def _run(self, monkeypatch, args):
+        calls = []
+        monkeypatch.setattr("backend.cli.uvicorn.run", lambda *a, **kw: calls.append(kw))
+        result = CliRunner().invoke(cli, ["serve", *args])
+        assert result.exit_code == 0, result.output
+        return calls[0]
+
+    def test_loopback_by_default(self, monkeypatch):
+        assert self._run(monkeypatch, [])["host"] == "127.0.0.1"
+
+    def test_host_flag(self, monkeypatch):
+        assert self._run(monkeypatch, ["--host", "0.0.0.0"])["host"] == "0.0.0.0"
+
+    def test_default_comes_from_stackport_host(self, monkeypatch):
+        for param in cli.commands["serve"].params:
+            if param.name == "host":
+                monkeypatch.setattr(param, "default", "0.0.0.0")
+        assert self._run(monkeypatch, [])["host"] == "0.0.0.0"
+

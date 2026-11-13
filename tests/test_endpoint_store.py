@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.endpoint_store import EndpointStore
+from backend.endpoint_store import CONFIG_VERSION, EndpointStore
 
 
 @pytest.fixture
@@ -38,7 +38,7 @@ class TestJSONPersistence:
         # Verify content
         with open(temp_json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        assert data["version"] == 2
+        assert data["version"] == CONFIG_VERSION
         assert "local" in data["endpoints"]
         assert "moto" in data["endpoints"]
         assert data["default"] == "local"

@@ -13,5 +13,8 @@ RUN pip install --no-cache-dir --no-compile . \
     find /usr/local/lib/python3.12 -type f -name '*.pyc' -delete 2>/dev/null; true
 COPY backend/ ./backend/
 COPY --from=ui-build /app/ui/dist ./ui/dist
+# Inside a container StackPort has to listen on every interface for the port to
+# be published; publish it on 127.0.0.1 (-p 127.0.0.1:8080:8080) to keep it local.
+ENV STACKPORT_HOST=0.0.0.0
 EXPOSE 8080
 CMD ["python", "-m", "backend.main"]

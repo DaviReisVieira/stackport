@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import {
+  ApiError,
   deleteS3Object,
   deleteS3ObjectsBatch,
   createS3Folder,
@@ -131,7 +132,9 @@ describe('uploadS3Object', () => {
 
   type XhrOpts = {
     status?: number
-    responseBody?: Record<string, unknown>
+    statusText?: string
+    /** The parsed JSON body; null for a body that wasn't JSON. */
+    responseBody?: Record<string, unknown> | null
     simulateProgress?: boolean
   }
 
@@ -140,7 +143,7 @@ describe('uploadS3Object', () => {
     class MockXhr {
       upload: { onprogress: ((ev: Event) => void) | null } = { onprogress: null }
       status = opts.status ?? 200
-      statusText = 'OK'
+      statusText = opts.statusText ?? 'OK'
       responseType = ''
       response: unknown = null
       onload: (() => void) | null = null
@@ -166,7 +169,7 @@ describe('uploadS3Object', () => {
           if (opts.status === 413) {
             this.status = 413
             this.responseType = 'json'
-            this.response = {}
+            this.response = opts.responseBody === undefined ? {} : opts.responseBody
             this.onload?.()
             return
           }
@@ -179,13 +182,9 @@ describe('uploadS3Object', () => {
           }
           this.responseType = 'json'
           this.response =
-            opts.responseBody ??
-            ({
-              bucket: 'bkt',
-              key: 'prefix/a.txt',
-              size: 4,
-              content_type: 'text/plain',
-            } as Record<string, unknown>)
+            opts.responseBody !== undefined
+              ? opts.responseBody
+              : { bucket: 'bkt', key: 'prefix/a.txt', size: 4, content_type: 'text/plain' }
           this.onload?.()
         })
       })
@@ -236,6 +235,41 @@ describe('uploadS3Object', () => {
     await expect(uploadS3Object('bkt', file, '')).rejects.toThrow(
       'File exceeds maximum upload size',
     )
+  })
+
+  it('rejects with the size limit the backend names', async () => {
+    stubXHR({ status: 413, responseBody: { detail: 'File exceeds maximum size of 104857600 bytes' } })
+    const file = new File(['x'], 't.bin')
+
+    const error = await uploadS3Object('bkt', file, '').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 413, message: 'File exceeds maximum size of 104857600 bytes' })
+  })
+
+  it("rejects with the backend's explanation and classification when the upload fails", async () => {
+    const unreachable = {
+      kind: 'unreachable',
+      message: "StackPort couldn't reach the endpoint.",
+      hint: 'Check that the emulator is running and that the endpoint URL and port are right.',
+    }
+    stubXHR({ status: 502, statusText: 'Bad Gateway', responseBody: { detail: unreachable.message, error: unreachable } })
+    const file = new File(['x'], 't.bin')
+
+    const error = await uploadS3Object('bkt', file, '').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 502, message: unreachable.message, classified: unreachable })
+  })
+
+  it.each([
+    ['Internal Server Error', '500: Internal Server Error'],
+    ['', 'HTTP 500'],
+  ])('falls back to the status when the failure has no JSON body (status text %j)', async (statusText, message) => {
+    stubXHR({ status: 500, statusText, responseBody: null })
+    const file = new File(['x'], 't.bin')
+
+    const error = await uploadS3Object('bkt', file, '').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 500, message, classified: null })
   })
 
   it('rejects with AbortError when onRegisterAbort triggers abort before load', async () => {

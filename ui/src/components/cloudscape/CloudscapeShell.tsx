@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import AppLayout from '@cloudscape-design/components/app-layout'
 import Autosuggest from '@cloudscape-design/components/autosuggest'
 import type { AutosuggestProps } from '@cloudscape-design/components/autosuggest'
+import Button from '@cloudscape-design/components/button'
 import Flashbar from '@cloudscape-design/components/flashbar'
+import type { FlashbarProps } from '@cloudscape-design/components/flashbar'
 import SideNavigation from '@cloudscape-design/components/side-navigation'
 import type { SideNavigationProps } from '@cloudscape-design/components/side-navigation'
 import TopNavigation from '@cloudscape-design/components/top-navigation'
@@ -19,7 +21,7 @@ import { LearnDrawer } from '@/components/cloudscape/learn/LearnDrawer'
 import { LearnHotspotMarker } from '@/components/cloudscape/learn/LearnHotspot'
 import { LEARN_HOTSPOTS } from '@/components/cloudscape/learn/hotspots'
 import { fetchStats } from '@/lib/api'
-import type { StatsResponse } from '@/lib/types'
+import type { Endpoint, HealthResponse, StatsResponse } from '@/lib/types'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFavorites } from '@/hooks/useFavorites'
 import { useFetch } from '@/hooks/useFetch'
@@ -33,12 +35,55 @@ import { SEARCH_SHORTCUT_LABEL } from '@/components/cloudscape/platform'
 const LEARN_DRAWER_ID = 'learn'
 
 /**
+ * Why requests to the active endpoint's emulator fail when StackPort only reached
+ * it with certificate checks off (`tls_trusted: false`), and whether the fix is
+ * in Settings. Null when there's nothing to warn about.
+ */
+function untrustedCertificateNotice(health: HealthResponse | null): { content: string; fixInSettings: boolean } | null {
+  if (health?.emulator?.tls_trusted !== false) return null
+  const { emulator, connection } = health
+  const reached = `StackPort reached ${emulator.name}`
+  // The backend can't describe the connection when AWS Emulator's files can't be read
+  if (connection === null) {
+    return {
+      content: `${reached} but can't read the files AWS Emulator wrote for this port, so it can't trust the emulator's certificate and requests to it fail. Run StackPort as the user that runs the emulator, or point STACKPORT_AWS_EMULATOR_DIR at a copy StackPort can read.`,
+      fixInSettings: false,
+    }
+  }
+  const untrusted = `${reached} but doesn't trust its TLS certificate, so requests to it fail.`
+  if (connection?.tls_trust_source === 'endpoint') {
+    const bundle = connection.ca_bundle ? ` (${connection.ca_bundle})` : ''
+    return {
+      content: `${untrusted} Check this endpoint's CA bundle${bundle} in Settings: StackPort couldn't read it, or it isn't the CA that signed this certificate.`,
+      fixInSettings: true,
+    }
+  }
+  // StackPort trusts the CA AWS Emulator wrote, and this certificate isn't from it
+  if (connection?.tls_trust_source === 'aws-emulator') {
+    const where = connection.aws_emulator_dir ? ` in ${connection.aws_emulator_dir}` : ''
+    return {
+      content: `${reached} but its TLS certificate didn't verify against the CA AWS Emulator wrote${where}, so requests to it fail. Try restarting the emulator, then StackPort.`,
+      fixInSettings: false,
+    }
+  }
+  // Without the folder, StackPort has neither the certificate nor the keys
+  if (emulator.id === 'aws-emulator' && connection?.aws_emulator_dir === null && connection.aws_emulator_lookup_dir) {
+    return {
+      content: `${reached} but can't find the certificate and keys it writes for this port. StackPort looks in ${connection.aws_emulator_lookup_dir} on the machine where it runs: run StackPort where it can see that folder, share it as the Compose example does, or point STACKPORT_AWS_EMULATOR_DIR at it.`,
+      fixInSettings: false,
+    }
+  }
+  return { content: `${untrusted} Add the certificate's CA bundle to this endpoint in Settings.`, fixInSettings: true }
+}
+
+/**
  * Shared shell for Cloudscape-migrated views (launch PR #149).
  *
  * AWS-console style chrome: a TopNavigation with a unified service search,
- * pinned favorite services, endpoint selector, theme toggle, and keyboard
- * shortcuts, plus the side navigation and a warning banner when connected to
- * real AWS. Every page renders inside this AppLayout.
+ * pinned favorite services, endpoint selector (naming the emulator detected
+ * behind the active endpoint), theme toggle, and keyboard shortcuts, plus the
+ * side navigation and warning banners for real AWS and for an emulator whose
+ * certificate StackPort doesn't trust. Every page renders inside this AppLayout.
  */
 export function CloudscapeShell({
   activeHref,
@@ -50,6 +95,7 @@ export function CloudscapeShell({
   children: ReactNode
 }) {
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const [navOpen, setNavOpen] = useState(true)
   const [searchValue, setSearchValue] = useState('')
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -152,18 +198,23 @@ export function CloudscapeShell({
     })
 
     if (endpoints.length > 0) {
+      // Health follows the active endpoint, so only that one can name its emulator
+      const summary = (e: Endpoint) =>
+        [e.name === activeEndpoint ? health?.emulator?.name : null, e.connection_type, e.region]
+          .filter(Boolean)
+          .join(' · ')
       const active = endpoints.find((e) => e.name === activeEndpoint)
       items.push({
         type: 'menu-dropdown',
         text: active ? active.name : 'endpoint',
-        description: active ? `${active.connection_type}${active.region ? ` · ${active.region}` : ''}` : undefined,
+        description: active ? summary(active) : undefined,
         iconName: 'globe',
         ariaLabel: 'Select endpoint',
         items: endpoints.map((e) => ({
           id: e.name,
           text: e.name,
           iconName: e.name === activeEndpoint ? ('check' as const) : undefined,
-          description: `${e.connection_type}${e.region ? ` · ${e.region}` : ''}`,
+          secondaryText: summary(e),
         })),
         onItemClick: ({ detail }) => setActiveEndpoint(detail.id),
       })
@@ -172,7 +223,26 @@ export function CloudscapeShell({
     return items
   }, [favorites, goToService, health, theme, cycleTheme, endpoints, activeEndpoint, setActiveEndpoint])
 
-  const awsWarning = health?.connection_type === 'aws'
+  const notifications: FlashbarProps.MessageDefinition[] = []
+  if (health?.connection_type === 'aws') {
+    notifications.push({
+      type: 'warning',
+      content: 'Connected to real AWS. Actions here affect live resources and may incur costs.',
+      id: 'aws-warning',
+    })
+  }
+  const certificateNotice = untrustedCertificateNotice(health)
+  if (certificateNotice) {
+    notifications.push({
+      type: 'warning',
+      id: 'tls-untrusted',
+      content: certificateNotice.content,
+      action:
+        certificateNotice.fixInSettings && pathname !== '/settings' ? (
+          <Button onClick={() => navigate('/settings')}>Open settings</Button>
+        ) : undefined,
+    })
+  }
 
   return (
     <I18nProvider locale="en" messages={[enMessages]}>
@@ -231,20 +301,7 @@ export function CloudscapeShell({
         onDrawerChange={({ detail }) => setDrawerOpen(detail.activeDrawerId === LEARN_DRAWER_ID)}
         headerSelector="#stackport-top-nav"
         stickyNotifications
-        notifications={
-          awsWarning ? (
-            <Flashbar
-              items={[
-                {
-                  type: 'warning',
-                  content:
-                    'Connected to real AWS. Actions here affect live resources and may incur costs.',
-                  id: 'aws-warning',
-                },
-              ]}
-            />
-          ) : undefined
-        }
+        notifications={notifications.length > 0 ? <Flashbar items={notifications} /> : undefined}
         navigationOpen={navOpen}
         onNavigationChange={({ detail }) => setNavOpen(detail.open)}
         navigation={

@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import Alert from '@cloudscape-design/components/alert'
 import Badge from '@cloudscape-design/components/badge'
 import Box from '@cloudscape-design/components/box'
 import Button from '@cloudscape-design/components/button'
 import Checkbox from '@cloudscape-design/components/checkbox'
+import ExpandableSection from '@cloudscape-design/components/expandable-section'
 import Form from '@cloudscape-design/components/form'
 import FormField from '@cloudscape-design/components/form-field'
 import Header from '@cloudscape-design/components/header'
+import LiveRegion from '@cloudscape-design/components/live-region'
 import Input from '@cloudscape-design/components/input'
 import Modal from '@cloudscape-design/components/modal'
 import Select from '@cloudscape-design/components/select'
@@ -14,8 +17,10 @@ import SpaceBetween from '@cloudscape-design/components/space-between'
 import StatusIndicator from '@cloudscape-design/components/status-indicator'
 import Table from '@cloudscape-design/components/table'
 import Tabs from '@cloudscape-design/components/tabs'
+import Toggle from '@cloudscape-design/components/toggle'
 import { toast } from 'sonner'
 import { CloudscapeShell } from '@/components/cloudscape/CloudscapeShell'
+import { ConnectionCheckSummary } from '@/components/cloudscape/ConnectionCheckSummary'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import {
   addEndpoint,
@@ -25,20 +30,32 @@ import {
   testEndpointConnection,
   updateEndpoint,
 } from '@/lib/api'
-import type { AuthType, Endpoint } from '@/lib/types'
+import type { AuthType, ConnectionCheck, Endpoint, EndpointConnectionSettings } from '@/lib/types'
+import { isHttpsUrl } from '@/lib/utils'
 
-const AUTH_OPTIONS = [
+const AUTH_OPTIONS: ReadonlyArray<{ label: string; value: AuthType }> = [
   { label: 'Default (env vars / instance role)', value: 'default' },
   { label: 'AWS Profile (~/.aws/config)', value: 'profile' },
   { label: 'Static Credentials', value: 'credentials' },
 ]
 
-interface AuthConfig {
-  auth_type: string
-  auth_profile: string | null
-  auth_access_key_id: string | null
-  auth_secret_access_key: string | null
+const URL_EXAMPLE = 'http://localhost:4566'
+
+/** Why `value` can't be an endpoint URL, or null when it can. */
+function endpointUrlProblem(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return `Enter the endpoint URL, for example ${URL_EXAMPLE}.`
+  let protocol: string
+  try {
+    protocol = new URL(trimmed).protocol
+  } catch {
+    return `Enter a full URL, for example ${URL_EXAMPLE}.`
+  }
+  if (protocol !== 'http:' && protocol !== 'https:') return 'The URL must start with http:// or https://.'
+  return null
 }
+
+type TestOutcome = { kind: 'checked'; check: ConnectionCheck } | { kind: 'failed'; message: string }
 
 function EndpointFormModal({
   mode,
@@ -49,7 +66,7 @@ function EndpointFormModal({
   mode: 'add' | 'edit'
   endpoint: Endpoint | null
   onClose: () => void
-  onSubmit: (name: string, url: string | null, region: string | null, auth: AuthConfig) => Promise<void>
+  onSubmit: (name: string, url: string | null, region: string | null, settings: EndpointConnectionSettings) => Promise<void>
 }) {
   const isEnvEdit = mode === 'edit' && endpoint?.source === 'env'
   const [name, setName] = useState(endpoint?.name ?? '')
@@ -60,10 +77,14 @@ function EndpointFormModal({
   const [authProfile, setAuthProfile] = useState('')
   const [authAccessKeyId, setAuthAccessKeyId] = useState('')
   const [authSecretAccessKey, setAuthSecretAccessKey] = useState('')
+  // Unlike credentials, TLS settings aren't secret, so editing starts from the saved values
+  const [tlsVerify, setTlsVerify] = useState(endpoint?.tls_verify ?? true)
+  const [caBundle, setCaBundle] = useState(endpoint?.ca_bundle ?? '')
   const [profiles, setProfiles] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ health: string; error?: string } | null>(null)
+  const [lastTest, setLastTest] = useState<{ key: string; outcome: TestOutcome } | null>(null)
+  const [validateUrl, setValidateUrl] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -79,31 +100,61 @@ function EndpointFormModal({
     }
   }, [])
 
-  const effectiveUrl = () => (isEnvEdit ? (endpoint?.url ?? null) : isRealAWS ? null : url.trim() || null)
+  // An environment endpoint keeps its URL; everything else is edited here
+  const editsUrl = !isEnvEdit && !isRealAWS
+  const effectiveUrl = isEnvEdit ? (endpoint?.url ?? null) : isRealAWS ? null : url.trim() || null
+  // TLS settings are only offered for https:// endpoints: not plain http://, not real AWS
+  const usesTls = isHttpsUrl(effectiveUrl)
+  const urlError = validateUrl && editsUrl ? endpointUrlProblem(url) : null
 
-  const buildAuth = (): AuthConfig => ({
+  const settings: EndpointConnectionSettings = {
     auth_type: authType,
     auth_profile: authType === 'profile' ? authProfile.trim() || null : null,
     auth_access_key_id: authType === 'credentials' ? authAccessKeyId.trim() || null : null,
     auth_secret_access_key: authType === 'credentials' ? authSecretAccessKey.trim() || null : null,
-  })
+    // Real AWS and http:// endpoints get the defaults: nothing uses TLS settings over
+    // http://, and a CA bundle replaces the system trust store, so one saved for an
+    // emulator must not follow the endpoint to real AWS. The backend rejects a bundle
+    // with verification off, so it's only sent while verification is on (the field
+    // keeps its text either way).
+    tls_verify: usesTls ? tlsVerify : true,
+    ca_bundle: usesTls && tlsVerify ? caBundle.trim() || null : null,
+  }
+  const connectionParams = { url: effectiveUrl, region: region.trim() || null, ...settings }
+  // A test result only describes the settings it ran with
+  const connectionKey = JSON.stringify(connectionParams)
+  const testOutcome = lastTest?.key === connectionKey ? lastTest.outcome : null
+
+  /** Show the URL error, if any, and say whether the form can go ahead. */
+  const checkUrl = () => {
+    setValidateUrl(true)
+    return !editsUrl || endpointUrlProblem(url) === null
+  }
+
+  /** Say what the chosen authentication is missing, if anything, and whether the form can go ahead. */
+  const checkAuth = () => {
+    if (authType === 'profile' && !authProfile.trim()) {
+      toast.error('Profile name is required')
+      return false
+    }
+    if (authType === 'credentials' && (!authAccessKeyId.trim() || !authSecretAccessKey.trim())) {
+      toast.error('Both Access Key ID and Secret Access Key are required')
+      return false
+    }
+    return true
+  }
 
   const handleTest = async () => {
+    // Editing never shows the saved profile or keys, so testing without them would test other credentials
+    if (!checkUrl() || !checkAuth()) return
+    const key = connectionKey
     setTesting(true)
-    setTestResult(null)
+    setLastTest(null)
     try {
-      const result = await testEndpointConnection({
-        name: name.trim() || 'test',
-        url: effectiveUrl(),
-        region: region.trim() || null,
-        ...buildAuth(),
-      })
-      setTestResult({ health: result.health, error: result.error || undefined })
-      if (result.health === 'healthy') toast.success('Connection successful')
-      else toast.error('Connection failed')
+      const check = await testEndpointConnection({ name: name.trim() || 'test', ...connectionParams })
+      setLastTest({ key, outcome: { kind: 'checked', check } })
     } catch (error) {
-      setTestResult({ health: 'unhealthy', error: String(error) })
-      toast.error('Failed to test connection')
+      setLastTest({ key, outcome: { kind: 'failed', message: error instanceof Error ? error.message : String(error) } })
     } finally {
       setTesting(false)
     }
@@ -114,21 +165,10 @@ function EndpointFormModal({
       toast.error('Name is required')
       return
     }
-    if (!isEnvEdit && !isRealAWS && !url.trim()) {
-      toast.error('URL is required for local endpoints')
-      return
-    }
-    if (authType === 'profile' && !authProfile.trim()) {
-      toast.error('Profile name is required')
-      return
-    }
-    if (authType === 'credentials' && (!authAccessKeyId.trim() || !authSecretAccessKey.trim())) {
-      toast.error('Both Access Key ID and Secret Access Key are required')
-      return
-    }
+    if (!checkUrl() || !checkAuth()) return
     setSubmitting(true)
     try {
-      await onSubmit(name.trim(), effectiveUrl(), region.trim() || null, buildAuth())
+      await onSubmit(name.trim(), effectiveUrl, region.trim() || null, settings)
       onClose()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
@@ -162,7 +202,7 @@ function EndpointFormModal({
             />
           </FormField>
 
-          <FormField label="Endpoint URL">
+          <FormField label="Endpoint URL" errorText={urlError}>
             {isEnvEdit ? (
               <Alert type="info">URL is set by environment variable</Alert>
             ) : (
@@ -176,9 +216,10 @@ function EndpointFormModal({
                   <Input
                     value={url}
                     onChange={({ detail }) => setUrl(detail.value)}
-                    placeholder="http://localhost:4566"
+                    placeholder={URL_EXAMPLE}
                     disabled={submitting}
                     ariaLabel="Endpoint URL"
+                    invalid={urlError !== null}
                   />
                 )}
               </SpaceBetween>
@@ -197,7 +238,10 @@ function EndpointFormModal({
           <FormField label="Authentication">
             <Select
               selectedOption={AUTH_OPTIONS.find((o) => o.value === authType) ?? AUTH_OPTIONS[0]}
-              onChange={({ detail }) => setAuthType(detail.selectedOption.value as AuthType)}
+              onChange={({ detail }) => {
+                const option = AUTH_OPTIONS.find((o) => o.value === detail.selectedOption.value)
+                if (option) setAuthType(option.value)
+              }}
               options={AUTH_OPTIONS}
               disabled={submitting}
             />
@@ -248,26 +292,72 @@ function EndpointFormModal({
             </SpaceBetween>
           )}
 
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button onClick={() => void handleTest()} loading={testing} disabled={submitting} data-testid="test-connection">
-              Test connection
-            </Button>
-            {testResult &&
-              (testResult.health === 'healthy' ? (
-                <StatusIndicator type="success">Connected</StatusIndicator>
-              ) : (
-                <StatusIndicator type="error">Failed</StatusIndicator>
-              ))}
-          </SpaceBetween>
-          {testResult?.error && (
-            <Box color="text-body-secondary" fontSize="body-s">
-              {testResult.error}
-            </Box>
+          {usesTls && (
+            <ExpandableSection
+              headerText="Connection security"
+              headerDescription="Certificates StackPort trusts for this endpoint"
+              defaultExpanded={endpoint !== null && (!endpoint.tls_verify || endpoint.ca_bundle !== null)}
+            >
+              <SpaceBetween size="m">
+                <Toggle
+                  checked={tlsVerify}
+                  onChange={({ detail }) => setTlsVerify(detail.checked)}
+                  disabled={submitting}
+                  description="Turn this off only for an endpoint you trust whose certificate can't be verified."
+                >
+                  Verify certificates
+                </Toggle>
+                {!tlsVerify && (
+                  <Alert type="warning">
+                    StackPort will accept any certificate this endpoint presents. A CA bundle keeps the connection verified.
+                  </Alert>
+                )}
+                <FormField
+                  label="CA bundle"
+                  description="Path to a PEM file on the machine that runs StackPort. Not needed for AWS Emulator at https://127.0.0.1:<port>: StackPort picks up its certificate automatically."
+                  constraintText={tlsVerify ? undefined : 'Not used while certificate verification is off.'}
+                >
+                  <Input
+                    value={caBundle}
+                    onChange={({ detail }) => setCaBundle(detail.value)}
+                    placeholder="~/certs/emulator-ca.pem"
+                    disabled={!tlsVerify || submitting}
+                    ariaLabel="CA bundle path"
+                  />
+                </FormField>
+              </SpaceBetween>
+            </ExpandableSection>
           )}
+
+          <SpaceBetween size="s">
+            <Box>
+              <Button onClick={() => void handleTest()} loading={testing} disabled={submitting} data-testid="test-connection">
+                Test connection
+              </Button>
+            </Box>
+            {testOutcome?.kind === 'checked' && <ConnectionCheckSummary check={testOutcome.check} />}
+            {testOutcome?.kind === 'failed' && (
+              <LiveRegion>
+                <SpaceBetween size="xxs">
+                  <StatusIndicator type="error">Couldn't test the connection</StatusIndicator>
+                  <Box>{testOutcome.message}</Box>
+                </SpaceBetween>
+              </LiveRegion>
+            )}
+          </SpaceBetween>
         </SpaceBetween>
       </Form>
     </Modal>
   )
+}
+
+/** Flags an https:// endpoint's TLS settings that differ from the default, so the table stays quiet otherwise. */
+function tlsIndicator(endpoint: Endpoint): ReactNode {
+  // Nothing uses them over plain http://
+  if (!isHttpsUrl(endpoint.url)) return null
+  if (!endpoint.tls_verify) return <StatusIndicator type="warning">Verification off</StatusIndicator>
+  if (endpoint.ca_bundle) return <StatusIndicator type="info">Custom CA</StatusIndicator>
+  return null
 }
 
 function EndpointsPanel() {
@@ -287,12 +377,17 @@ function EndpointsPanel() {
     }
   }
 
-  const handleFormSubmit = async (name: string, url: string | null, region: string | null, auth: AuthConfig) => {
+  const handleFormSubmit = async (
+    name: string,
+    url: string | null,
+    region: string | null,
+    settings: EndpointConnectionSettings,
+  ) => {
     if (form?.mode === 'add') {
-      await addEndpoint(name, url, region, auth)
+      await addEndpoint(name, url, region, settings)
       toast.success(`Endpoint "${name}" added`)
     } else {
-      await updateEndpoint(name, url, region, auth)
+      await updateEndpoint(name, url, region, settings)
       toast.success(`Endpoint "${name}" updated`)
     }
     refresh()
@@ -358,7 +453,18 @@ function EndpointsPanel() {
           {
             id: 'url',
             header: 'URL / Type',
-            cell: (e) => (e.url === null ? <Badge color="severity-medium">Real AWS</Badge> : e.url),
+            cell: (e) => {
+              if (e.url === null) return <Badge color="severity-medium">Real AWS</Badge>
+              const tls = tlsIndicator(e)
+              return tls ? (
+                <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                  <span>{e.url}</span>
+                  {tls}
+                </SpaceBetween>
+              ) : (
+                e.url
+              )
+            },
           },
           { id: 'region', header: 'Region', cell: (e) => e.region },
           {

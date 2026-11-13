@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from botocore.exceptions import (
     SSOError,
@@ -16,7 +16,10 @@ from botocore.exceptions import (
     UnauthorizedSSOTokenError,
 )
 
-from backend.config import LOG_LEVEL, STACKPORT_ALLOW_WRITES, STACKPORT_LEARN, STACKPORT_PORT
+from backend.config import LOG_LEVEL, STACKPORT_ALLOW_WRITES, STACKPORT_CORS_ORIGINS, STACKPORT_LEARN, STACKPORT_PORT
+from backend import emulators
+from backend.error_handlers import install_aws_error_handlers
+from backend.origins import CrossSiteGuard, HostGuard
 from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, learn, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags, kms
 from backend.websocket import logs_tail_endpoint, probe_loop, websocket_endpoint
 
@@ -45,24 +48,34 @@ async def lifespan(app: FastAPI):
     # Startup: launch the WebSocket probe loop
     task = asyncio.create_task(probe_loop())
     yield
-    # Shutdown: cancel the background task
+    # Shutdown: cancel the background task and pending emulator identifications
     task.cancel()
+    emulators.shutdown()
 
 
 app = FastAPI(title="StackPort", docs_url="/api/docs", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if STACKPORT_CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=STACKPORT_CORS_ORIGINS,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
-class ReadOnlyMiddleware(BaseHTTPMiddleware):
-    """Block write operations when STACKPORT_ALLOW_WRITES is False."""
+class ReadOnlyMiddleware:
+    """Block write operations when STACKPORT_ALLOW_WRITES is False.
+
+    Plain ASGI rather than Starlette's BaseHTTPMiddleware: that one finishes a
+    streaming response normally even when the stream fails halfway, so a cut-off
+    download (S3 objects, Lambda code) would reach the browser looking complete.
+    """
 
     WRITE_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
 
     @staticmethod
     def _is_read_only_post(path: str) -> bool:
@@ -76,37 +89,42 @@ class ReadOnlyMiddleware(BaseHTTPMiddleware):
         # Step Functions start/stop execution are writes, not reads
         return False
 
-    async def dispatch(self, request: Request, call_next):
-        if STACKPORT_ALLOW_WRITES:
-            return await call_next(request)
-
+    @classmethod
+    def _is_allowed(cls, method: str, path: str) -> bool:
         # Allow all GET/HEAD/OPTIONS
-        if request.method not in self.WRITE_METHODS:
-            return await call_next(request)
+        if method not in cls.WRITE_METHODS:
+            return True
 
         # Allow endpoint management (infra config, not AWS writes)
-        path = request.url.path
         if path.startswith("/api/endpoints"):
-            return await call_next(request)
+            return True
 
         # Learn progress is local state, not an AWS write. Lessons still can't
         # create anything in read-only mode, but they remain readable and
         # steps whose resources already exist still verify.
         if path.startswith("/api/learn"):
-            return await call_next(request)
+            return True
 
         # Allow read-only POST operations (query, invoke)
-        if request.method == "POST" and self._is_read_only_post(path):
-            return await call_next(request)
+        return method == "POST" and cls._is_read_only_post(path)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or STACKPORT_ALLOW_WRITES or self._is_allowed(scope["method"], scope["path"]):
+            await self.app(scope, receive, send)
+            return
 
         # Block all write operations
-        return JSONResponse(
+        response = JSONResponse(
             status_code=403,
             content={"detail": "Write operations are disabled. Set STACKPORT_ALLOW_WRITES=true to enable."},
         )
+        await response(scope, receive, send)
 
 
 app.add_middleware(ReadOnlyMiddleware)
+# Added last, so they run first: other websites never reach the routes.
+app.add_middleware(CrossSiteGuard)
+app.add_middleware(HostGuard)
 
 
 @app.exception_handler(SSOTokenLoadError)
@@ -120,6 +138,9 @@ async def sso_error_handler(_request: Request, exc: Exception):
             "detail": f"AWS SSO session expired or invalid. Run `aws sso login --profile <profile>` to refresh. Error: {exc}"
         },
     )
+
+
+install_aws_error_handlers(app)
 
 app.include_router(stats.router, prefix="/api")
 app.include_router(endpoints.router, prefix="/api")
@@ -159,14 +180,18 @@ ui_dist = os.path.join(os.path.dirname(__file__), "..", "ui", "dist")
 if os.path.isdir(ui_dist):
     app.mount("/assets", StaticFiles(directory=os.path.join(ui_dist, "assets")), name="assets")
 
+    ui_root = os.path.realpath(ui_dist)
+
     @app.get("/{path:path}")
     def spa_fallback(path: str):
-        # Try to serve the file directly
-        file_path = os.path.join(ui_dist, path)
-        if path and os.path.isfile(file_path):
-            return FileResponse(file_path)
+        # Serve a file from ui/dist when the path names one inside it. The path
+        # comes from the URL, where %2F decodes to "/", so resolve it and check
+        # it is still under ui/dist before touching the filesystem.
+        candidate = os.path.realpath(os.path.join(ui_root, path))
+        if path and os.path.commonpath([ui_root, candidate]) == ui_root and os.path.isfile(candidate):
+            return FileResponse(candidate)
         # SPA fallback: return index.html
-        return FileResponse(os.path.join(ui_dist, "index.html"))
+        return FileResponse(os.path.join(ui_root, "index.html"))
 
 
 def cli():

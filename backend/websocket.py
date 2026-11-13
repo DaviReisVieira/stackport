@@ -9,9 +9,11 @@ import time
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.aws_client import get_client
-from backend.config import endpoint_store, STACKPORT_SERVICES
+from backend.config import endpoint_store
+from backend.connection import InvalidEndpointUrl, check_endpoint_url
+from backend.routes.common import endpoint_info_for, endpoint_info_for_url
 from backend.routes.logs import _epoch_millis_to_iso
-from backend.routes.stats import _probe_service, _start_time
+from backend.routes.stats import collect_stats
 
 logger = logging.getLogger(__name__)
 
@@ -65,15 +67,6 @@ manager = ConnectionManager()
 _last_stats_by_endpoint: dict[str | None, dict] = {}
 
 
-def _find_entry_for_url(url: str | None) -> dict | None:
-    """Find the endpoint entry matching a given URL."""
-    all_eps = endpoint_store.list_all()
-    for entry in all_eps.values():
-        if entry["url"] == url:
-            return entry
-    return None
-
-
 async def probe_loop():
     """Background task: probe services for each active endpoint and broadcast."""
     while True:
@@ -82,40 +75,10 @@ async def probe_loop():
         if not manager.active_connections:
             continue
 
-        active_endpoints = manager.get_active_endpoints()
-
-        for endpoint_url in active_endpoints:
+        for endpoint_url in manager.get_active_endpoints():
             try:
-                loop = asyncio.get_event_loop()
-                enabled = [s.strip() for s in STACKPORT_SERVICES.split(",") if s.strip()]
-
-                entry = _find_entry_for_url(endpoint_url)
-                region = entry.get("region") if entry else None
-                auth_kwargs = {
-                    "auth_type": entry.get("auth_type", "default") if entry else "default",
-                    "auth_profile": entry.get("auth_profile") if entry else None,
-                    "auth_access_key_id": entry.get("auth_access_key_id") if entry else None,
-                    "auth_secret_access_key": entry.get("auth_secret_access_key") if entry else None,
-                }
-                tasks = [loop.run_in_executor(None, functools.partial(_probe_service, svc, endpoint_url, region, **auth_kwargs)) for svc in enabled]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                services = {}
-                total = 0
-                for result in results:
-                    if isinstance(result, Exception):
-                        logger.debug("Probe failed: %s", result)
-                        continue
-                    svc_name, svc_data = result
-                    services[svc_name] = svc_data
-                    total += sum(svc_data.get("resources", {}).values())
-
-                sorted_services = dict(sorted(services.items()))
-                stats = {
-                    "services": sorted_services,
-                    "total_resources": total,
-                    "uptime_seconds": round(time.time() - _start_time, 1),
-                }
+                ep = endpoint_info_for_url(endpoint_url)
+                stats = await asyncio.get_running_loop().run_in_executor(None, collect_stats, ep)
                 _last_stats_by_endpoint[endpoint_url] = stats
                 await manager.broadcast_to_endpoint(endpoint_url, {"type": "stats", "data": stats})
             except Exception:
@@ -123,6 +86,9 @@ async def probe_loop():
 
 
 def _resolve_endpoint(name_or_url: str | None) -> str | None:
+    """Resolve a subscription target. Raises InvalidEndpointUrl for a direct URL StackPort refuses."""
+    if name_or_url is not None and name_or_url.startswith(("http://", "https://")):
+        check_endpoint_url(name_or_url)
     return endpoint_store.resolve(name_or_url)
 
 
@@ -146,22 +112,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     logger.debug("Client unsubscribed from: %s", msg.get("services"))
             except json.JSONDecodeError:
                 pass
+            except InvalidEndpointUrl as exc:
+                await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
 
 def _client_kwargs_for(endpoint_name_or_url: str | None) -> dict:
-    """Build get_client kwargs (endpoint URL, region, auth) for an endpoint name or URL."""
-    url = endpoint_store.resolve(endpoint_name_or_url)
-    entry = _find_entry_for_url(url)
-    return {
-        "endpoint_url": url,
-        "region": entry.get("region") if entry else None,
-        "auth_type": entry.get("auth_type", "default") if entry else "default",
-        "auth_profile": entry.get("auth_profile") if entry else None,
-        "auth_access_key_id": entry.get("auth_access_key_id") if entry else None,
-        "auth_secret_access_key": entry.get("auth_secret_access_key") if entry else None,
-    }
+    """Build get_client kwargs (endpoint URL, region, auth, TLS) for an endpoint name or URL."""
+    return endpoint_info_for(endpoint_name_or_url).client_kwargs()
 
 
 def _fetch_new_events(
@@ -236,7 +195,12 @@ async def logs_tail_endpoint(websocket: WebSocket):
 
         filter_pattern = cfg.get("filterPattern") or ""
         since = int(cfg.get("since") or time.time() * 1000)
-        client_kwargs = _client_kwargs_for(cfg.get("endpoint"))
+        try:
+            client_kwargs = _client_kwargs_for(cfg.get("endpoint"))
+        except InvalidEndpointUrl as exc:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+            await websocket.close()
+            return
 
         stop = asyncio.Event()
 

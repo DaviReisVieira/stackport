@@ -1,6 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, onTestFinished } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { toast } from 'sonner'
 
 vi.mock('@/hooks/useEndpoint', () => ({
   useEndpoint: () => ({
@@ -85,10 +86,14 @@ const topicDetail = {
 
 let fetchMock: ReturnType<typeof vi.fn>
 
-function mockFetchByUrl() {
+function mockFetchByUrl(overrides: { createTopicError?: string } = {}) {
   fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const method = init?.method ?? 'GET'
+    if (overrides.createTopicError && url.includes('/api/sns/topics?') && method === 'POST') {
+      const body = JSON.stringify({ detail: overrides.createTopicError })
+      return Promise.resolve(new Response(body, { status: 409, statusText: 'Conflict' }))
+    }
     let payload: unknown = statsPayload
     if (url.includes('/publish')) payload = { messageId: 'm-1' }
     else if (url.includes('/subscriptions') && method === 'POST') payload = { subscriptionArn: `${ARN}:sub-2` }
@@ -149,6 +154,20 @@ describe('CloudscapeSNSBrowser (via registry dispatch)', () => {
     )
     const body = JSON.parse((call![1] as RequestInit).body as string)
     expect(body).toEqual({ name: 'promo', fifo: true, contentBasedDeduplication: true })
+  })
+
+  it("says why a topic wasn't created in the backend's words", async () => {
+    const toastError = vi.spyOn(toast, 'error')
+    onTestFinished(() => toastError.mockRestore())
+    mockFetchByUrl({ createTopicError: 'Topic orders already exists' })
+    renderSNS()
+    await screen.findByText('orders')
+    fireEvent.click(screen.getByRole('button', { name: 'Create topic' }))
+    fireEvent.change(await screen.findByPlaceholderText('order-events'), { target: { value: 'orders' } })
+    fireEvent.click(screen.getByTestId('create-topic-submit'))
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled())
+    expect(toastError).toHaveBeenCalledWith('Failed to create topic: Topic orders already exists')
   })
 
   it('shows the topic detail with subscriptions and filter policy', async () => {

@@ -1,5 +1,7 @@
 import type {
   BulkDeleteRequest,
+  ClassifiedError,
+  ConnectionCheck,
   BulkOperationResponse,
   BulkTagRequest,
   DynamoDBBatchOperation,
@@ -19,7 +21,9 @@ import type {
   EC2ListASGsResponse,
   EC2SecurityGroup,
   EC2VPC,
+  EndpointConnectionSettings,
   EndpointsResponse,
+  ErrorKind,
   HealthResponse,
   IAMGroup,
   IAMGroupDetail,
@@ -77,6 +81,7 @@ import type {
   SQSUpdateAttributesRequest,
   StartExecutionRequest,
   StartExecutionResponse,
+  SavedEndpoint,
   StatsResponse,
   StepFunctionsExecution,
   StepFunctionsExecutionDetail,
@@ -113,13 +118,6 @@ function encodeS3ObjectKeyInPath(key: string): string {
   return key.split('/').map(encodeURIComponent).join('/')
 }
 
-async function fetchJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
-  return res.json()
-}
-
-
 /** FastAPI returns a string detail for HTTPException and a list of errors for 422. */
 function detailMessage(data: unknown): string | null {
   if (!data || typeof data !== 'object') return null
@@ -130,6 +128,73 @@ function detailMessage(data: unknown): string | null {
     if (first?.msg) return first.msg.replace(/^Value error, /, '')
   }
   return null
+}
+
+const ERROR_KINDS: ReadonlySet<string> = new Set<ErrorKind>([
+  'not_implemented',
+  'credentials',
+  'forbidden',
+  'tls',
+  'unreachable',
+  'other',
+])
+
+function classifiedError(data: unknown): ClassifiedError | null {
+  if (!data || typeof data !== 'object') return null
+  const error = (data as { error?: unknown }).error
+  if (!error || typeof error !== 'object') return null
+  const { kind, message } = error as { kind?: unknown; message?: unknown }
+  if (typeof kind !== 'string' || !ERROR_KINDS.has(kind) || typeof message !== 'string') return null
+  return error as ClassifiedError
+}
+
+/**
+ * A failed API call. `message` is the backend's `detail` when it sent one;
+ * `classified` says what kind of failure it was when the endpoint caused it
+ * (an operation the emulator doesn't implement, rejected credentials, ...).
+ */
+export class ApiError extends Error {
+  readonly status: number
+  readonly classified: ClassifiedError | null
+
+  constructor(status: number, message: string, classified: ClassifiedError | null = null) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.classified = classified
+  }
+
+  /** The message alone, so `Failed to create topic: ${error}` reads as one sentence. */
+  override toString(): string {
+    return this.message
+  }
+}
+
+/** The status line, for a failure whose body doesn't explain it. HTTP/2 has no status text. */
+function statusLine(status: number, statusText: string): string {
+  return statusText ? `${status}: ${statusText}` : `HTTP ${status}`
+}
+
+/** An ApiError from a failed response's parsed body (null when it wasn't JSON). */
+function apiErrorFromBody(status: number, body: unknown, fallback: string): ApiError {
+  return new ApiError(status, detailMessage(body) ?? fallback, classifiedError(body))
+}
+
+/** Build an ApiError from a non-2xx response, reading the JSON body when there is one. */
+export async function apiErrorFrom(res: Response): Promise<ApiError> {
+  let data: unknown = null
+  try {
+    data = await res.json()
+  } catch {
+    data = null
+  }
+  return apiErrorFromBody(res.status, data, statusLine(res.status, res.statusText))
+}
+
+async function fetchJSON<T>(url: string): Promise<T> {
+  const res = await fetch(url)
+  if (!res.ok) throw await apiErrorFrom(res)
+  return res.json()
 }
 
 // --- Endpoints ---
@@ -146,8 +211,8 @@ export async function addEndpoint(
   name: string,
   url: string | null,
   region?: string | null,
-  auth?: { auth_type?: string; auth_profile?: string | null; auth_access_key_id?: string | null; auth_secret_access_key?: string | null },
-): Promise<{ name: string; url: string | null; source: string; region: string; auth_type: string }> {
+  settings?: EndpointConnectionSettings,
+): Promise<SavedEndpoint> {
   const res = await fetch(`${API_BASE}/endpoints`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -155,13 +220,10 @@ export async function addEndpoint(
       name,
       url,
       region: region ?? null,
-      ...auth,
+      ...settings,
     }),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -169,20 +231,17 @@ export async function updateEndpoint(
   name: string,
   url: string | null,
   region?: string | null,
-  auth?: { auth_type?: string; auth_profile?: string | null; auth_access_key_id?: string | null; auth_secret_access_key?: string | null },
-): Promise<{ name: string; url: string | null; source: string; region: string; auth_type: string }> {
+  settings?: EndpointConnectionSettings,
+): Promise<SavedEndpoint> {
   const body: Record<string, unknown> = { url }
   if (region !== undefined) body.region = region
-  if (auth) Object.assign(body, auth)
+  if (settings) Object.assign(body, settings)
   const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -190,7 +249,7 @@ export async function deleteEndpoint(name: string): Promise<void> {
   const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}`, {
     method: 'DELETE',
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
 }
 
 export async function setDefaultEndpoint(name: string): Promise<{ success: boolean; default: string; message: string }> {
@@ -199,33 +258,27 @@ export async function setDefaultEndpoint(name: string): Promise<{ success: boole
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
-export async function checkEndpointHealth(name: string): Promise<{ name: string; url: string | null; health: string; error: string | null }> {
+export async function checkEndpointHealth(name: string): Promise<ConnectionCheck & { name: string }> {
   const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}/health`, {
     method: 'POST',
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
-export async function testEndpointConnection(params: {
-  name: string
-  url: string | null
-  region: string | null
-  auth_type: string
-  auth_profile?: string | null
-  auth_access_key_id?: string | null
-  auth_secret_access_key?: string | null
-}): Promise<{ url: string | null; health: string; error: string | null }> {
+export async function testEndpointConnection(
+  params: { name: string; url: string | null; region: string | null } & EndpointConnectionSettings,
+): Promise<ConnectionCheck> {
   const res = await fetch(`${API_BASE}/endpoints/test-connection`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -263,10 +316,7 @@ export async function createS3Bucket(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(detailMessage(data) || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -329,15 +379,14 @@ export function uploadS3Object(
     }
 
     xhr.onload = () => {
-      if (xhr.status === 413) {
-        reject(new Error('File exceeds maximum upload size'))
-        return
-      }
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(xhr.response as S3UploadResponse)
         return
       }
-      reject(new Error(`${xhr.status}: ${xhr.statusText}`))
+      // With responseType 'json', `response` is the parsed body (null when it wasn't JSON).
+      // A 413 from a proxy in front of StackPort has no detail of its own.
+      const fallback = xhr.status === 413 ? 'File exceeds maximum upload size' : statusLine(xhr.status, xhr.statusText)
+      reject(apiErrorFromBody(xhr.status, xhr.response, fallback))
     }
     xhr.onerror = () => reject(new Error('Network error'))
     xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'))
@@ -359,7 +408,7 @@ export function uploadS3Object(
 export async function deleteS3Object(bucket: string, key: string, endpoint?: string | null): Promise<S3DeleteObjectResponse> {
   const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/objects/${encodeS3ObjectKeyInPath(key)}`, endpoint)
   const res = await fetch(url, { method: 'DELETE' })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<S3DeleteObjectResponse>
 }
 
@@ -374,7 +423,7 @@ export async function deleteS3ObjectsBatch(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<S3DeleteBatchResponse>
 }
 
@@ -385,7 +434,7 @@ export async function createS3Folder(bucket: string, folderPrefix: string, endpo
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prefix: folderPrefix }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<S3CreateFolderResponse>
 }
 
@@ -402,7 +451,7 @@ export async function putS3Versioning(bucket: string, status: string, endpoint?:
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<{ bucket: string; status: string }>
 }
 
@@ -419,14 +468,14 @@ export async function putS3Lifecycle(bucket: string, rules: Array<{ id: string; 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rules }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<{ bucket: string; rules_count: number }>
 }
 
 export async function deleteS3Lifecycle(bucket: string, endpoint?: string | null) {
   const url = buildUrl(`/s3/buckets/${encodeURIComponent(bucket)}/lifecycle`, endpoint)
   const res = await fetch(url, { method: 'DELETE' })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<{ bucket: string; deleted: boolean }>
 }
 
@@ -447,7 +496,7 @@ export async function putS3Notifications(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ configurations }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<{ bucket: string; configurations_count: number }>
 }
 
@@ -464,7 +513,7 @@ export async function putS3BucketTags(bucket: string, tags: Record<string, strin
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tags }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<{ bucket: string; tags: Record<string, string> }>
 }
 
@@ -485,7 +534,7 @@ export async function putS3CORS(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rules }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<{ bucket: string; rules_count: number }>
 }
 
@@ -508,10 +557,7 @@ export async function createDynamoDBTable(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(detailMessage(data) || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -541,18 +587,8 @@ export async function queryDynamoDBTable(name: string, request: DynamoDBQueryReq
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
-}
-
-async function parseDynamoDBErrorResponse(res: Response, fallback: string): Promise<never> {
-  try {
-    const j = (await res.json()) as { detail?: unknown }
-    if (typeof j.detail === 'string') throw new Error(`${res.status}: ${j.detail}`)
-  } catch (e) {
-    if (e instanceof Error && e.message.startsWith(`${res.status}:`)) throw e
-  }
-  throw new Error(fallback)
 }
 
 export async function putDynamoDBItem(
@@ -568,9 +604,7 @@ export async function putDynamoDBItem(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ item, item_format: itemFormat }),
   })
-  if (!res.ok) {
-    await parseDynamoDBErrorResponse(res, `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<DynamoDBWriteResponse>
 }
 
@@ -595,9 +629,7 @@ export async function deleteDynamoDBItem(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ key, item_format: itemFormat }),
   })
-  if (!res.ok) {
-    await parseDynamoDBErrorResponse(res, `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<DynamoDBWriteResponse>
 }
 
@@ -613,9 +645,7 @@ export async function batchWriteDynamoDBItems(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ item_format: itemFormat, operations }),
   })
-  if (!res.ok) {
-    await parseDynamoDBErrorResponse(res, `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json() as Promise<DynamoDBWriteResponse>
 }
 
@@ -640,7 +670,7 @@ export async function invokeLambdaFunction(functionName: string, payload: Lambda
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -663,7 +693,7 @@ export async function updateLambdaConfiguration(functionName: string, config: La
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -684,7 +714,7 @@ export async function sendSQSMessage(queueName: string, request: SQSSendMessageR
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -707,13 +737,13 @@ export async function deleteSQSMessage(queueName: string, receiptHandle: string,
   const params = new URLSearchParams({ receipt_handle: receiptHandle })
   const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}/messages`, endpoint, params)
   const res = await fetch(url, { method: 'DELETE' })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
 }
 
 export async function purgeSQSQueue(queueName: string, endpoint?: string | null): Promise<{ success: boolean; message: string }> {
   const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}/purge`, endpoint)
   const res = await fetch(url, { method: 'POST' })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -724,14 +754,14 @@ export async function createSQSQueue(request: SQSCreateQueueRequest, endpoint?: 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
 export async function deleteSQSQueue(queueName: string, endpoint?: string | null): Promise<void> {
   const url = buildUrl(`/sqs/queues/${encodeURIComponent(queueName)}`, endpoint)
   const res = await fetch(url, { method: 'DELETE' })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
 }
 
 export async function updateSQSQueueAttributes(
@@ -745,7 +775,7 @@ export async function updateSQSQueueAttributes(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -760,7 +790,7 @@ export async function sendSQSMessagesBatch(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -771,7 +801,7 @@ export async function deleteSQSMessagesBatch(queueName: string, request: SQSBatc
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
 }
 
 export async function updateSQSRedrivePolicy(
@@ -785,7 +815,7 @@ export async function updateSQSRedrivePolicy(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(policy || { deadLetterTargetArn: null, maxReceiveCount: null }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -840,28 +870,28 @@ export async function fetchEC2AutoscalingGroups(endpoint?: string | null): Promi
 export async function startEC2Instance(instanceId: string, endpoint?: string | null): Promise<EC2ActionResponse> {
   const url = buildUrl(`/ec2/instances/${encodeURIComponent(instanceId)}/start`, endpoint)
   const res = await fetch(url, { method: 'POST' })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
 export async function stopEC2Instance(instanceId: string, endpoint?: string | null): Promise<EC2ActionResponse> {
   const url = buildUrl(`/ec2/instances/${encodeURIComponent(instanceId)}/stop`, endpoint)
   const res = await fetch(url, { method: 'POST' })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
 export async function rebootEC2Instance(instanceId: string, endpoint?: string | null): Promise<EC2ActionResponse> {
   const url = buildUrl(`/ec2/instances/${encodeURIComponent(instanceId)}/reboot`, endpoint)
   const res = await fetch(url, { method: 'POST' })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
 export async function terminateEC2Instance(instanceId: string, endpoint?: string | null): Promise<EC2ActionResponse> {
   const url = buildUrl(`/ec2/instances/${encodeURIComponent(instanceId)}/terminate`, endpoint)
   const res = await fetch(url, { method: 'POST' })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -911,10 +941,7 @@ export async function createSecret(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -929,10 +956,7 @@ export async function updateSecretValue(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -947,10 +971,7 @@ export async function updateSecretMetadata(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -963,10 +984,7 @@ export async function deleteSecret(
   if (force) params.set('force', 'true')
   const url = buildUrl(`/secretsmanager/secrets/${encodeURIComponent(secretId)}`, endpoint, params)
   const res = await fetch(url, { method: 'DELETE' })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -976,10 +994,7 @@ export async function restoreSecret(
 ): Promise<{ name: string; arn: string }> {
   const url = buildUrl(`/secretsmanager/secrets/${encodeURIComponent(secretId)}/restore`, endpoint)
   const res = await fetch(url, { method: 'POST' })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1047,10 +1062,7 @@ export async function createLogGroup(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, retentionInDays: retentionInDays ?? null, tags: tags ?? {} }),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1060,10 +1072,7 @@ export async function deleteLogGroup(
 ): Promise<{ success: boolean; message: string }> {
   const url = buildUrl(`/logs/groups/${encodeURIComponent(logGroupName)}`, endpoint)
   const res = await fetch(url, { method: 'DELETE' })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1078,10 +1087,7 @@ export async function setLogGroupRetention(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ retentionInDays }),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1092,10 +1098,7 @@ export async function deleteLogStream(
 ): Promise<{ success: boolean; message: string }> {
   const url = buildUrl(`/logs/groups/${encodeURIComponent(logGroupName)}/streams/${encodeURIComponent(logStreamName)}`, endpoint)
   const res = await fetch(url, { method: 'DELETE' })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1129,7 +1132,7 @@ export async function updateResourceTags(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tags }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1140,7 +1143,7 @@ export async function bulkTag(request: BulkTagRequest, endpoint?: string | null)
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1151,7 +1154,7 @@ export async function bulkDelete(request: BulkDeleteRequest, endpoint?: string |
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1198,10 +1201,7 @@ export async function startStepFunctionsExecution(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1240,10 +1240,7 @@ export async function stopStepFunctionsExecution(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1320,7 +1317,7 @@ export async function fetchMetricData(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ queries, startMinutes }),
   })
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1344,20 +1341,14 @@ export async function createSNSTopic(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
 export async function deleteSNSTopic(arn: string, endpoint?: string | null): Promise<{ deleted: boolean }> {
   const url = buildUrl(`/sns/topics/${encodeURIComponent(arn)}`, endpoint)
   const res = await fetch(url, { method: 'DELETE' })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1372,20 +1363,14 @@ export async function subscribeSNSTopic(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
 export async function unsubscribeSNS(subscriptionArn: string, endpoint?: string | null): Promise<{ deleted: boolean }> {
   const url = buildUrl(`/sns/subscriptions/${encodeURIComponent(subscriptionArn)}`, endpoint)
   const res = await fetch(url, { method: 'DELETE' })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1406,10 +1391,7 @@ export async function publishSNSMessage(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
@@ -1421,10 +1403,7 @@ async function postLearn<T>(path: string, body: Record<string, unknown>, endpoin
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(detailMessage(data) || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 

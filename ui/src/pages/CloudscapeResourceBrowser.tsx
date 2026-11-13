@@ -23,6 +23,12 @@ import type { TableProps } from '@cloudscape-design/components/table'
 import Tabs from '@cloudscape-design/components/tabs'
 import { toast } from 'sonner'
 import { CloudscapeShell } from '@/components/cloudscape/CloudscapeShell'
+import {
+  ClassifiedErrorDetails,
+  EndpointProblemAlert,
+  ServiceStatusAlert,
+  ServiceStatusIndicator,
+} from '@/components/cloudscape/ServiceStatus'
 import { CLOUDSCAPE_SERVICE_VIEWS } from '@/components/cloudscape/views'
 import {
   fetchResourceDetail,
@@ -362,11 +368,16 @@ function ServicePicker({ stats, onSelect }: { stats: StatsResponse | null; onSel
     () =>
       Object.entries(stats?.services ?? {})
         .map(([name, svc]) => ({
+          ...svc,
           name,
-          status: svc.status,
           total: Object.values(svc.resources).reduce((a, b) => a + b, 0),
         }))
-        .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)),
+        .sort(
+          (a, b) =>
+            b.total - a.total ||
+            Number(a.status === 'unsupported') - Number(b.status === 'unsupported') ||
+            a.name.localeCompare(b.name),
+        ),
     [stats],
   )
 
@@ -399,9 +410,7 @@ function ServicePicker({ stats, onSelect }: { stats: StatsResponse | null; onSel
             id: 'meta',
             content: (item) => (
               <SpaceBetween direction="horizontal" size="xs">
-                <StatusIndicator type={item.status === 'available' ? 'success' : 'error'}>
-                  {item.status}
-                </StatusIndicator>
+                <ServiceStatusIndicator name={item.name} service={item} />
                 <Box color="text-body-secondary">{item.total} resources</Box>
               </SpaceBetween>
             ),
@@ -419,8 +428,16 @@ export default function CloudscapeResourceBrowser() {
   const { activeEndpoint } = useEndpoint()
   const [detail, setDetail] = useState<{ resourceType: string; id: string } | null>(null)
 
+  const CustomView = service ? CLOUDSCAPE_SERVICE_VIEWS[service] : undefined
+
   const statsFetcher = useCallback(() => fetchStats(activeEndpoint), [activeEndpoint])
-  const { data: stats } = useFetch<StatsResponse>(statsFetcher)
+  // A generic service page's status alert comes from the stats probe, so each one opened gets
+  // fresh stats. A service with its own view only needs them for the side nav's list.
+  const {
+    data: stats,
+    loading: statsLoading,
+    refresh: refreshStats,
+  } = useFetch<StatsResponse>(statsFetcher, undefined, { refreshKey: CustomView ? undefined : service })
 
   const tagsSupportedFetcher = useCallback(() => fetchTagsSupported(activeEndpoint), [activeEndpoint])
   const { data: tagsSupported } = useFetch(tagsSupportedFetcher)
@@ -429,7 +446,18 @@ export default function CloudscapeResourceBrowser() {
     () => (service ? fetchResources(service, undefined, activeEndpoint) : Promise.resolve(null)),
     [service, activeEndpoint],
   )
-  const { data: resources, loading, error, refresh } = useFetch<ResourceListResponse | null>(resourcesFetcher)
+  const {
+    data: resources,
+    loading,
+    error,
+    errorDetail,
+    refresh: refreshResources,
+  } = useFetch<ResourceListResponse | null>(resourcesFetcher)
+  // Refresh and Retry reload the stats with the resources, so the alert can't contradict the table
+  const refresh = useCallback(
+    () => Promise.all([refreshResources(), refreshStats()]),
+    [refreshResources, refreshStats],
+  )
 
   const servicesNav = useMemo(
     () => [
@@ -455,7 +483,14 @@ export default function CloudscapeResourceBrowser() {
 
   const openDetail = useCallback((resourceType: string, id: string) => setDetail({ resourceType, id }), [])
 
-  const CustomView = service ? CLOUDSCAPE_SERVICE_VIEWS[service] : undefined
+  const problem = stats?.problem ?? null
+  const serviceStats = service ? stats?.services[service] : undefined
+  // The list route answers a type it couldn't list as an empty list. When the probe
+  // says none of the service's list calls worked, those empty tabs would contradict
+  // the alert, so they're left out (a list that did return something still shows).
+  const listCallsFailed =
+    problem !== null || serviceStats?.status === 'unsupported' || serviceStats?.status === 'unavailable'
+  const showResources = !(listCallsFailed && resourceTypes.every(([, items]) => items.length === 0))
 
   return (
     <CloudscapeShell
@@ -470,7 +505,7 @@ export default function CloudscapeResourceBrowser() {
             actions={
               service && !CustomView ? (
                 <SpaceBetween direction="horizontal" size="xs">
-                  <Button iconName="refresh" onClick={() => refresh()} loading={loading}>
+                  <Button iconName="refresh" onClick={() => void refresh()} loading={loading}>
                     Refresh
                   </Button>
                 </SpaceBetween>
@@ -481,23 +516,42 @@ export default function CloudscapeResourceBrowser() {
           </Header>
         }
       >
-        {!service && <ServicePicker stats={stats} onSelect={(name) => navigate(`/resources/${name}`)} />}
+        {!service &&
+          (problem ? (
+            <EndpointProblemAlert problem={problem} retrying={statsLoading} onRetry={() => void refreshStats()} />
+          ) : (
+            <ServicePicker stats={stats} onSelect={(name) => navigate(`/resources/${name}`)} />
+          ))}
 
         {service && CustomView && <CustomView />}
 
         {service && !CustomView && (
           <SpaceBetween size="l">
             {!loading && error && (
-              <Alert type="error" header="Could not load resources" action={<Button onClick={() => refresh()}>Retry</Button>}>
-                {error}
+              <Alert
+                type="error"
+                header="Could not load resources"
+                action={<Button onClick={() => void refresh()}>Retry</Button>}
+              >
+                <SpaceBetween size="xs">
+                  <Box>{error}</Box>
+                  {errorDetail && <ClassifiedErrorDetails error={errorDetail} />}
+                </SpaceBetween>
               </Alert>
             )}
-            {!loading && resources && resourceTypes.length === 0 && (
+            {/* The list route counts a failed resource type as empty; the probe knows why it failed. */}
+            {!error &&
+              (problem ? (
+                <EndpointProblemAlert problem={problem} retrying={loading || statsLoading} onRetry={() => void refresh()} />
+              ) : (
+                <ServiceStatusAlert name={service} service={serviceStats} />
+              ))}
+            {showResources && !loading && resources && resourceTypes.length === 0 && (
               <Box textAlign="center" padding="xxl">
                 No resources found for {service}
               </Box>
             )}
-            {resources && resourceTypes.length > 0 && (
+            {showResources && resources && resourceTypes.length > 0 && (
               <Tabs
                 tabs={resourceTypes.map(([type, items]) => ({
                   id: type,

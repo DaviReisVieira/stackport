@@ -197,6 +197,7 @@ class TestAddEndpointWithRegion:
             "eu-endpoint", "http://eu-endpoint:4566",
             region="eu-west-1", auth_type="default", auth_profile=None,
             auth_access_key_id=None, auth_secret_access_key=None,
+            tls_verify=True, ca_bundle=None,
         )
 
 
