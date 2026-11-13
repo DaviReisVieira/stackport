@@ -3,6 +3,7 @@ import mimetypes
 import os
 from typing import Annotated
 
+from boto3.s3.transfer import TransferConfig
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
@@ -24,6 +25,23 @@ from backend.schemas.s3 import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Uploads of this size or more go up as a multipart upload in parts of this
+# size; smaller ones in a single PutObject. Every S3 implementation accepts it:
+# AWS's smallest part is 5 MiB, and some emulators refuse a request body over
+# 16 MiB (AWS Emulator answers 413 Content Too Large).
+S3_UPLOAD_PART_BYTES = 8 * 1024 * 1024
+
+# Parts go up one at a time, in the request's own thread: an upload holds one
+# part in memory, and leaves the endpoint's connection pool to other requests.
+# "classic" keeps the transfer on the boto3 client StackPort configured for the
+# endpoint, never the CRT client boto3 may pick on some EC2 instance types.
+_UPLOAD_TRANSFER = TransferConfig(
+    multipart_threshold=S3_UPLOAD_PART_BYTES,
+    multipart_chunksize=S3_UPLOAD_PART_BYTES,
+    use_threads=False,
+    preferred_transfer_client="classic",
+)
 
 
 def _is_s3_not_found(err: ClientError) -> bool:
@@ -304,30 +322,41 @@ def upload_object(
     file: UploadFile = File(..., description="File to upload"),
     ep: EndpointInfo = Depends(get_endpoint_info),
 ):
+    """Upload a file: in one PutObject, or in parts of S3_UPLOAD_PART_BYTES once it is that large.
+
+    A multipart upload that fails is aborted, so its parts don't linger (an
+    emulator may count them against the bucket's limits), and the endpoint's
+    error reaches the client as it is.
+    """
     filename = file.filename or "object"
     object_key = _compose_object_key(prefix, filename)
 
-    body = file.file.read(S3_MAX_UPLOAD_BYTES + 1)
-    if len(body) > S3_MAX_UPLOAD_BYTES:
+    # The request body is already spooled to a temporary file.
+    upload = file.file
+    upload.seek(0, os.SEEK_END)
+    size = upload.tell()
+    if size > S3_MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,
             detail=f"File exceeds maximum size of {S3_MAX_UPLOAD_BYTES} bytes",
         )
+    upload.seek(0)
 
     content_type = _resolve_upload_content_type(filename, file.content_type)
 
     s3 = get_client("s3", **ep.client_kwargs())
-    s3.put_object(
-        Bucket=name,
-        Key=object_key,
-        Body=body,
-        ContentType=content_type,
+    s3.upload_fileobj(
+        upload,
+        name,
+        object_key,
+        ExtraArgs={"ContentType": content_type},
+        Config=_UPLOAD_TRANSFER,
     )
     _invalidate_bucket_stats(name, ep.url)
     return {
         "bucket": name,
         "key": object_key,
-        "size": len(body),
+        "size": size,
         "content_type": content_type,
     }
 
