@@ -2,11 +2,14 @@ import base64
 import binascii
 import json
 import logging
+from collections.abc import Callable, Coroutine
+from decimal import Decimal, DecimalException
 from typing import Any
 
 from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.routing import APIRoute
 
 from backend.aws_client import get_client
 from backend.cache import cache
@@ -24,8 +27,49 @@ logger = logging.getLogger(__name__)
 _serializer = TypeSerializer()
 
 
-def _plain_to_dynamodb_item(plain: dict[str, Any]) -> dict[str, Any]:
-    return {k: _serializer.serialize(v) for k, v in plain.items()}
+class _ExactNumbersRequest(Request):
+    """Reads a JSON body with its numbers as Decimal, the type boto3 serializes as N.
+
+    The default parser makes 9.75 a float, which boto3 refuses because a binary
+    float can't hold most decimals, and which keeps only about 17 of the 38
+    digits a DynamoDB number has. Python's parser also accepts NaN and Infinity;
+    they become Decimal too, so the error a client gets is about the value.
+    """
+
+    async def json(self) -> Any:
+        return json.loads(await self.body(), parse_float=Decimal, parse_constant=Decimal)
+
+
+class _ExactNumbersRoute(APIRoute):
+    """Every DynamoDB route reads its body with _ExactNumbersRequest, so plain JSON
+    items and keys reach boto3 with the numbers the client sent."""
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def exact_numbers_handler(request: Request) -> Response:
+            return await handler(_ExactNumbersRequest(request.scope, request.receive))
+
+        return exact_numbers_handler
+
+
+def _unconvertible(label: str, name: str, reason: str) -> HTTPException:
+    return HTTPException(status_code=400, detail=f"Could not convert plain {label} attribute {name!r} to DynamoDB types: {reason}")
+
+
+def _plain_to_dynamodb(plain: dict[str, Any], label: str) -> dict[str, Any]:
+    typed = {}
+    for name, value in plain.items():
+        try:
+            typed[name] = _serializer.serialize(value)
+        except TypeError as e:
+            raise _unconvertible(label, name, str(e)) from e
+        except DecimalException as e:
+            # boto3 raises the bare decimal signal (Rounded, Overflow, ...) for a number DynamoDB can't hold
+            raise _unconvertible(
+                label, name, "DynamoDB numbers have up to 38 significant digits, with a magnitude between 1E-130 and 1E+126"
+            ) from e
+    return typed
 
 
 # Binary (B / BS) travels as base64 over StackPort's HTTP API, the same way AWS
@@ -103,21 +147,10 @@ def _require_key_attributes(
         raise HTTPException(status_code=400, detail=f"Missing {label} attribute: {sort_key!r}")
 
 
-def _coerce_item_dict(raw: dict[str, Any], item_format: str) -> dict[str, Any]:
+def _coerce_attributes(raw: dict[str, Any], item_format: str, label: str) -> dict[str, Any]:
+    """An item or key from the request, as DynamoDB-typed attributes."""
     if item_format == "plain":
-        try:
-            return _plain_to_dynamodb_item(raw)
-        except TypeError as e:
-            raise HTTPException(status_code=400, detail=f"Could not convert plain item to DynamoDB types: {e}") from e
-    return _item_from_json(raw)
-
-
-def _coerce_key_dict(raw: dict[str, Any], item_format: str) -> dict[str, Any]:
-    if item_format == "plain":
-        try:
-            return _plain_to_dynamodb_item(raw)
-        except TypeError as e:
-            raise HTTPException(status_code=400, detail=f"Could not convert plain key to DynamoDB types: {e}") from e
+        return _plain_to_dynamodb(raw, label)
     return _item_from_json(raw)
 
 
@@ -129,7 +162,7 @@ def _client_error_message(exc: ClientError) -> str:
     err = exc.response.get("Error", {})
     return err.get("Message", err.get("Code", str(exc)))
 
-router = APIRouter()
+router = APIRouter(route_class=_ExactNumbersRoute)
 
 
 def _get_table_item_count(table_name: str, ep: EndpointInfo) -> int:
@@ -391,7 +424,7 @@ def put_table_item(
         logger.error("put_item describe failed for %s: %s", name, e, exc_info=True)
         raise HTTPException(status_code=400, detail=f"Failed to read table: {e}") from e
 
-    item = _coerce_item_dict(request.item, request.item_format)
+    item = _coerce_attributes(request.item, request.item_format, "item")
     _require_key_attributes(item, partition_key, sort_key, label="item")
 
     try:
@@ -417,7 +450,7 @@ def delete_table_item(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to read table: {e}") from e
 
-    key = _coerce_key_dict(request.key, request.item_format)
+    key = _coerce_attributes(request.key, request.item_format, "key")
     _require_key_attributes(key, partition_key, sort_key, label="key")
 
     try:
@@ -445,11 +478,11 @@ def batch_write_items(
     batch_requests: list[dict[str, Any]] = []
     for op in request.operations:
         if op.op == "put":
-            item = _coerce_item_dict(op.item, request.item_format)
+            item = _coerce_attributes(op.item, request.item_format, "item")
             _require_key_attributes(item, partition_key, sort_key, label="item")
             batch_requests.append({"PutRequest": {"Item": item}})
         else:
-            key = _coerce_key_dict(op.key, request.item_format)
+            key = _coerce_attributes(op.key, request.item_format, "key")
             _require_key_attributes(key, partition_key, sort_key, label="key")
             batch_requests.append({"DeleteRequest": {"Key": key}})
 
