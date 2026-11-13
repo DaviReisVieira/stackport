@@ -92,7 +92,7 @@ function mockFetchByUrl() {
     else if (url.includes('/item-count')) payload = { table: 'learners', count: 5 }
     else if (url.includes('/query')) payload = queryPayload
     else if (url.includes('/items')) payload = method === 'GET' ? scanPayload : { ok: true, table: 'learners' }
-    else if (url.includes('/tags')) payload = { tags: {} }
+    else if (url.includes('/tags')) payload = { tags: { team: 'data' } }
     else if (url.includes('/api/dynamodb/tables/learners')) payload = tableDetail
     else if (url.includes('/api/dynamodb/tables')) payload = tablesPayload
     else if (url.includes('/api/stats')) payload = statsPayload
@@ -142,6 +142,8 @@ describe('CloudscapeDynamoDBBrowser (via registry dispatch)', () => {
     expect(await screen.findByText('Could not load table')).toBeInTheDocument()
     expect(screen.getByText("Table 'NoSuchTable' not found")).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    // Nor asks for the tags of a table that isn't there, which would fail with a second error
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/tags/dynamodb/'))).toBe(false)
   })
 
   it('labels the stored item count as approximate and gets the live count on request', async () => {
@@ -167,6 +169,7 @@ describe('CloudscapeDynamoDBBrowser (via registry dispatch)', () => {
     renderDynamo()
     fireEvent.click(await screen.findByRole('link', { name: 'learners' }))
     expect(await screen.findByText('id (S)')).toBeInTheDocument()
+    expect(await screen.findByText('team: data')).toBeInTheDocument()
     expect(await screen.findByText('Ada')).toBeInTheDocument()
     expect(await screen.findByText('Grace')).toBeInTheDocument()
   })
