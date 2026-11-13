@@ -19,6 +19,8 @@ if "AWS_ENDPOINT_URL" in os.environ:
 AWS_REGION: str = os.environ.get("AWS_REGION", "us-east-1")
 AWS_ACCESS_KEY_ID: str | None = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY: str | None = os.environ.get("AWS_SECRET_ACCESS_KEY")
+# Belongs to the two keys above (SSO exports, assumed roles); an empty value counts as unset.
+AWS_SESSION_TOKEN: str | None = os.environ.get("AWS_SESSION_TOKEN") or None
 STACKPORT_ALLOW_WRITES: bool = os.environ.get("STACKPORT_ALLOW_WRITES", "true").lower() in ("1", "true", "yes")
 STACKPORT_PORT: int = int(os.environ.get("STACKPORT_PORT", "8080"))
 # Interface the server listens on. Loopback by default: StackPort has no login

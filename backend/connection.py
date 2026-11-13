@@ -8,7 +8,9 @@ Credentials, most specific first:
 
 1. the endpoint's own auth (a profile, or an access key pair);
 2. AWS Emulator's ``emulator_credentials`` for this endpoint, when present;
-3. ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` from StackPort's environment;
+3. ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` from StackPort's environment,
+   with ``AWS_SESSION_TOKEN`` when it is set (temporary credentials). The token
+   belongs to that pair only: no other source below or above ever gets it;
 4. placeholder keys when AWS Emulator's folder exists without keys (it runs
    with ``--auth off``, or it is stopped), so the default chain never sends the
    access key ID of a real account to it, and a stopped emulator shows up as
@@ -43,7 +45,7 @@ from urllib3.exceptions import LocationParseError
 from urllib3.util import parse_url
 
 from backend import aws_emulator
-from backend.config import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, is_local_endpoint
+from backend.config import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, is_local_endpoint
 
 CredentialSource = Literal[
     "endpoint-profile",
@@ -131,6 +133,7 @@ class ConnectionPlan:
     profile: str | None = None
     access_key_id: str | None = field(default=None, repr=False)
     secret_access_key: str | None = field(default=None, repr=False)
+    session_token: str | None = field(default=None, repr=False)
     # None leaves verification to botocore (system trust, or AWS_CA_BUNDLE).
     verify: bool | str | None = None
     # A local emulator rather than AWS: see aws_client._build_client for what changes.
@@ -202,7 +205,7 @@ def plan_connection(ep: EndpointInfo) -> ConnectionPlan:
     files = aws_emulator.discover(ep.url) if ep.url and not (has_own_credentials and has_own_trust) else None
 
     # Credentials
-    profile = key = secret = None
+    profile = key = secret = token = None
     source: CredentialSource
     if ep.auth_type == "profile" and ep.auth_profile:
         source, profile = "endpoint-profile", ep.auth_profile
@@ -212,7 +215,7 @@ def plan_connection(ep: EndpointInfo) -> ConnectionPlan:
         key, secret = aws_emulator.read_credentials(files.credentials, files.stamp[1])
         source = "aws-emulator"
     elif AWS_ACCESS_KEY_ID is not None or AWS_SECRET_ACCESS_KEY is not None:
-        source, key, secret = "environment", AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+        source, key, secret, token = "environment", AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
     elif files is not None:
         source, key, secret = "placeholder", PLACEHOLDER_ACCESS_KEY_ID, PLACEHOLDER_SECRET_ACCESS_KEY
     else:
@@ -240,6 +243,7 @@ def plan_connection(ep: EndpointInfo) -> ConnectionPlan:
         profile=profile,
         access_key_id=key,
         secret_access_key=secret,
+        session_token=token,
         verify=verify,
         local_endpoint=is_local_endpoint(ep.url),
         emulator_files=files,
