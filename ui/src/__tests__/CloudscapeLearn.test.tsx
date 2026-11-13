@@ -77,6 +77,7 @@ type Options = {
   skipped?: Record<string, string[]>
   verify?: { passed: boolean; verifyStatus: string; message: string }
   trailMissing?: boolean
+  cliSetup?: { emulator: string; variables: { name: string; value: string }[] } | null
 }
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -138,7 +139,9 @@ function mockFetch(options: Options = {}) {
         ok = false
         payload = { detail: 'Trail not found' }
       } else {
-        payload = { trail: TRAIL, ...progress, variables: { 's3-store-a-file': { bucket: 'learn-bucket-a1' } } }
+        payload = { trail: TRAIL, ...progress, variables: { 's3-store-a-file': { bucket: 'learn-bucket-a1' } },
+          cliSetup: options.cliSetup ?? null,
+        }
       }
     } else if (url.includes('/api/stats')) {
       payload = {
@@ -273,6 +276,41 @@ describe('Running a lesson', () => {
     await waitFor(() => expect(step.getByText(/s3api create-bucket --bucket learn-bucket-a1/)).toBeInTheDocument())
     fireEvent.click(step.getByText('What each part does'))
     await waitFor(() => expect(step.getByText('Points at your emulator.')).toBeInTheDocument())
+  })
+
+  it('shows no extra CLI setup when the emulator needs none', async () => {
+    renderApp()
+    await startLesson()
+    const step = await panel()
+    fireEvent.click(step.getByRole('tab', { name: 'With the CLI' }))
+    await waitFor(() => expect(step.getByText(/s3api create-bucket --bucket learn-bucket-a1/)).toBeInTheDocument())
+    expect(step.queryByTestId('learn-cli-setup')).not.toBeInTheDocument()
+    expect(step.queryByText(/export /)).not.toBeInTheDocument()
+  })
+
+  it('shows the setup the endpoint needs above the CLI command', async () => {
+    mockFetch({
+      cliSetup: {
+        emulator: 'AWS Emulator',
+        variables: [
+          { name: 'AWS_SHARED_CREDENTIALS_FILE', value: '~/.aws/emulator/4566/emulator_credentials' },
+          { name: 'AWS_CA_BUNDLE', value: '~/.aws/emulator/4566/ca.pem' },
+          { name: 'AWS_DISABLE_HOST_PREFIX_INJECTION', value: 'true' },
+        ],
+      },
+    })
+    renderApp()
+    await startLesson()
+    const step = await panel()
+    expect(step.queryByTestId('learn-cli-setup')).not.toBeInTheDocument()
+    fireEvent.click(step.getByRole('tab', { name: 'With the CLI' }))
+
+    const setup = await step.findByTestId('learn-cli-setup')
+    expect(setup).toHaveTextContent('AWS Emulator needs a little setup first')
+    expect(setup).toHaveTextContent('export AWS_SHARED_CREDENTIALS_FILE=~/.aws/emulator/4566/emulator_credentials')
+    expect(setup).toHaveTextContent('export AWS_CA_BUNDLE=~/.aws/emulator/4566/ca.pem')
+    expect(setup).toHaveTextContent('export AWS_DISABLE_HOST_PREFIX_INJECTION=true')
+    expect(step.getByText(/s3api create-bucket --bucket learn-bucket-a1/)).toBeInTheDocument()
   })
 })
 

@@ -19,6 +19,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.config import STACKPORT_DATA_DIR
+from backend.learn.cli_setup import cli_setup_for
 from backend.learn.verify import run_check
 from backend.learn_store import LearnProgressStore
 from backend.routes.common import EndpointInfo, get_endpoint_info
@@ -129,7 +130,9 @@ def get_trail(trail_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> d
     """Get a full trail with the learner's progress, variables already substituted.
 
     The commands on screen name the learner's own resources and their own
-    endpoint, so they can be copied and run without editing anything.
+    endpoint, so they can be copied and run without editing anything. When that
+    endpoint's emulator needs more than ``--endpoint-url`` from the CLI, the
+    response carries it once as ``cliSetup`` rather than in every command.
     """
     trail = TRAILS.get(trail_id)
     if trail is None:
@@ -152,6 +155,7 @@ def get_trail(trail_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> d
         "completed": progress["completed"].get(trail_id, {}),
         "skipped": progress["skipped"].get(trail_id, {}),
         "variables": variables,
+        "cliSetup": cli_setup_for(ep),
     }
 
 

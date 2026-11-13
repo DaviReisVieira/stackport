@@ -1,6 +1,7 @@
 import { createContext } from 'react'
 import type { TutorialPanelProps } from '@cloudscape-design/components/tutorial-panel'
 import type {
+  LearnCliSetup,
   LearnCompleted,
   LearnLesson,
   LearnStep,
@@ -37,6 +38,8 @@ export interface LearnContextValue {
   completed: LearnCompleted
   skipped: LearnCompleted
   variables: LearnVariables
+  /** Extra CLI setup for the active endpoint's emulator, or null when none is needed. */
+  cliSetup: LearnCliSetup | null
 
   /** The lesson currently being walked through, or null. */
   run: LearnRun | null
@@ -78,6 +81,7 @@ export const LearnContext = createContext<LearnContextValue>({
   completed: {},
   skipped: {},
   variables: {},
+  cliSetup: null,
   run: null,
   stepIndex: 0,
   frontier: 0,
