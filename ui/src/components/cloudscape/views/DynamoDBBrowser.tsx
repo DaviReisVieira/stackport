@@ -442,9 +442,12 @@ function TableDetailView({ tableName, onBack }: { tableName: string; onBack: () 
   const { activeEndpoint } = useEndpoint()
   const fetcher = useCallback(() => fetchDynamoDBTable(tableName, activeEndpoint), [tableName, activeEndpoint])
   const { data: detail, loading, error, refresh } = useFetch<DynamoDBTableDetail>(fetcher)
+  // Tags once the table has loaded: for a table that doesn't exist, the error above says so once
+  const loadedName = detail?.name
   const tagsFetcher = useCallback(
-    () => fetchResourceTags('dynamodb', 'tables', tableName, activeEndpoint),
-    [tableName, activeEndpoint],
+    () =>
+      loadedName ? fetchResourceTags('dynamodb', 'tables', loadedName, activeEndpoint) : Promise.resolve({ tags: {} }),
+    [loadedName, activeEndpoint],
   )
   const { data: tagsData } = useFetch<{ tags: Record<string, string> }>(tagsFetcher)
 
