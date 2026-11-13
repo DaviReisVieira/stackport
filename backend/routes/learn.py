@@ -130,9 +130,7 @@ def get_trail(trail_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> d
     """Get a full trail with the learner's progress, variables already substituted.
 
     The commands on screen name the learner's own resources and their own
-    endpoint, so they can be copied and run without editing anything. When that
-    endpoint's emulator needs more than ``--endpoint-url`` from the CLI, the
-    response carries it once as ``cliSetup`` rather than in every command.
+    endpoint, so they can be copied and run without editing anything.
     """
     trail = TRAILS.get(trail_id)
     if trail is None:
@@ -155,8 +153,18 @@ def get_trail(trail_id: str, ep: EndpointInfo = Depends(get_endpoint_info)) -> d
         "completed": progress["completed"].get(trail_id, {}),
         "skipped": progress["skipped"].get(trail_id, {}),
         "variables": variables,
-        "cliSetup": cli_setup_for(ep),
     }
+
+
+@router.get("/cli-setup")
+def get_cli_setup(ep: EndpointInfo = Depends(get_endpoint_info)) -> dict[str, Any]:
+    """What the CLI needs for this endpoint beyond ``--endpoint-url``, or null.
+
+    Separate from the trail because it can change without the trail changing:
+    an emulator is identified in the background, so the first answer may be
+    empty and the UI asks again.
+    """
+    return {"cliSetup": cli_setup_for(ep)}
 
 
 def _progress_payload(trail_id: str, progress: dict) -> dict[str, Any]:

@@ -11,6 +11,7 @@ import StatusIndicator from '@cloudscape-design/components/status-indicator'
 import Tabs from '@cloudscape-design/components/tabs'
 import { useLearn } from '@/hooks/useLearn'
 import type { LearnCliSetup, LearnStep } from '@/lib/types'
+import { CopyableCode } from './CopyableCode'
 import { Prose } from './Prose'
 
 const PATH_PREFERENCE_KEY = 'stackport.learn.path'
@@ -186,18 +187,7 @@ function CliPath({ step }: { step: LearnStep }) {
   return (
     <SpaceBetween size="s">
       {cliSetup && <CliSetupBlock setup={cliSetup} />}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <Box variant="code" padding="n">
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12 }}>{cli}</pre>
-        </Box>
-        <CopyToClipboard
-          copyButtonAriaLabel="Copy command"
-          textToCopy={cli}
-          variant="icon"
-          copySuccessText="Command copied"
-          copyErrorText="Could not copy the command"
-        />
-      </div>
+      <CopyableCode text={cli} copyLabel="command" />
       {step.cliNotes && step.cliNotes.length > 0 && (
         <ExpandableSection headerText="What each part does" variant="footer">
           <SpaceBetween size="xs">
@@ -220,8 +210,6 @@ function CliPath({ step }: { step: LearnStep }) {
  * when the server reports some, so emulators that need nothing look unchanged.
  */
 function CliSetupBlock({ setup }: { setup: LearnCliSetup }) {
-  const script = setup.variables.map(({ name, value }) => `export ${name}=${value}`).join('\n')
-
   return (
     <Alert type="info" header={`${setup.emulator} needs a little setup first`} data-testid="learn-cli-setup">
       <SpaceBetween size="xs">
@@ -229,18 +217,8 @@ function CliSetupBlock({ setup }: { setup: LearnCliSetup }) {
           Run this once in the terminal you will use for the commands below. It points the CLI at the keys and
           certificate {setup.emulator} created when it started.
         </Box>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          <Box variant="code" padding="n">
-            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12 }}>{script}</pre>
-          </Box>
-          <CopyToClipboard
-            copyButtonAriaLabel="Copy setup"
-            textToCopy={script}
-            variant="icon"
-            copySuccessText="Setup copied"
-            copyErrorText="Could not copy the setup"
-          />
-        </div>
+        <CopyableCode text={setup.script} copyLabel="setup" />
+        {setup.note && <Prose text={setup.note} small />}
       </SpaceBetween>
     </Alert>
   )

@@ -43,6 +43,7 @@ import type {
   LambdaVersion,
   LearnCompleted,
   LearnProgressResponse,
+  LearnCliSetup,
   LearnTrailResponse,
   LearnTrailSummary,
   LearnVerifyResponse,
@@ -1413,6 +1414,12 @@ export async function fetchLearnTrails(): Promise<{ trails: LearnTrailSummary[] 
 
 export async function fetchLearnTrail(trailId: string, endpoint?: string | null): Promise<LearnTrailResponse> {
   return fetchJSON<LearnTrailResponse>(buildUrl(`/learn/trails/${encodeURIComponent(trailId)}`, endpoint))
+}
+
+/** Null for emulators whose plain command works as written. */
+export async function fetchLearnCliSetup(endpoint?: string | null): Promise<LearnCliSetup | null> {
+  const data = await fetchJSON<{ cliSetup: LearnCliSetup | null }>(buildUrl('/learn/cli-setup', endpoint))
+  return data.cliSetup
 }
 
 export async function verifyLearnStep(

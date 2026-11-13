@@ -8,49 +8,35 @@ from fastapi.testclient import TestClient
 
 from backend import aws_emulator, config
 from backend.learn import cli_setup
-from backend.learn_store import LearnProgressStore
 from backend.main import app
-from backend.routes import learn as learn_routes
 from backend.routes.common import EndpointInfo, get_endpoint_info
 
 client = TestClient(app)
 
-TRAIL = {
-    "id": "test-trail",
-    "title": "Test trail",
-    "description": "A trail that exists only for these tests.",
-    "lessons": [
-        {
-            "id": "lesson-1",
-            "title": "Lesson one",
-            "summary": "One step with a command.",
-            "steps": [
-                {
-                    "id": "list",
-                    "title": "List",
-                    "instruction": "List things.",
-                    "commands": {"cli": "aws --endpoint-url={{endpointUrl}} s3 ls"},
-                    "verify": None,
-                }
-            ],
-        }
-    ],
-}
-
 AWS_EMULATOR = {"id": "aws-emulator", "name": "AWS Emulator", "version": "1.0"}
+URL = "https://localhost:4566"
 
 
-def _get(url: str, emulator: dict | None, tmp_path: Path, base: Path | None = None) -> dict:
-    store = LearnProgressStore(json_path=tmp_path / "progress.json")
-    app.dependency_overrides[get_endpoint_info] = lambda: EndpointInfo(url=url, region="us-east-1")
+@pytest.fixture
+def emulator_dir(tmp_path, monkeypatch):
+    """A base folder holding AWS Emulator's files for port 4566."""
+    directory = tmp_path / "4566"
+    directory.mkdir()
+    (directory / aws_emulator.CA_FILE).write_text("ca")
+    (directory / aws_emulator.CREDENTIALS_FILE).write_text(
+        "[default]\naws_access_key_id = key\naws_secret_access_key = secret\n"
+    )
+    monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", tmp_path)
+    monkeypatch.setattr(cli_setup, "running_in_container", lambda: False)
+    return tmp_path
+
+
+def _get(emulator: dict | None, **endpoint) -> dict | None:
+    ep = EndpointInfo(url=endpoint.pop("url", URL), region="us-east-1", **endpoint)
+    app.dependency_overrides[get_endpoint_info] = lambda: ep
     try:
-        with (
-            patch.object(learn_routes, "progress_store", store),
-            patch.dict(learn_routes.TRAILS, {"test-trail": TRAIL}, clear=True),
-            patch.object(cli_setup, "detect_emulator", return_value=emulator),
-            patch.object(config, "STACKPORT_AWS_EMULATOR_DIR", base if base is not None else tmp_path / "emulator"),
-        ):
-            return client.get("/api/learn/trails/test-trail").json()
+        with patch.object(cli_setup, "detect_emulator_quickly", return_value=emulator):
+            return client.get("/api/learn/cli-setup").json()["cliSetup"]
     finally:
         app.dependency_overrides.pop(get_endpoint_info, None)
 
@@ -65,48 +51,80 @@ def _get(url: str, emulator: dict | None, tmp_path: Path, base: Path | None = No
         None,
     ],
 )
-def test_emulators_that_need_nothing_get_no_setup(emulator, tmp_path):
-    assert _get("http://localhost:4566", emulator, tmp_path)["cliSetup"] is None
+def test_emulators_that_need_nothing_get_no_setup(emulator, emulator_dir):
+    assert _get(emulator, url="http://localhost:4566") is None
+    assert _get(emulator) is None
 
 
-def test_aws_emulator_gets_its_credentials_certificate_and_prefix_setting(tmp_path):
-    data = _get("https://localhost:4566", AWS_EMULATOR, tmp_path)
-    base = aws_emulator.display_path(tmp_path / "emulator" / "4566")
-    shown = data["cliSetup"]
+def test_aws_emulator_gets_credentials_certificate_and_prefix_setting(emulator_dir):
+    shown = _get(AWS_EMULATOR)
+    base = aws_emulator.display_path(emulator_dir / "4566")
 
     assert shown["emulator"] == "AWS Emulator"
-    assert {v["name"]: v["value"] for v in shown["variables"]} == {
-        "AWS_SHARED_CREDENTIALS_FILE": f"{base}/emulator_credentials",
-        "AWS_CA_BUNDLE": f"{base}/ca.pem",
-        "AWS_DISABLE_HOST_PREFIX_INJECTION": "true",
+    assert shown["note"] is None
+    assert shown["script"].splitlines() == [
+        "unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE",
+        f"export AWS_SHARED_CREDENTIALS_FILE={base}/emulator_credentials",
+        f"export AWS_CA_BUNDLE={base}/ca.pem",
+        "export AWS_DISABLE_HOST_PREFIX_INJECTION=true",
+    ]
+
+
+def test_the_folder_follows_the_endpoint_port(emulator_dir):
+    (emulator_dir / "5599").mkdir()
+    (emulator_dir / "5599" / aws_emulator.CA_FILE).write_text("ca")
+    (emulator_dir / "5599" / aws_emulator.CREDENTIALS_FILE).write_text(
+        "[default]\naws_access_key_id = k\naws_secret_access_key = s\n"
+    )
+    assert "/5599/ca.pem" in _get(AWS_EMULATOR, url="https://127.0.0.1:5599")["script"]
+
+
+def test_nothing_when_the_endpoint_has_its_own_keys_and_ca_bundle(emulator_dir):
+    own = {
+        "auth_type": "credentials",
+        "auth_access_key_id": "mine",
+        "auth_secret_access_key": "mine",
+        "ca_bundle": str(emulator_dir / "4566" / "ca.pem"),
     }
-    # the command itself stays the plain one: the setup is delivered once, beside it
-    assert data["trail"]["lessons"][0]["steps"][0]["commands"]["cli"] == "aws --endpoint-url=https://localhost:4566 s3 ls"
+    assert _get(AWS_EMULATOR, **own) is None
 
 
-def test_the_folder_follows_the_endpoint_port(tmp_path):
-    data = _get("https://127.0.0.1:5599", AWS_EMULATOR, tmp_path)
-    ca = next(v["value"] for v in data["cliSetup"]["variables"] if v["name"] == "AWS_CA_BUNDLE")
-    assert ca.endswith("/5599/ca.pem")
+def test_nothing_when_stackport_finds_no_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", tmp_path)
+    assert _get(AWS_EMULATOR) is None
 
 
-def test_no_setup_when_the_endpoint_cannot_be_an_aws_emulator(tmp_path):
-    # AWS Emulator only serves HTTPS on a loopback host with a port
-    assert _get("http://localhost:4566", AWS_EMULATOR, tmp_path)["cliSetup"] is None
+def test_nothing_when_the_folder_lookup_is_off(monkeypatch):
+    monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", None)
+    assert _get(AWS_EMULATOR) is None
 
 
-def test_no_setup_when_the_folder_lookup_is_off(tmp_path):
-    with patch.object(config, "STACKPORT_AWS_EMULATOR_DIR", None):
-        ep = EndpointInfo(url="https://localhost:4566", region="us-east-1")
-        with patch.object(cli_setup, "detect_emulator", return_value=AWS_EMULATOR):
-            assert cli_setup.cli_setup_for(ep) is None
+def test_nothing_when_the_credentials_cannot_be_read(emulator_dir):
+    (emulator_dir / "4566" / aws_emulator.CREDENTIALS_FILE).write_text("not a credentials file")
+    assert _get(AWS_EMULATOR) is None
 
 
-def test_paths_with_spaces_stay_one_shell_word(tmp_path):
+def test_in_a_container_the_paths_are_the_learners_home_folder(emulator_dir, monkeypatch):
+    monkeypatch.setattr(cli_setup, "running_in_container", lambda: True)
+    shown = _get(AWS_EMULATOR)
+
+    assert "export AWS_SHARED_CREDENTIALS_FILE=~/.aws/emulator/4566/emulator_credentials" in shown["script"]
+    assert "export AWS_CA_BUNDLE=~/.aws/emulator/4566/ca.pem" in shown["script"]
+    assert str(emulator_dir) not in shown["script"]
+    assert "docker compose" in shown["note"]
+    assert "cp aws-emulator:/home/emulator/.aws/emulator/4566 ~/.aws/emulator/" in shown["note"]
+
+
+def test_paths_with_spaces_stay_one_shell_word(tmp_path, monkeypatch):
     base = tmp_path / "my certs"
-    data = _get("https://localhost:4566", AWS_EMULATOR, tmp_path, base=base)
-    ca = next(v["value"] for v in data["cliSetup"]["variables"] if v["name"] == "AWS_CA_BUNDLE")
-    assert ca == f"'{base}/4566/ca.pem'"
+    (base / "4566").mkdir(parents=True)
+    (base / "4566" / aws_emulator.CA_FILE).write_text("ca")
+    (base / "4566" / aws_emulator.CREDENTIALS_FILE).write_text(
+        "[default]\naws_access_key_id = k\naws_secret_access_key = s\n"
+    )
+    monkeypatch.setattr(config, "STACKPORT_AWS_EMULATOR_DIR", base)
+    monkeypatch.setattr(cli_setup, "running_in_container", lambda: False)
+    assert f"export AWS_CA_BUNDLE='{base}/4566/ca.pem'" in _get(AWS_EMULATOR)["script"]
 
 
 def test_home_folder_stays_a_tilde_when_the_path_is_plain():
@@ -117,3 +135,19 @@ def test_home_folder_stays_a_tilde_when_the_path_is_plain():
 
 def test_home_folder_with_spaces_uses_home_variable():
     assert cli_setup._shell_path(Path.home() / "my certs" / "ca.pem") == '"$HOME"/\'my certs/ca.pem\''
+
+
+def test_container_detection_reads_the_marker_files():
+    with patch.object(Path, "exists", lambda self: str(self) == "/.dockerenv"):
+        assert cli_setup.running_in_container() is True
+    with patch.object(Path, "exists", lambda self: str(self) == "/run/.containerenv"):
+        assert cli_setup.running_in_container() is True
+    with patch.object(Path, "exists", lambda self: False):
+        assert cli_setup.running_in_container() is False
+
+
+def test_a_raw_endpoint_url_is_never_probed(emulator_dir):
+    ep = EndpointInfo(url=URL, region="us-east-1")  # not a saved endpoint
+    with patch("backend.emulators._executor") as executor:
+        assert cli_setup.cli_setup_for(ep) is None
+    executor.assert_not_called()
