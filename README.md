@@ -46,6 +46,7 @@ Local emulators give you AWS on your laptop. StackPort gives you a console to lo
 - **API Explorer** to call any operation of any service boto3 knows, with a form built from the API's own model and the same request ready to copy as an AWS CLI command or boto3 code
 - **Activity**: recent API calls from CloudTrail's event history, with who made them, what they touched and how they went
 - **Try it** for API Gateway stages and Lambda function URLs: send an HTTP request from the console and see the status, headers, body and timing
+- **Connection details** for databases, caches, search domains, Kafka brokers and queues: the address to use from your machine and a command to copy
 - **Guided lessons** that run inside the console and check your real resource state as you go
 - **Real AWS and multiple endpoints**, each with its own auth (default chain, AWS profile with SSO/AssumeRole, or static keys)
 - **Read-only mode** with `STACKPORT_ALLOW_WRITES=false`
@@ -354,6 +355,12 @@ The browser can't call these addresses itself, so StackPort sends the request, w
 | Real AWS | `https://{api}.execute-api.{region}.amazonaws.com/{stage}` | the URL AWS returns |
 
 Requests only go to the selected endpoint's own address (or, on AWS, to the API's or function URL's own host), and only for saved endpoints. When StackPort can't tell how an endpoint serves a stage or URL, it says so instead of guessing. Bodies are sent as text up to 1 MB, and the answer shows up to its first 1 MB, as text when it is UTF-8 and as base64 otherwise; redirects are shown, not followed, and a request that hasn't been fully answered after 60 seconds is given up. On real AWS, sending asks for confirmation first. Function URLs with `AWS_IAM` auth get unsigned requests, so an endpoint that checks signatures answers 403.
+
+## Connection details
+
+The details of RDS instances and clusters, ElastiCache clusters, OpenSearch domains, MSK clusters and SQS queues show how your own code connects to them: the address to use from this machine, and a command or connection string to copy (`psql`, `mysql`, `redis-cli`, `curl`, `kafka-topics.sh`, the AWS CLI). Passwords and tokens are placeholders. Names in connection strings are percent-encoded, and a command is only offered when every value in it is a plain host name or name, so nothing the endpoint returns can add an option to it.
+
+Addresses are the ones the endpoint returns, changed only where the result is certain: `0.0.0.0` becomes the endpoint's host; queue URLs from AWS Emulator and Floci, which find a queue by its path on any address they answer on, are given on the endpoint itself; and LocalStack's `*.localhost.localstack.cloud:4566` names get the port the endpoint is reached on. When an emulator needs settings of its own before an address works from your machine (AWS Emulator, MiniStack or Floci in a container, for example), the details name them.
 
 ## Guided lessons
 

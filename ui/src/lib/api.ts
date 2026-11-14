@@ -6,6 +6,7 @@ import type {
   ConnectionCheck,
   BulkOperationResponse,
   BulkTagRequest,
+  ConnectionDetailsResponse,
   DynamoDBBatchOperation,
   DynamoDBItem,
   DynamoDBItemCount,
@@ -1598,4 +1599,16 @@ export async function sendTryItRequest(
   })
   if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
+}
+
+// --- Connection details ---
+
+export async function fetchConnectionDetails(
+  service: string,
+  resourceType: string,
+  resourceId: string,
+  endpoint?: string | null,
+): Promise<ConnectionDetailsResponse> {
+  const path = `/connection-details/${encodeURIComponent(service)}/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}`
+  return fetchJSON<ConnectionDetailsResponse>(buildUrl(path, endpoint))
 }

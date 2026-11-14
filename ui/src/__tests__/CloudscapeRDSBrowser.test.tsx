@@ -144,13 +144,39 @@ const paramGroupDetail = {
   },
 }
 
+const instanceConnections = {
+  connections: [
+    {
+      label: 'Endpoint',
+      address: 'orders-db.local:5432',
+      returned: null,
+      snippets: [{ label: 'psql', text: "psql 'host=orders-db.local port=5432 user=admin dbname=postgres'" }],
+    },
+  ],
+  problem: null,
+  notes: [],
+  cliSetup: null,
+}
+
+const clusterConnections = {
+  connections: [
+    { label: 'Writer endpoint', address: 'aurora-main.local:3306', returned: null, snippets: [] },
+    { label: 'Reader endpoint', address: 'aurora-main-ro.local:3306', returned: null, snippets: [] },
+  ],
+  problem: null,
+  notes: [],
+  cliSetup: null,
+}
+
 let fetchMock: ReturnType<typeof vi.fn>
 
 function mockFetchByUrl() {
   fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
     let payload: unknown = statsPayload
-    if (url.includes('/api/rds/instances/orders-db')) payload = instanceDetail
+    if (url.includes('/api/connection-details/rds/db_clusters/aurora-main')) payload = clusterConnections
+    else if (url.includes('/api/connection-details/rds/db_instances/orders-db')) payload = instanceConnections
+    else if (url.includes('/api/rds/instances/orders-db')) payload = instanceDetail
     else if (url.includes('/api/rds/clusters/aurora-main')) payload = clusterDetail
     else if (url.includes('/api/rds/parameter-groups/pg-custom')) payload = paramGroupDetail
     else if (url.includes('/api/rds/instances')) payload = { instances: [instance] }
@@ -193,6 +219,7 @@ describe('CloudscapeRDSBrowser (via registry dispatch)', () => {
     renderRDS()
     fireEvent.click(await screen.findByRole('link', { name: 'orders-db' }))
     expect(await screen.findByText('postgres 15.4')).toBeInTheDocument()
+    expect(await screen.findByText("psql 'host=orders-db.local port=5432 user=admin dbname=postgres'")).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Storage'))
     expect(await screen.findByText('50 GiB')).toBeInTheDocument()
