@@ -70,7 +70,7 @@ _UNIDENTIFIED_TTL = 10
 # No emulator serves this, and "_stackport" isn't a valid bucket name, so S3
 # handlers answer it with an error rather than an object.
 _CONTROL_PATH = "/_stackport/not-an-emulator-route"
-_USER_AGENT = "StackPort"
+USER_AGENT = "StackPort"
 
 
 @dataclass(frozen=True)
@@ -143,7 +143,7 @@ class _NoAnswer(Exception):
     """The endpoint didn't answer (or ran out of time): the search stops."""
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
+class NoRedirect(urllib.request.HTTPRedirectHandler):
     """A redirect isn't an emulator's answer, and following it could leave the endpoint."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -173,7 +173,7 @@ class _Session:
 
     @staticmethod
     def _build_opener(context: ssl.SSLContext) -> urllib.request.OpenerDirector:
-        return urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), _NoRedirect)
+        return urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect)
 
     def get(self, path: str) -> bytes | None:
         """The body of a 2xx answer, or None for any other answer.
@@ -184,7 +184,7 @@ class _Session:
         timeout = min(_REQUEST_TIMEOUT, self._deadline - time.monotonic())
         if timeout <= 0:
             raise _NoAnswer
-        request = urllib.request.Request(self._base_url + path, headers={"User-Agent": _USER_AGENT})
+        request = urllib.request.Request(self._base_url + path, headers={"User-Agent": USER_AGENT})
         try:
             with self._opener.open(request, timeout=timeout) as response:
                 body = self._read(response)
@@ -245,7 +245,7 @@ def _identify(base_url: str, context: ssl.SSLContext | None) -> dict | None:
     return None
 
 
-def _base_url(url: str) -> str | None:
+def endpoint_base_url(url: str) -> str | None:
     """``scheme://host[:port][/path]`` without user info or a trailing slash; None unless HTTP(S)."""
     try:
         parts = urlsplit(url)
@@ -329,7 +329,7 @@ def detect_emulator(ep: EndpointInfo, *, refresh: bool = False) -> dict | None:
     """
     if not is_local_endpoint(ep.url):
         return None
-    base_url = _base_url(ep.url)
+    base_url = endpoint_base_url(ep.url)
     if base_url is None:
         return None
 
@@ -363,7 +363,7 @@ def detect_emulator_quickly(ep: EndpointInfo, wait: float = QUICK_WAIT) -> dict 
     """
     # Only saved endpoints: a URL passed straight in a request would let any
     # caller make StackPort send requests anywhere.
-    if not ep.saved or not is_local_endpoint(ep.url) or _base_url(ep.url) is None:
+    if not ep.saved or not is_local_endpoint(ep.url) or endpoint_base_url(ep.url) is None:
         return None
     key = _cache_key(ep, _trust_plan(ep))
     cached = cache.get(key)

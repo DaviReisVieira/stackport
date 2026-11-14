@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -97,6 +98,9 @@ class ReadOnlyMiddleware:
     """
 
     WRITE_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+    # Resetting the emulator behind a saved endpoint: a write to the emulator,
+    # however much it looks like endpoint management.
+    EMULATOR_RESET = re.compile(r"/api/endpoints/[^/]+/reset/?")
 
     def __init__(self, app: ASGIApp):
         self.app = app
@@ -120,7 +124,7 @@ class ReadOnlyMiddleware:
             return True
 
         # Allow endpoint management (infra config, not AWS writes)
-        if path.startswith("/api/endpoints"):
+        if path.startswith("/api/endpoints") and not cls.EMULATOR_RESET.fullmatch(path):
             return True
 
         # Learn progress is local state, not an AWS write. Lessons still can't
