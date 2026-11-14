@@ -11,6 +11,7 @@ a message that says what to do.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, replace
 from enum import Enum
 
@@ -47,7 +48,8 @@ HTTP_STATUS = {
 
 # AWS Emulator and LocalStack answer 501 NotImplemented. MiniStack answers an
 # action it doesn't know with the error AWS itself uses for an unknown action
-# (InvalidAction for Query APIs, UnknownOperationException for JSON ones).
+# (InvalidAction for Query APIs, UnknownOperationException for JSON ones), and
+# hands a request for an API it doesn't serve at all to S3 (see _s3_error_code).
 _NOT_IMPLEMENTED_CODES = frozenset({
     "InvalidAction",
     "NotImplemented",
@@ -133,6 +135,26 @@ def _chain(exc: BaseException):
         current = current.__cause__ or current.__context__
 
 
+# An S3 error document: <Error> at the root, its <Code> first.
+_S3_ERROR_DOCUMENT = re.compile(r"\s*(?:<\?xml[^>]*\?>\s*)?<Error>\s*<Code>([A-Za-z0-9.]+)</Code>")
+
+
+def _s3_error_code(code: str | None, status: int | None, message: str) -> str | None:
+    """The code of an S3 error that answered a call to another API, or None.
+
+    When an error isn't in the API's own format, botocore takes the HTTP status
+    for its code and, for JSON APIs, the body for its message. An S3 error there
+    means the endpoint gave the request to S3: it doesn't serve the API. That is
+    what MiniStack does with anything it can't route (MethodNotAllowed for a
+    POST, NoSuchBucket for a GET). S3's own calls never get here: botocore reads
+    their errors, so the code isn't the status.
+    """
+    if status is None or code != str(status):
+        return None
+    match = _S3_ERROR_DOCUMENT.match(message)
+    return match.group(1) if match else None
+
+
 def _classify_client_error(err: ClientError) -> ClassifiedError:
     error = err.response.get("Error", {}) or {}
     code = error.get("Code") or None
@@ -140,13 +162,14 @@ def _classify_client_error(err: ClientError) -> ClassifiedError:
     status = (err.response.get("ResponseMetadata", {}) or {}).get("HTTPStatusCode")
     operation = err.operation_name or None
 
-    if code in _NOT_IMPLEMENTED_CODES or status == 501:
+    s3_code = _s3_error_code(code, status, message)
+    if code in _NOT_IMPLEMENTED_CODES or status == 501 or s3_code is not None:
         what = operation or "this operation"
         return ClassifiedError(
             ErrorKind.NOT_IMPLEMENTED,
             f"This endpoint doesn't implement {what} yet.",
             hint="The endpoint doesn't support this operation. StackPort shows the rest of what it supports.",
-            code=code or "NotImplemented",
+            code=s3_code or code or "NotImplemented",
             operation=operation,
         )
     if code in _FORBIDDEN_CODES and _EMULATOR_KEYS_MESSAGE in message.lower():

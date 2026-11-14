@@ -49,6 +49,22 @@ def s3_list_buckets_handler(_request: RecordedRequest) -> Response:
     return 200, {"Content-Type": "application/xml"}, S3_EMPTY_LIST_BUCKETS
 
 
+def s3_error(code: str, message: str) -> bytes:
+    """An S3 error document, as MiniStack's S3 handler writes it."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        f"<Error><Code>{code}</Code><Message>{message}</Message><Resource /><RequestId>9f3c</RequestId></Error>"
+    ).encode()
+
+
+def ministack_s3_fallback(request: RecordedRequest) -> Response:
+    """What MiniStack answers a request it can't route to a service: its S3 handler takes it."""
+    headers = {"Content-Type": "application/xml"}
+    if request.method == "GET":
+        return 404, headers, s3_error("NoSuchBucket", "The specified bucket does not exist")
+    return 405, headers, s3_error("MethodNotAllowed", "The specified method is not allowed against this resource.")
+
+
 @dataclass(frozen=True)
 class TlsMaterial:
     cert: Path
