@@ -1439,10 +1439,7 @@ export async function converseBedrock(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => null)
-    throw new Error(data?.detail || `${res.status}: ${res.statusText}`)
-  }
+  if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }
 
