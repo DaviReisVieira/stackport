@@ -152,7 +152,7 @@ class ConnectionPlan:
     session_token: str | None = field(default=None, repr=False)
     # None leaves verification to botocore (system trust, or AWS_CA_BUNDLE).
     verify: bool | str | None = None
-    # A local emulator rather than AWS: see aws_client._build_client for what changes.
+    # A local emulator rather than AWS: see aws_client._LOCAL_ENDPOINT_CONFIG for what changes.
     local_endpoint: bool = False
     emulator_files: aws_emulator.EmulatorFiles | None = None
 
