@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-StackPort is a universal AWS resource browser for local emulators (MiniStack, Floci, LocalStack, Moto, or any AWS-compatible endpoint). Python FastAPI backend with boto3, React frontend served as static files. Single Docker image.
+StackPort is a universal AWS resource browser for local emulators (AWS Emulator, MiniStack, Floci, LocalStack, Moto, or any AWS-compatible endpoint). Python FastAPI backend with boto3, React frontend served as static files. Single Docker image.
 
 ## Commands
 
@@ -23,7 +23,7 @@ cd ui && npx eslint .
 docker compose up                                        # StackPort + MiniStack
 ```
 
-Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves HTTPS on :9297). No emulator is the default: the root compose file uses MiniStack, `examples/docker-compose.floci.yml` uses Floci, `examples/docker-compose.aws-emulator.yml` uses AWS Emulator, and the docs present them side by side rather than naming a default. The rule lives in `CONTRIBUTING.md#supported-emulators`; keep any emulator-related docs change consistent with it.
+Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves HTTPS on :9297). No emulator is the default: the docs present them side by side, always in the order AWS Emulator, MiniStack, Floci, LocalStack, Moto, then others. `examples/docker-compose.aws-emulator.yml` uses AWS Emulator, the root compose file uses MiniStack (StackPort's partner project), and `examples/docker-compose.floci.yml` uses Floci. The rule lives in `CONTRIBUTING.md#supported-emulators`; keep any emulator-related docs change consistent with it.
 
 ## Architecture
 

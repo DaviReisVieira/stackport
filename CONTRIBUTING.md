@@ -16,21 +16,20 @@ pip install -e ".[dev]"
 cd ui && npm install && cd ..
 
 # Start an emulator on :4566 (pick one)
-docker run -d -p 4566:4566 ministackorg/ministack
-# or: pip install ministack && ministack
-# or: docker run -d -p 4566:4566 floci/floci
-# or: docker run -d -p 4566:4566 -e LOCALSTACK_AUTH_TOKEN=<your-token> localstack/localstack
-# or: pip install "moto[server]" && moto_server -p 4566
-# or, on Linux: aws-emulator -p 4566   (it serves HTTPS, so use AWS_ENDPOINT_URL=https://127.0.0.1:4566 below)
+aws-emulator -p 4566   # AWS Emulator on Linux (elsewhere, see AWS's Docker guide); it serves HTTPS, so use https://127.0.0.1:4566 below
+docker run -d -p 4566:4566 ministackorg/ministack   # MiniStack, or: pip install ministack && ministack
+docker run -d -p 4566:4566 floci/floci   # Floci
+docker run -d -p 4566:4566 -e LOCALSTACK_AUTH_TOKEN=<your-token> localstack/localstack   # LocalStack
+pip install "moto[server]" && moto_server -p 4566   # Moto
 
 # Run StackPort
-AWS_ENDPOINT_URL=http://localhost:4566 stackport   # or: python -m backend.main
+AWS_ENDPOINT_URL=http://localhost:4566 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test stackport   # or: python -m backend.main
 
 # Frontend dev (hot reload, proxies to :8080)
 cd ui && npm run dev
 ```
 
-`AWS_ENDPOINT_URL` matters: without it, StackPort talks to real AWS through your credential chain.
+`AWS_ENDPOINT_URL` matters: without it, StackPort talks to real AWS through your credential chain. The `test` keys are for the emulators that accept any keys; with AWS Emulator, StackPort uses the keys the emulator wrote instead.
 
 ## Running the checks
 
@@ -48,12 +47,12 @@ cd ui && npm run build           # production build into ui/dist/
 
 ## Supported emulators
 
-StackPort only speaks the standard AWS API, so any emulator can sit behind it and there is no reason for the project to prefer one. A few ground rules keep the docs that way:
+StackPort only speaks the standard AWS API, so any emulator can sit behind it, and StackPort aims to work just as well with each of them. A few ground rules keep the docs that way:
 
 - Supported emulators are documented side by side. Each one gets a way to run it next to StackPort and notes on anything that works differently with it. Compose examples and seeds are added as people contribute them, and an emulator that needs extra setup gets the longer notes that setup takes.
-- Lists follow one fixed order (MiniStack, Floci, LocalStack, Moto, AWS Emulator, then others). MiniStack goes first because the project grew out of a MiniStack pull request, not because it is preferred.
-- The root `docker-compose.yml` uses MiniStack for the same historical reason. It is a working example, not a recommendation.
-- Pull requests that add or improve support for an emulator are very welcome. Changes that reorder the list, reword the docs, or pick a default so one emulator stands out are declined with a pointer to this section. That applies to the maintainer as much as to anyone else.
+- Lists follow one fixed order: AWS Emulator, MiniStack, Floci, LocalStack, Moto, then others. AWS Emulator goes first because it is AWS's own emulator. MiniStack comes next because it is StackPort's partner project: StackPort grew out of a MiniStack pull request, and the two projects work closely together. The order is not a ranking of how well each emulator works.
+- The root `docker-compose.yml` uses MiniStack, as StackPort's partner project. It is a working example, not a recommendation.
+- Pull requests that add or improve support for an emulator are very welcome. Changes that reorder the list, reword the docs, or pick a default so one emulator stands out are declined with a pointer to this section. That applies to the maintainer as much as to anyone else, and when the order itself changes, this section changes with it and says why.
 
 If you maintain an emulator and something in StackPort works worse against it than against the others, please open an issue. That is exactly the kind of gap this project wants to close.
 
