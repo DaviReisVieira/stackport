@@ -156,6 +156,21 @@ class TestWrappedErrors:
         assert resp.headers["X-Reason"] == "tea"
 
 
+class TestValidationErrors:
+    @pytest.mark.parametrize("number", ["NaN", "Infinity", "-Infinity"])
+    def test_numbers_json_cant_carry_are_refused_as_invalid_input(self, number):
+        # Python's JSON parser accepts these, and the 422 repeats the input it refused.
+        resp = TestClient(stackport_app, raise_server_exceptions=False).post(
+            "/api/explorer/services/sqs/operations/ListQueues/run",
+            content=f'{{"params": {{}}, "maxPages": {number}}}'.encode(),
+            headers={"content-type": "application/json"},
+        )
+        assert resp.status_code == 422
+        [error] = resp.json()["detail"]
+        assert error["loc"] == ["body", "maxPages"]
+        assert error["input"] == ("nan" if number == "NaN" else "inf" if number == "Infinity" else "-inf")
+
+
 class TestUncaughtErrors:
     def test_upstream_4xx_is_passed_through(self):
         resp = build_app(client_error("NoSuchBucket", 404, "The bucket does not exist")).get("/thing")
