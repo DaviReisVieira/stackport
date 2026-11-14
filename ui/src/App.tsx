@@ -8,6 +8,7 @@ const CloudscapeSettings = lazy(() => import('./pages/CloudscapeSettings'))
 const CloudscapeAbout = lazy(() => import('./pages/CloudscapeAbout'))
 const CloudscapeLearn = lazy(() => import('./pages/CloudscapeLearn'))
 const CloudscapeApiExplorer = lazy(() => import('./pages/CloudscapeApiExplorer'))
+const CloudscapeActivity = lazy(() => import('./pages/CloudscapeActivity'))
 
 function pageFallback() {
   return <div className="p-6 text-sm opacity-70">Loading…</div>
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/about" element={<CloudscapeAbout />} />
           <Route path="/learn" element={<CloudscapeLearn />} />
           <Route path="/explorer" element={<CloudscapeApiExplorer />} />
+          <Route path="/activity" element={<CloudscapeActivity />} />
           {/* Old parallel-migration routes redirect to their final homes */}
           <Route path="/cloudscape" element={<Navigate to="/" replace />} />
           <Route path="/cloudscape/resources" element={<Navigate to="/resources" replace />} />

@@ -324,6 +324,7 @@ export function CloudscapeShell({
                 info: <LearnHotspotMarker hotspotId={LEARN_HOTSPOTS.navResources} />,
               },
               ...extraNavItems,
+              { type: 'link', text: 'Activity', href: '/activity' },
               { type: 'link', text: 'API Explorer', href: '/explorer' },
               ...(learnEnabled
                 ? [
