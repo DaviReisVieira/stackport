@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 
 class TestConfig:
     def test_defaults(self):
@@ -161,3 +163,35 @@ class TestIsLocalEndpoint:
         from backend.config import is_local_endpoint
 
         assert is_local_endpoint("https://s3.us-west-2.amazonaws.com") is False
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://sqs.cn-north-1.amazonaws.com.cn",
+            "https://S3.US-EAST-1.AMAZONAWS.COM:443/bucket",
+            "https://amazonaws.com",
+            "https://s3.amazonaws.com.",
+        ],
+    )
+    def test_aws_hosts_are_not_local(self, url):
+        from backend.config import is_local_endpoint
+
+        assert is_local_endpoint(url) is False
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            # Only the host decides: amazonaws.com elsewhere in the URL doesn't make it AWS.
+            "http://127.0.0.1:4566/.amazonaws.com",
+            "http://localhost:4566/?next=s3.amazonaws.com",
+            "http://localhost:4566/#.amazonaws.com",
+            "http://s3.amazonaws.com@127.0.0.1:4566",
+            "http://amazonaws.com.evil.example",
+            "http://notamazonaws.com",
+            "http://[::1",
+        ],
+    )
+    def test_amazonaws_outside_the_host_is_local(self, url):
+        from backend.config import is_local_endpoint
+
+        assert is_local_endpoint(url) is True

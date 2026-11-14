@@ -111,7 +111,13 @@ import type {
   KMSKey,
   KMSKeyDetail,
   KMSKeyGrant,
-  KMSKeyAlias
+  KMSKeyAlias,
+  TryItFunctionUrlTarget,
+  TryItRequest,
+  TryItResponse,
+  TryItStageTarget,
+  TryItTarget,
+  TryItTargets,
 } from './types'
 
 const API_BASE = '/api'
@@ -1543,4 +1549,53 @@ export async function fetchActivityEvents(query: ActivityQuery, endpoint?: strin
   }
   if (query.nextToken) params.set('next_token', query.nextToken)
   return fetchJSON<ActivityPage>(buildUrl('/activity/events', endpoint, params))
+}
+
+// --- Try it ---
+
+const TRY_IT = '/try-it'
+
+export async function fetchTryItStages(
+  kind: 'rest-stage' | 'http-stage',
+  apiId: string,
+  endpoint?: string | null,
+): Promise<TryItTargets<TryItStageTarget>> {
+  const apis = kind === 'rest-stage' ? 'rest-apis' : 'http-apis'
+  return fetchJSON<TryItTargets<TryItStageTarget>>(buildUrl(`${TRY_IT}/${apis}/${encodeURIComponent(apiId)}`, endpoint))
+}
+
+export async function fetchTryItFunctionUrls(
+  functionName: string,
+  endpoint?: string | null,
+): Promise<TryItTargets<TryItFunctionUrlTarget>> {
+  return fetchJSON<TryItTargets<TryItFunctionUrlTarget>>(
+    buildUrl(`${TRY_IT}/functions/${encodeURIComponent(functionName)}`, endpoint),
+  )
+}
+
+/** Send one request to a stage or function URL, through StackPort. */
+export async function sendTryItRequest(
+  target: TryItTarget,
+  request: TryItRequest,
+  endpoint?: string | null,
+): Promise<TryItResponse> {
+  let url: string
+  if (target.kind === 'function-url') {
+    const params = new URLSearchParams()
+    if (target.qualifier) params.set('qualifier', target.qualifier)
+    url = buildUrl(`${TRY_IT}/functions/${encodeURIComponent(target.functionName)}/send`, endpoint, params)
+  } else {
+    const apis = target.kind === 'rest-stage' ? 'rest-apis' : 'http-apis'
+    url = buildUrl(
+      `${TRY_IT}/${apis}/${encodeURIComponent(target.apiId)}/stages/${encodeURIComponent(target.stage)}/send`,
+      endpoint,
+    )
+  }
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) throw await apiErrorFrom(res)
+  return res.json()
 }

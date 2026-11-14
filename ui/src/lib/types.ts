@@ -1628,3 +1628,66 @@ export interface ActivityPage {
   startTime: string
   endTime: string | null
 }
+
+// --- Try it ---
+
+export type TryItMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
+
+export interface TryItNameValue {
+  name: string
+  value: string
+}
+
+/** One request to a stage or function URL. Where it goes is worked out by the backend. */
+export interface TryItRequest {
+  method: TryItMethod
+  /** Below the stage or function URL, as written in a URL */
+  path: string
+  query: TryItNameValue[]
+  headers: TryItNameValue[]
+  body: string | null
+  /** Required on AWS: the person agreed to call a real resource */
+  confirmed: boolean
+}
+
+export interface TryItResponse {
+  request: { method: TryItMethod; url: string; headers: [string, string][] }
+  status: number
+  reason: string
+  headers: [string, string][]
+  /** The body when it is UTF-8 text; otherwise `bodyBase64` holds it */
+  bodyText: string | null
+  bodyBase64: string | null
+  bodyBytes: number
+  /** Only the beginning of a long body was read */
+  truncated: boolean
+  durationMs: number
+  notices: string[]
+}
+
+/** A stage, and where Try it sends its requests (null when it can't) */
+export interface TryItStageTarget {
+  stage: string
+  url: string | null
+}
+
+export interface TryItFunctionUrlTarget {
+  /** The alias the URL belongs to, null for the function itself */
+  qualifier: string | null
+  /** As the endpoint returned it */
+  functionUrl: string
+  authType: string | null
+  url: string | null
+}
+
+export interface TryItTargets<T> {
+  realAws: boolean
+  /** Why the targets have no address, said plainly */
+  problem: string | null
+  targets: T[]
+}
+
+/** What a request is sent to */
+export type TryItTarget =
+  | { kind: 'rest-stage' | 'http-stage'; apiId: string; stage: string }
+  | { kind: 'function-url'; functionName: string; qualifier: string | null }

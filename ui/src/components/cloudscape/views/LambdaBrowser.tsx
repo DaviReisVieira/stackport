@@ -45,6 +45,7 @@ import { EmulatorLimitList } from '@/components/cloudscape/EmulatorProfile'
 import { useEmulatorLimits } from '@/hooks/useEmulatorLimits'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
+import { FunctionUrlTryIt } from '../tryit/FunctionUrlTryIt'
 
 // Ported verbatim from the legacy view
 const EVENT_TEMPLATES = {
@@ -552,6 +553,11 @@ function FunctionDetailView({ functionName, onBack }: { functionName: string; on
                 </Button>
               </SpaceBetween>
             ),
+          },
+          {
+            id: 'url',
+            label: 'Function URL',
+            content: <FunctionUrlTryIt functionName={config.FunctionName} />,
           },
           {
             id: 'versions',

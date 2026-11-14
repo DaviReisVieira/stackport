@@ -14,11 +14,15 @@ Response body for a rewritten error::
 
 from __future__ import annotations
 
+import json
 import logging
+from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -87,7 +91,24 @@ async def _unhandled_aws_error(_request: Request, exc: Exception):
     return _response(classified, status)
 
 
+class _AsciiJSONResponse(JSONResponse):
+    """JSON with everything outside ASCII escaped, which any text can be written as.
+
+    A request's JSON can carry a lone surrogate (``"\\ud800"``), which no UTF-8
+    encoder accepts, and a validation error repeats the input it refused.
+    """
+
+    def render(self, content: Any) -> bytes:
+        return json.dumps(content, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode("ascii")
+
+
+async def _request_validation_error(_request: Request, exc: RequestValidationError):
+    """FastAPI's own 422 answer, written so that whatever the request sent can be repeated back."""
+    return _AsciiJSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
+
+
 def install_aws_error_handlers(app: FastAPI) -> None:
+    app.add_exception_handler(RequestValidationError, _request_validation_error)
     app.add_exception_handler(StarletteHTTPException, _http_exception)
     app.add_exception_handler(ClientError, _unhandled_aws_error)
     app.add_exception_handler(BotoCoreError, _unhandled_aws_error)
