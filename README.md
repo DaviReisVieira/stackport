@@ -3,8 +3,8 @@
 </p>
 
 <h1 align="center">StackPort</h1>
-<p align="center"><strong>A web console for local AWS emulators and real AWS accounts.</strong></p>
-<p align="center">Browse, inspect, and manage resources across 51 AWS services, with dedicated views for 13 of them and guided lessons that teach AWS hands-on.</p>
+<p align="center"><strong>An open-source web console for local AWS emulators and real AWS.</strong></p>
+<p align="center">Browse, inspect, and manage what's running in AWS Emulator, MiniStack, Floci, LocalStack, Moto, or any AWS-compatible endpoint: a live dashboard and resource browser for 51 AWS services, an API Explorer for every operation, and guided lessons that teach AWS hands-on.</p>
 
 <p align="center">
   <a href="https://github.com/DaviReisVieira/stackport/actions/workflows/ci.yml"><img src="https://github.com/DaviReisVieira/stackport/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -22,7 +22,21 @@
 
 ## Why StackPort
 
-Local emulators give you AWS on your laptop, but no console to look at it with. StackPort is that console: open source, runs locally with one command, and needs no AWS account. It talks to any AWS-compatible endpoint, and it can point at a real AWS account too, with a single setting to make it read-only.
+Local emulators give you AWS on your laptop. StackPort gives you a console to look at it with: a web UI and dashboard that works the same way whichever emulator you run. It's open source, runs locally with one command, and needs no AWS account. It can point at a real AWS account too, with a single setting to make it read-only.
+
+## Works with
+
+| Emulator | Default endpoint | How StackPort connects | Quick start |
+|---|---|---|---|
+| [AWS Emulator](https://github.com/aws/aws-emulator) | `https://127.0.0.1:9297` | HTTPS. Finds the keys and certificate the emulator writes to `~/.aws/emulator/<port>/` by itself, and the new ones after a restart | [AWS Emulator](#aws-emulator) |
+| [MiniStack](https://github.com/ministackorg/ministack) | `http://localhost:4566` | HTTP, any access key (`test`) | [MiniStack](#ministack) |
+| [Floci](https://github.com/floci-io/floci) | `http://localhost:4566` | HTTP, any access key (`test`) | [Floci](#floci) |
+| [LocalStack](https://github.com/localstack/localstack) | `http://localhost:4566` | HTTP, any access key (`test`) | [LocalStack](#localstack) |
+| [Moto](https://github.com/getmoto/moto) | `http://localhost:5000` | HTTP, any access key (`test`) | [Moto](#moto) |
+| Any AWS-compatible endpoint, such as MinIO for S3 | Its URL | The keys it accepts | [Other endpoints](#other-endpoints) |
+| Real AWS | AWS itself | Your credential chain or a profile (SSO, AssumeRole), optionally read-only | [Real AWS](#with-real-aws) |
+
+[MiniStack](https://github.com/ministackorg/ministack) is StackPort's partner project: StackPort started as a web UI pull request to MiniStack, and the two projects work closely together. Otherwise StackPort is an independent open-source project, not affiliated with or endorsed by AWS or the other emulator projects, and it talks to every emulator the same way, through the standard AWS API.
 
 ## Features
 
@@ -36,7 +50,7 @@ Local emulators give you AWS on your laptop, but no console to look at it with. 
 - **Tags** viewed and edited across 24 resource types
 - **Export** resource lists to JSON or CSV, and a **CLI** for `status`, `list`, `describe`, and `export`
 - **Keyboard shortcuts** for navigation (press `?` to see them)
-- Single Docker image or `pip install`. Works with [MiniStack](https://github.com/ministackorg/ministack), [Floci](https://github.com/floci-io/floci), [LocalStack](https://github.com/localstack/localstack), [Moto](https://github.com/getmoto/moto), [AWS Emulator](https://github.com/aws/aws-emulator), or any AWS-compatible endpoint
+- Single Docker image or `pip install`. Works with [AWS Emulator](https://github.com/aws/aws-emulator), [MiniStack](https://github.com/ministackorg/ministack), [Floci](https://github.com/floci-io/floci), [LocalStack](https://github.com/localstack/localstack), [Moto](https://github.com/getmoto/moto), or any AWS-compatible endpoint
 
 ## Screenshots
 
@@ -57,30 +71,53 @@ Local emulators give you AWS on your laptop, but no console to look at it with. 
     <td><img src="https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/sqs.png" alt="SQS queue view"/><br/><sub><b>SQS</b>: send, receive, purge, dead-letter queues</sub></td>
     <td><img src="https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/kms.png" alt="KMS key view"/><br/><sub><b>KMS</b>: keys, policies, grants, aliases</sub></td>
   </tr>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/explorer.png" alt="API Explorer running an SQS operation against AWS Emulator"/><br/><sub><b>API Explorer</b>: any operation boto3 knows, with a form, the response, and the same call as AWS CLI or boto3</sub></td>
+    <td><img src="https://raw.githubusercontent.com/DaviReisVieira/stackport/main/docs/images/learn.png" alt="A guided lesson running inside the console"/><br/><sub><b>Guided lessons</b>: hands-on steps checked against your live resources</sub></td>
+  </tr>
 </table>
 
 ## Quick Start
 
-### With a local emulator
+Install StackPort with `pip install stackport` or use the `davireis/stackport` Docker image, point `AWS_ENDPOINT_URL` at your emulator, and open http://localhost:8080. StackPort signs its requests like any AWS SDK. It finds AWS Emulator's own keys by itself, and MiniStack, Floci, LocalStack and Moto accept any keys, so their commands below pass `test`.
 
-Start whichever emulator you use, then point StackPort at it:
+AWS Emulator, MiniStack and Floci also have a Docker Compose example that runs the emulator, StackPort, and a one-shot `seed` container. The seed creates a few resources (S3, SQS, SNS, DynamoDB, Secrets Manager, IAM, Logs, Step Functions) so the dashboard has something to show on first load. For another emulator, replace the emulator service and update `AWS_ENDPOINT_URL`.
+
+### AWS Emulator
+
+[AWS Emulator](https://github.com/aws/aws-emulator) serves HTTPS on `127.0.0.1:9297` and, by default, only accepts requests signed with keys it creates. Its certificate and keys are new on every start, and it writes them to `~/.aws/emulator/<port>/`. StackPort reads them from there, so there are no keys or certificate settings to pass, and it keeps working after the emulator restarts.
+
+Start the emulator as in AWS's guide, [on Linux](https://docs.aws.amazon.com/emulator/latest/userguide/getting-started-linux.html) or [with Docker](https://docs.aws.amazon.com/emulator/latest/userguide/getting-started-docker.html) (which shares `~/.aws/emulator` with your machine), then:
 
 ```bash
-# Start an emulator on :4566 (pick one)
-docker run -d -p 4566:4566 ministackorg/ministack   # MiniStack
-docker run -d -p 4566:4566 floci/floci              # Floci
-
-# Start StackPort
 pip install stackport
-AWS_ENDPOINT_URL=http://localhost:4566 stackport
+AWS_ENDPOINT_URL=https://127.0.0.1:9297 stackport
 # Open http://localhost:8080
 ```
 
-### Docker Compose
+To run both in Docker, use [`examples/docker-compose.aws-emulator.yml`](https://github.com/DaviReisVieira/stackport/blob/main/examples/docker-compose.aws-emulator.yml):
 
-Each example runs the emulator, StackPort, and a one-shot `seed` container that creates a few resources (S3, SQS, SNS, DynamoDB, Secrets Manager, IAM, Logs, Step Functions) so the dashboard has something to show on first load. They all use the same seed. Swap in LocalStack, Moto, or any AWS-compatible endpoint by replacing the emulator service and updating `AWS_ENDPOINT_URL`.
+```bash
+curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.aws-emulator.yml
+docker compose -f docker-compose.aws-emulator.yml up -d
+# Open http://localhost:8080
+# If the dashboard is empty: docker compose -f docker-compose.aws-emulator.yml logs seed
+```
 
-**MiniStack + StackPort**: [`examples/docker-compose.yml`](examples/docker-compose.yml)
+There is no prebuilt emulator image, so the first `up` builds one from the Dockerfile in AWS's guide. StackPort shares the emulator's network, because the certificate only covers `localhost` and loopback addresses, and reads the keys and certificate from a shared volume. The emulator keeps everything in memory, so a restart starts from an empty account. Embedded mode, where the emulator runs inside your tests, has no endpoint for StackPort to connect to.
+
+### MiniStack
+
+[MiniStack](https://github.com/ministackorg/ministack) is StackPort's partner project (see [Origin](#origin)).
+
+```bash
+docker run -d -p 4566:4566 ministackorg/ministack   # or: pip install ministack && ministack
+pip install stackport
+AWS_ENDPOINT_URL=http://localhost:4566 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test stackport
+# Open http://localhost:8080
+```
+
+With Docker Compose, using [`examples/docker-compose.yml`](https://github.com/DaviReisVieira/stackport/blob/main/examples/docker-compose.yml):
 
 ```bash
 curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.yml
@@ -89,9 +126,18 @@ docker compose up -d
 # If the dashboard is empty: docker compose logs seed
 ```
 
-[MiniStack](https://github.com/ministackorg/ministack) derives the URLs it returns (SQS queue URLs, pre-signed URLs) from the request `Host`, so they resolve from other containers and from the host without extra configuration.
+MiniStack derives the URLs it returns (SQS queue URLs, pre-signed URLs) from the request `Host`, so they resolve from other containers and from the host without extra configuration.
 
-**Floci + StackPort**: [`examples/docker-compose.floci.yml`](examples/docker-compose.floci.yml)
+### Floci
+
+```bash
+docker run -d -p 4566:4566 floci/floci
+pip install stackport
+AWS_ENDPOINT_URL=http://localhost:4566 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test stackport
+# Open http://localhost:8080
+```
+
+With Docker Compose, using [`examples/docker-compose.floci.yml`](https://github.com/DaviReisVieira/stackport/blob/main/examples/docker-compose.floci.yml):
 
 ```bash
 curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.floci.yml
@@ -102,43 +148,52 @@ docker compose -f docker-compose.floci.yml up -d
 
 [Floci](https://github.com/floci-io/floci) takes the hostname for the URLs it returns from `FLOCI_HOSTNAME`, which the example sets to `floci` so they resolve from other containers. From the host, reach the same resources through `http://localhost:4566`.
 
-**AWS Emulator + StackPort**: [`examples/docker-compose.aws-emulator.yml`](examples/docker-compose.aws-emulator.yml)
+Floci can also start StackPort for you as its web console, at `http://localhost:4566/_floci/ui`: see [Running a different console](https://github.com/floci-io/floci#running-a-different-console) in Floci's README.
+
+### LocalStack
 
 ```bash
-curl -O https://raw.githubusercontent.com/DaviReisVieira/stackport/main/examples/docker-compose.aws-emulator.yml
-docker compose -f docker-compose.aws-emulator.yml up -d
+docker run -d -p 4566:4566 -e LOCALSTACK_AUTH_TOKEN=<your-token> localstack/localstack
+pip install stackport
+AWS_ENDPOINT_URL=http://localhost:4566 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test stackport
 # Open http://localhost:8080
-# If the dashboard is empty: docker compose -f docker-compose.aws-emulator.yml logs seed
 ```
 
-[AWS Emulator](https://github.com/aws/aws-emulator) serves HTTPS with its own certificate and, by default, only accepts requests signed with keys it creates, both new on every start. StackPort reads them from `~/.aws/emulator/<port>/`, so it keeps working after a restart. There is no prebuilt image, so the first `up` builds one from the Dockerfile in [AWS's guide](https://docs.aws.amazon.com/emulator/latest/userguide/getting-started-docker.html), and the emulator keeps everything in memory.
+Recent [LocalStack](https://github.com/localstack/localstack) images ask for an auth token from your LocalStack account. If you start LocalStack with `localstack start` instead, the StackPort command is the same.
+
+### Moto
+
+```bash
+docker run -d -p 5000:5000 motoserver/moto   # or: pip install "moto[server]" && moto_server
+pip install stackport
+AWS_ENDPOINT_URL=http://localhost:5000 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test stackport
+# Open http://localhost:8080
+```
+
+[Moto](https://github.com/getmoto/moto) listens on port 5000. On macOS, AirPlay Receiver can hold that port: publish Moto on another one (`-p 5001:5000`) and use it in `AWS_ENDPOINT_URL`.
+
+### Other endpoints
+
+StackPort works with any endpoint that speaks the AWS API. Set `AWS_ENDPOINT_URL` and keys the endpoint accepts:
+
+```bash
+# MinIO (S3 only), with a MinIO access key
+AWS_ENDPOINT_URL=http://localhost:9000 AWS_ACCESS_KEY_ID=<access-key> AWS_SECRET_ACCESS_KEY=<secret-key> stackport
+
+# Any custom endpoint
+AWS_ENDPOINT_URL=http://my-emulator:4566 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test stackport
+```
 
 ### Docker (standalone)
 
 ```bash
-docker run -p 127.0.0.1:8080:8080 -e AWS_ENDPOINT_URL=http://host.docker.internal:4566 davireis/stackport
+docker run -p 127.0.0.1:8080:8080 \
+  -e AWS_ENDPOINT_URL=http://host.docker.internal:4566 \
+  -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test \
+  davireis/stackport
 ```
 
-### Other emulators
-
-StackPort works with any AWS-compatible endpoint. Set `AWS_ENDPOINT_URL`:
-
-```bash
-# LocalStack
-AWS_ENDPOINT_URL=http://localhost:4566 stackport
-
-# Moto
-AWS_ENDPOINT_URL=http://localhost:5000 stackport
-
-# AWS Emulator, started as in AWS's guide (StackPort reads its keys and certificate from ~/.aws/emulator)
-AWS_ENDPOINT_URL=https://127.0.0.1:9297 stackport
-
-# MinIO (S3 only)
-AWS_ENDPOINT_URL=http://localhost:9000 stackport
-
-# Any custom endpoint
-AWS_ENDPOINT_URL=http://my-emulator:4566 stackport
-```
+`host.docker.internal` is how a container reaches an emulator published on your machine under Docker Desktop. For AWS Emulator, use its Compose example instead: StackPort has to share the emulator's network and see its keys and certificate.
 
 ## Real AWS and multiple endpoints
 
@@ -179,7 +234,7 @@ docker compose -f docker-compose.multi-endpoint.yml up -d
 # Open http://localhost:8080
 ```
 
-See [`examples/docker-compose.multi-endpoint.yml`](examples/docker-compose.multi-endpoint.yml) for a full example with MiniStack + real AWS via profile.
+See [`examples/docker-compose.multi-endpoint.yml`](https://github.com/DaviReisVieira/stackport/blob/main/examples/docker-compose.multi-endpoint.yml) for a full example with MiniStack + real AWS via profile.
 
 The endpoint menu sits in the top navigation bar. Each endpoint is health-checked independently, and all API requests, caches, and WebSocket subscriptions are scoped to the active endpoint.
 
@@ -346,6 +401,23 @@ Press `?` anywhere to see all shortcuts.
 
 ACM, API Gateway, AppConfig, AppSync, Athena, Batch, Bedrock, Cloud Map, CloudFormation, CloudFront, CloudTrail, CloudWatch (metrics and alarms), CloudWatch Logs, CodeBuild, CodeCommit, CodeDeploy, CodePipeline, Cognito (User Pools + Identity Pools), DynamoDB, EC2, ECR, ECS, EFS, EKS, ElastiCache, ELB, EMR, EventBridge, EventBridge Pipes, EventBridge Scheduler, Firehose, Glue, IAM, Kinesis, KMS, Lambda, MSK, OpenSearch, RDS, Route 53, S3, Secrets Manager, SES, SNS, SQS, SSM, Step Functions, Verified Permissions, WAFv2, X-Ray
 
+## FAQ
+
+**Is there a web UI for AWS Emulator?**
+StackPort works as one. Start the emulator as in AWS's guide and run `AWS_ENDPOINT_URL=https://127.0.0.1:9297 stackport`: it finds the emulator's keys and certificate by itself. [AWS Emulator](#aws-emulator) has the details and a Docker Compose example.
+
+**Does it work with MiniStack, Floci, LocalStack and Moto?**
+Yes, and with any other endpoint that speaks the AWS API, since StackPort only makes standard AWS calls. How much of the dashboard fills in depends on the services each emulator implements: the ones it doesn't are shown as unavailable rather than failing. MiniStack is StackPort's partner project, and Floci can start StackPort as its web console.
+
+**Do I need an AWS account?**
+No. Against a local emulator, StackPort's requests only go to the emulator, and no AWS account is involved.
+
+**Can I use it with real AWS safely?**
+Yes, with some care. Leave `AWS_ENDPOINT_URL` unset and StackPort uses your usual credentials or a profile, with a warning banner on every page. Set `STACKPORT_ALLOW_WRITES=false` to block writes from the UI and API; a few calls that only read stay allowed, including Lambda invokes, which run your function. For a guarantee from AWS itself, use a profile whose IAM permissions are read-only. StackPort has no login, so keep it on `127.0.0.1`, the default.
+
+**Does StackPort send data anywhere?**
+No. It has no telemetry, analytics or update checks. The server only talks to the endpoints you configure (on real AWS, that includes the STS or SSO calls your credentials need), and the UI loads everything from StackPort itself. Endpoints and lesson progress are saved in `~/.stackport`, and API Explorer history in your browser. The emulator you run may collect telemetry of its own, so check its documentation.
+
 ## Development
 
 ```bash
@@ -354,7 +426,7 @@ cd stackport
 
 # Backend (with test dependencies)
 pip install -e ".[dev]"
-AWS_ENDPOINT_URL=http://localhost:4566 stackport
+AWS_ENDPOINT_URL=http://localhost:4566 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test stackport
 
 # Frontend dev (with hot reload, proxies to :8080)
 cd ui && npm install && npm run dev
@@ -371,7 +443,7 @@ cd ui && npx tsc -b
 cd ui && npx eslint .
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full details.
+See [CONTRIBUTING.md](https://github.com/DaviReisVieira/stackport/blob/main/CONTRIBUTING.md) for full details.
 
 ## Architecture
 
@@ -391,12 +463,13 @@ backend/
     endpoints.py    Endpoint CRUD, health checks, profile listing
     tags.py         Unified tag management
     learn.py        Lessons, progress, verification
+    explorer.py     API Explorer: any operation botocore knows
     s3.py, dynamodb.py, lambda_svc.py, sqs.py, sns.py, iam.py, ec2.py,
     rds.py, logs.py, monitoring.py, secretsmanager.py, kms.py,
     stepfunctions.py   One module per dedicated view
 
 ui/src/
-  pages/            Dashboard, ResourceBrowser, Learn, Settings, About
+  pages/            Dashboard, ResourceBrowser, ApiExplorer, Learn, Settings, About
   components/
     cloudscape/     AppLayout shell, service views, Learn panel (Cloudscape Design System)
   contexts/         Endpoint and Learn state
@@ -406,11 +479,11 @@ ui/src/
 
 ## Origin
 
-StackPort started as a web UI pull request to [MiniStack](https://github.com/ministackorg/ministack) ([ministack#116](https://github.com/ministackorg/ministack/pull/116)). The MiniStack maintainers suggested it would be more useful as a standalone tool that talks to any emulator over the standard AWS API, and that is what it became. Thanks to [@Nahuel990](https://github.com/Nahuel990) and [@McDoit](https://github.com/McDoit) for pushing it in that direction.
+StackPort started as a web UI pull request to [MiniStack](https://github.com/ministackorg/ministack) ([ministack#116](https://github.com/ministackorg/ministack/pull/116)). The MiniStack maintainers suggested it would be more useful as a standalone tool that talks to any emulator over the standard AWS API, and that is what it became. MiniStack is StackPort's partner project today, and the two projects work closely together. Thanks to [@Nahuel990](https://github.com/Nahuel990) and [@McDoit](https://github.com/McDoit) for pushing it in that direction.
 
 ## Contributors
 
-Contributions of every size are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup and a few good places to start.
+Contributions of every size are welcome. [CONTRIBUTING.md](https://github.com/DaviReisVieira/stackport/blob/main/CONTRIBUTING.md) has the setup and a few good places to start.
 
 <a href="https://github.com/DaviReisVieira/stackport/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=DaviReisVieira/stackport" alt="Contributors" />
@@ -424,4 +497,4 @@ More guides live at [stackport.cloud](https://stackport.cloud): [introduction](h
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/DaviReisVieira/stackport/blob/main/LICENSE)
