@@ -18,6 +18,7 @@ from backend import aws_emulator, config, connection, emulators
 from backend.aws_client import get_client
 from backend.cache import cache
 from backend.connection import EndpointInfo
+from backend.emulator_profiles import PROFILES
 from backend.emulators import DETECTORS, detect_emulator
 from backend.endpoint_store import EndpointStore
 from backend.main import app
@@ -131,6 +132,11 @@ HANDLERS = {
     "moto": moto,
     "aws-emulator": aws_emulator_server,
 }
+
+
+def profiled(emulator: str, **extra) -> dict:
+    """What the routes report for an identified emulator: what identification found, and its profile."""
+    return {**EXPECTED[emulator], **extra, "profile": PROFILES[emulator].to_dict()}
 
 
 def detect(url: str, **settings) -> dict | None:
@@ -470,7 +476,7 @@ class TestRoutes:
             store.add("emu", server.url)
             resp = client.get("/api/health", params={"endpoint": "emu"})
         assert resp.status_code == 200
-        assert resp.json()["emulator"] == EXPECTED["floci"]
+        assert resp.json()["emulator"] == profiled("floci")
 
     def test_health_never_identifies_a_url_passed_in_the_request(self, client):
         # Any caller could otherwise make StackPort send requests anywhere.
@@ -509,7 +515,7 @@ class TestRoutes:
                 "/api/endpoints/test-connection", json={"name": "t", "url": server.url, "region": None}
             ).json()
         assert result["health"] == "healthy", result
-        assert result["emulator"] == EXPECTED["ministack"]
+        assert result["emulator"] == profiled("ministack")
 
     def test_test_connection_explains_an_untrusted_certificate(self, client, tls):
         with FakeEndpoint(handler=aws_emulator_server, tls=tls) as server:
@@ -517,7 +523,7 @@ class TestRoutes:
                 "/api/endpoints/test-connection", json={"name": "t", "url": server.url, "region": None}
             ).json()
         assert result["error_detail"]["kind"] == "tls"
-        assert result["emulator"] == {**EXPECTED["aws-emulator"], "tls_trusted": False}
+        assert result["emulator"] == profiled("aws-emulator", tls_trusted=False)
 
     def test_test_connection_identifies_an_emulator_whose_keys_cant_be_read(self, client, tls, isolated):
         with FakeEndpoint(handler=aws_emulator_server, tls=tls) as server:
@@ -529,7 +535,7 @@ class TestRoutes:
                 "/api/endpoints/test-connection", json={"name": "t", "url": server.url, "region": None}
             ).json()
         assert result["error_detail"]["kind"] == "credentials"
-        assert result["emulator"] == {**EXPECTED["aws-emulator"], "tls_trusted": True}
+        assert result["emulator"] == profiled("aws-emulator", tls_trusted=True)
 
     def test_test_connection_skips_identification_when_nothing_answers(self, client, monkeypatch):
         def fail(*_args, **_kwargs):
@@ -550,7 +556,7 @@ class TestRoutes:
             client.post("/api/endpoints", json={"name": "emu", "url": server.url})
             result = client.post("/api/endpoints/emu/health").json()
         assert result["health"] == "healthy", result
-        assert result["emulator"] == EXPECTED["localstack"]
+        assert result["emulator"] == profiled("localstack")
 
     def test_listing_endpoints_does_not_identify(self, client):
         with FakeEndpoint(handler=ministack) as server:

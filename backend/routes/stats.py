@@ -21,6 +21,7 @@ from backend.config import (
     is_local_endpoint,
 )
 from backend.connection import describe_connection, plan_connection
+from backend.emulator_profiles import with_profile
 from backend.emulators import detect_emulator_quickly
 from backend.routes.common import EndpointInfo, get_endpoint_info
 
@@ -163,7 +164,7 @@ def health(ep: EndpointInfo = Depends(get_endpoint_info)):
         "writes_enabled": STACKPORT_ALLOW_WRITES,
         "learn_enabled": STACKPORT_LEARN,
         "connection": connection,
-        "emulator": detect_emulator_quickly(ep),
+        "emulator": with_profile(detect_emulator_quickly(ep)),
     }
 
 

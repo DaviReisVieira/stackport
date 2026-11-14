@@ -4,7 +4,8 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from backend.aws_client import get_client
 from backend.aws_emulator import AwsEmulatorFilesError
@@ -12,6 +13,7 @@ from backend.aws_errors import ClassifiedError, ErrorKind, classify
 from backend.cache import cache
 from backend.config import AWS_REGION, endpoint_store
 from backend.connection import EndpointInfo, describe_connection, plan_connection
+from backend.emulator_profiles import ResetFailed, ResetRefused, reset_target, send_reset, with_profile
 from backend.emulators import detect_emulator
 from backend.schemas.endpoints import AddEndpointBody, SetDefaultBody, UpdateEndpointBody
 
@@ -33,7 +35,7 @@ def check_connection(ep: EndpointInfo, *, identify_emulator: bool = False) -> di
         # When nothing answered there is nothing to identify, and no reason to wait again.
         detail = result["error_detail"]
         unreachable = detail is not None and detail["kind"] == ErrorKind.UNREACHABLE
-        result["emulator"] = None if unreachable else detect_emulator(ep, refresh=True)
+        result["emulator"] = None if unreachable else with_profile(detect_emulator(ep, refresh=True))
     return result
 
 
@@ -284,3 +286,40 @@ def check_endpoint_health(name: str):
         "url": entry["url"],
         **check_connection(EndpointInfo.from_entry(entry), identify_emulator=True),
     }
+
+
+@router.post("/endpoints/{name}/reset")
+async def reset_endpoint_emulator(name: str):
+    """Wipe the state of the emulator behind a saved endpoint, through the emulator's own reset request.
+
+    Async so the live stats, which belong to the event loop, are dropped there;
+    the requests to the emulator run in the thread pool.
+    """
+    entry = endpoint_store.get(name)
+    if not entry:
+        raise HTTPException(status_code=404, detail=f"Endpoint '{name}' not found")
+    ep = EndpointInfo.from_entry(entry)
+    try:
+        target = await run_in_threadpool(reset_target, ep)
+    except ResetRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from None
+    except ResetFailed as exc:
+        return _reset_failed(ep, exc)
+    try:
+        await run_in_threadpool(send_reset, target)
+    except ResetFailed as exc:
+        return _reset_failed(ep, exc)
+    finally:
+        # Even a reset that failed may have wiped part of the state, so counts
+        # and listings cached before it can't be trusted. The boto3 clients
+        # stay valid: a reset keeps the emulator's keys and certificate.
+        cache.delete_by_prefix(f"{ep.url}:")
+        from backend.websocket import remove_endpoint_from_stats
+        remove_endpoint_from_stats(ep.url)
+    return {"name": name, "url": ep.url, "emulator": {"id": target.emulator_id, "name": target.emulator_name}}
+
+
+def _reset_failed(ep: EndpointInfo, exc: ResetFailed) -> JSONResponse:
+    """Answer in the shape backend.error_handlers uses for classified errors."""
+    logger.warning("Resetting the emulator at %s failed: %s", ep.url, exc.error.message)
+    return JSONResponse(status_code=502, content={"detail": exc.error.message, "error": exc.error.to_dict()})
