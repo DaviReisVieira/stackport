@@ -13,6 +13,7 @@ import { CloudscapeSQSBrowser } from './SQSBrowser'
 import { CloudscapeKMSBrowser } from './KMSBrowser'
 import { CloudscapeStepFunctionsBrowser } from './StepFunctionsBrowser'
 import { HttpApiTryIt, RestApiTryIt } from '../tryit/ApiGatewayTryIt'
+import { CacheClusterConnection, KafkaClusterConnection, SearchDomainConnection } from '../connect/ConnectionDetails'
 
 /**
  * Registry of Cloudscape service-specific views (launch PR #149).
@@ -44,8 +45,11 @@ export interface DetailTab {
   Component: ComponentType<{ resourceId: string }>
 }
 
-/** Extra detail tabs for resource types without a view of their own, keyed `service/resourceType`. */
+/** Extra detail tabs for resource types without a view of their own, keyed `service/resourceType`: Try it, Connect. */
 export const CLOUDSCAPE_DETAIL_TABS: Record<string, DetailTab[]> = {
   'apigateway/rest_apis': [{ id: 'try-it', label: 'Try it', Component: RestApiTryIt }],
   'apigateway/apis': [{ id: 'try-it', label: 'Try it', Component: HttpApiTryIt }],
+  'elasticache/cache_clusters': [{ id: 'connect', label: 'Connect', Component: CacheClusterConnection }],
+  'es/domains': [{ id: 'connect', label: 'Connect', Component: SearchDomainConnection }],
+  'kafka/clusters': [{ id: 'connect', label: 'Connect', Component: KafkaClusterConnection }],
 }

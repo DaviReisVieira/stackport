@@ -50,6 +50,7 @@ import type {
 } from '@/lib/types'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
+import { ConnectionDetails } from '../connect/ConnectionDetails'
 import { useSQSFavoriteMessages } from '@/hooks/useSQSFavoriteMessages'
 
 type ModalKind = 'create' | 'send' | 'batch-send' | 'settings' | 'purge' | 'delete'
@@ -1321,6 +1322,11 @@ function QueueDetailView({
             id: 'config',
             label: 'Configuration',
             content: <ConfigPanel detail={detail} />,
+          },
+          {
+            id: 'connect',
+            label: 'Connect',
+            content: <ConnectionDetails service="sqs" resourceType="queues" resourceId={detail.name} />,
           },
           {
             id: 'tags',

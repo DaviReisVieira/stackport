@@ -16,7 +16,6 @@ import StatusIndicator from '@cloudscape-design/components/status-indicator'
 import Table from '@cloudscape-design/components/table'
 import Tabs from '@cloudscape-design/components/tabs'
 import TextFilter from '@cloudscape-design/components/text-filter'
-import { toast } from 'sonner'
 import {
   fetchRDSClusterDetail,
   fetchRDSClusters,
@@ -38,6 +37,7 @@ import type {
 import { exportData } from '@/lib/export'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
+import { ConnectionDetails } from '../connect/ConnectionDetails'
 
 function formatDate(iso?: string | null): string {
   if (!iso) return '—'
@@ -61,13 +61,6 @@ function statusIndicator(status: string) {
       {status}
     </StatusIndicator>
   )
-}
-
-function copyText(text: string, label: string) {
-  navigator.clipboard
-    .writeText(text)
-    .then(() => toast.success(`${label} copied to clipboard`))
-    .catch(() => toast.error(`Failed to copy ${label}`))
 }
 
 function kvGrid(rows: Array<[string, React.ReactNode]>, columns: 2 | 3 = 2) {
@@ -104,29 +97,6 @@ function jsonBlock(value: unknown) {
   )
 }
 
-function connectionPanel(entries: Array<{ label: string; endpoint: string; port: number }>) {
-  return (
-    <SpaceBetween size="s">
-      {entries
-        .filter((entry) => entry.endpoint)
-        .map((entry) => (
-          <SpaceBetween key={entry.label} direction="horizontal" size="xs">
-            <Box variant="awsui-key-label">{entry.label}</Box>
-            <Box fontSize="body-s">
-              {entry.endpoint}:{entry.port}
-            </Box>
-            <Button
-              variant="inline-icon"
-              iconName="copy"
-              ariaLabel={`Copy ${entry.label}`}
-              onClick={() => copyText(`${entry.endpoint}:${entry.port}`, entry.label)}
-            />
-          </SpaceBetween>
-        ))}
-    </SpaceBetween>
-  )
-}
-
 function DetailModalShell({
   title,
   loading,
@@ -159,7 +129,7 @@ function InstanceDetailModal({ id, onClose }: { id: string; onClose: () => void 
     <DetailModalShell title={id} loading={loading} error={error} onClose={onClose}>
       {inst && (
         <SpaceBetween size="m">
-          {connectionPanel([{ label: 'Connection', endpoint: inst.endpoint, port: inst.port }])}
+          <ConnectionDetails service="rds" resourceType="db_instances" resourceId={id} />
           <Tabs
             tabs={[
               {
@@ -236,10 +206,7 @@ function ClusterDetailModal({ id, onClose }: { id: string; onClose: () => void }
     <DetailModalShell title={id} loading={loading} error={error} onClose={onClose}>
       {cluster && (
         <SpaceBetween size="m">
-          {connectionPanel([
-            { label: 'Primary endpoint', endpoint: cluster.endpoint, port: cluster.port },
-            { label: 'Reader endpoint', endpoint: cluster.readerEndpoint, port: cluster.port },
-          ])}
+          <ConnectionDetails service="rds" resourceType="db_clusters" resourceId={id} />
           <Tabs
             tabs={[
               {

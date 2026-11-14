@@ -1691,3 +1691,29 @@ export interface TryItTargets<T> {
 export type TryItTarget =
   | { kind: 'rest-stage' | 'http-stage'; apiId: string; stage: string }
   | { kind: 'function-url'; functionName: string; qualifier: string | null }
+
+// --- Connection details ---
+
+export interface ConnectionSnippet {
+  label: string
+  text: string
+}
+
+/** One way to connect: the address to use from this machine, and commands to copy. */
+export interface ResourceConnection {
+  label: string
+  /** host:port, a broker list or a URL */
+  address: string
+  /** What the endpoint returned, when StackPort adjusted it */
+  returned: string | null
+  snippets: ConnectionSnippet[]
+}
+
+export interface ConnectionDetailsResponse {
+  connections: ResourceConnection[]
+  /** Why there is nothing to connect to yet */
+  problem: string | null
+  notes: string[]
+  /** Shell setup the commands need first (AWS Emulator's keys and certificate) */
+  cliSetup: LearnCliSetup | null
+}
