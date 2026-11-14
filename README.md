@@ -156,6 +156,8 @@ AWS_ACCESS_KEY_ID=AKIA... AWS_SECRET_ACCESS_KEY=... AWS_REGION=us-west-2 stackpo
 STACKPORT_ALLOW_WRITES=false AWS_PROFILE=my-profile stackport
 ```
 
+An endpoint without a URL sends every request to AWS itself. Endpoint URLs set up for other AWS tools, in `AWS_ENDPOINT_URL_<SERVICE>` variables (like `AWS_ENDPOINT_URL_S3`) or in a profile's `endpoint_url` and `services` settings in `~/.aws/config`, don't apply to StackPort. A profile still provides the credentials.
+
 When connected to real AWS, StackPort shows a warning banner on every page. Writes stay enabled unless you set `STACKPORT_ALLOW_WRITES=false`, so use that whenever you only want to look. In read-only mode a lock appears in the top bar, and the only POST calls still allowed are the ones that read: DynamoDB queries, CloudWatch metric queries, and Lambda invokes (which run your function, so keep that in mind on a live account).
 
 ### Multiple endpoints

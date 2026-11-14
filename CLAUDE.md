@@ -30,8 +30,8 @@ Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves 
 **Backend** (`backend/`):
 - `main.py` — FastAPI app, CORS, static file mount for SPA, CLI entry point
 - `config.py` — All settings from env vars (`AWS_ENDPOINT_URL`, `AWS_REGION`, `STACKPORT_PORT`, `STACKPORT_SERVICES`, `STACKPORT_ENDPOINTS`)
-- `aws_client.py` — `get_client(service, **EndpointInfo.client_kwargs())`, clients cached per `(service, ConnectionPlan)`; local endpoints get `inject_host_prefix=False`, a `STACKPORT_PROBE_TIMEOUT` connect timeout and a single attempt
-- `connection.py` — `EndpointInfo` → `plan_connection()` → hashable `ConnectionPlan`. Credential and TLS precedence live in its docstring; `ssl_context_for(plan)` for plain HTTP requests to an endpoint
+- `aws_client.py` — `get_client(service, **EndpointInfo.client_kwargs())`, clients cached per `(service, ConnectionPlan)`; every client sets `ignore_configured_endpoint_urls`, so `AWS_ENDPOINT_URL_<SERVICE>` or a profile's `endpoint_url`/`services` never send it elsewhere; local endpoints also get `inject_host_prefix=False`, a `STACKPORT_PROBE_TIMEOUT` connect timeout and a single attempt
+- `connection.py` — `EndpointInfo` → `plan_connection()` → hashable `ConnectionPlan`. Endpoint, credential and TLS precedence live in its docstring; `ssl_context_for(plan)` for plain HTTP requests to an endpoint
 - `aws_emulator.py` — `discover(url)` finds AWS Emulator's `ca.pem` + `emulator_credentials` in `<STACKPORT_AWS_EMULATOR_DIR>/<port>/` for `https://<loopback>:<port>`; their stat stamp is in the plan, so a restarted emulator's new keys are picked up
 - `aws_errors.py` — `classify(exc)` → `ClassifiedError` (`not_implemented | credentials | forbidden | tls | unreachable | other`), walking the exception chain
 - `error_handlers.py` — Installed in `main.py`: classified boto errors become 501/401/403/502 with `{"detail": str, "error": ClassifiedError}`. An endpoint's 4xx keeps its status and an endpoint 5xx is a 502, also when a route wrapped the `ClientError` in a generic 500 (or 502); a route's own 4xx or 501 is kept

@@ -19,6 +19,8 @@ AWS_ENDPOINT_URL: str | None = _parse_aws_endpoint_url(os.environ)
 
 # Remove AWS_ENDPOINT_URL from the process environment so boto3's internal
 # credential resolution (SSO, AssumeRole) doesn't route to a local emulator.
+# StackPort's own clients ignore it anyway (see aws_client); the clients boto3
+# creates to fetch credentials don't.
 if "AWS_ENDPOINT_URL" in os.environ:
     del os.environ["AWS_ENDPOINT_URL"]
 AWS_REGION: str = os.environ.get("AWS_REGION", "us-east-1")
