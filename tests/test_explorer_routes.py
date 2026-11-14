@@ -17,7 +17,7 @@ from botocore.config import Config
 from botocore.model import ServiceModel
 from fastapi.testclient import TestClient
 
-from backend import aws_emulator, config, service_models
+from backend import aws_client, aws_emulator, config, service_models
 from backend.learn import cli_setup
 from backend.main import AWS_WIRE_LOGGERS, app, configure_aws_wire_logs
 from backend.routes import explorer
@@ -289,6 +289,12 @@ def access_of_model(model: ServiceModel, operation: str) -> str:
 
 
 class TestRun:
+    def test_runs_use_isolated_clients(self, account):
+        shared_before = aws_client.get_client.cache_info().currsize
+        assert run("sqs", "ListQueues").status_code == 200
+        assert aws_client.get_client.cache_info().currsize == shared_before
+        assert aws_client._build_isolated_client.cache_info().currsize == 1
+
     def test_read(self, account):
         url = aws("sqs").create_queue(QueueName="orders")["QueueUrl"]
         resp = run("sqs", "ListQueues")
@@ -378,7 +384,7 @@ class TestRun:
             raise TypeError("a bug, not a bad parameter")
 
         sqs.list_queues = broken
-        with patch.object(explorer, "get_client", return_value=sqs):
+        with patch.object(explorer, "get_isolated_client", return_value=sqs):
             assert run("sqs", "ListQueues").status_code == 500
 
     def test_streaming_body_text_and_bytes(self, bucket):
@@ -399,14 +405,14 @@ class TestRun:
         assert body["notices"] == ["Body shows the first 5 bytes of the stream; the rest wasn't read."]
 
     def test_event_streams_are_refused_before_any_call(self, account):
-        with patch.object(explorer, "get_client", side_effect=AssertionError("no client for event streams")):
+        with patch.object(explorer, "get_isolated_client", side_effect=AssertionError("no client for event streams")):
             resp = run("s3", "SelectObjectContent", {"Bucket": BUCKET, "Key": "k"})
         assert resp.status_code == 400
         assert "streams events" in resp.json()["detail"]
 
     @pytest.mark.parametrize("name", ["generate_presigned_url", "get_paginator", "close", "meta", "list_queues", "_make_api_call", "can_paginate"])
     def test_only_operations_of_the_model_are_reachable(self, account, name):
-        with patch.object(explorer, "get_client", side_effect=AssertionError("no client for a non-operation")):
+        with patch.object(explorer, "get_isolated_client", side_effect=AssertionError("no client for a non-operation")):
             assert run("sqs", name).status_code == 404
             assert client.get(f"/api/explorer/services/sqs/operations/{name}").status_code == 404
 
@@ -578,7 +584,7 @@ class TestReadOnlyMode:
         ],
     )
     def test_writes_and_unknown_operations_are_blocked(self, read_only, service, operation):
-        with patch.object(explorer, "get_client", side_effect=AssertionError("blocked before the route")):
+        with patch.object(explorer, "get_isolated_client", side_effect=AssertionError("blocked before the route")):
             resp = run(service, operation, {"QueueName": "nope"})
         assert resp.status_code == 403
         assert "disabled" in resp.json()["detail"].lower()
