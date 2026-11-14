@@ -265,6 +265,20 @@ services:
 
 You can test a connection before saving it with the "Test Connection" button in the add/edit endpoint dialog.
 
+### Emulator details and reset
+
+Settings shows what StackPort knows about the emulator behind the endpoint you're browsing: a link to its documentation, limits worth knowing before you run into them, and a reset when the emulator offers one. The connection test shows the same documentation link and limits.
+
+| Emulator | Reset from Settings | Known limits |
+|----------|---------------------|--------------|
+| AWS Emulator | No: it keeps everything in memory, and restarting it starts empty | Requests up to 16 MiB; S3 holds at most 64 MiB and 1,000 objects per bucket, 128 MiB and 10,000 objects in all; Lambda runs Python and Node.js functions only |
+| MiniStack | Yes, with `POST /_ministack/reset` | None known |
+| Floci | Yes, with `POST /_floci/state/reset` | None known |
+| LocalStack | No: the open-source image has no reset route | None known |
+| Moto | Yes, with `POST /moto-api/reset` | None known |
+
+To reset, type the endpoint's name to confirm. StackPort sends the emulator's own reset request to that endpoint's URL and clears its cached counts, so the dashboard reflects the reset straight away. Reset is never offered for real AWS, and read-only mode (`STACKPORT_ALLOW_WRITES=false`) refuses it. The S3 and Lambda limits also appear next to the S3 object list and the Lambda invoke and runtime settings.
+
 ## Service views
 
 ### Dedicated views (13 services)
@@ -475,6 +489,8 @@ backend/
   aws_client.py     Cached boto3 client factory
   cache.py          Thread-safe TTL cache
   websocket.py      Live dashboard probes and log tailing
+  emulators.py      Recognises the emulator behind an endpoint
+  emulator_profiles.py  Docs link, known limits and reset per emulator
   schemas/          Pydantic request models, one module per service
   learn/            Lesson content (trails/*.json), hotspot ids, verification checks
   routes/
