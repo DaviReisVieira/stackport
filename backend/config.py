@@ -48,6 +48,9 @@ STACKPORT_SERVICES: str = os.environ.get(
     "codedeploy,batch,eks,es,kafka,bedrock,cloudtrail,xray,verifiedpermissions",
 )
 LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
+# botocore's request and response logs at DEBUG carry parameter values and
+# credentials, so even LOG_LEVEL=DEBUG leaves them out unless this asks for them.
+STACKPORT_LOG_AWS_WIRE: bool = os.environ.get("STACKPORT_LOG_AWS_WIRE", "false").lower() in ("1", "true", "yes")
 
 # Origins allowed to call the API from another site (comma-separated). Empty by
 # default: the UI is served by StackPort itself, so it never needs CORS, and

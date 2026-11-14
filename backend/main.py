@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from starlette.convertors import PathConvertor, register_url_convertor
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -17,11 +18,19 @@ from botocore.exceptions import (
     UnauthorizedSSOTokenError,
 )
 
-from backend.config import LOG_LEVEL, STACKPORT_ALLOW_WRITES, STACKPORT_CORS_ORIGINS, STACKPORT_LEARN, STACKPORT_PORT
+from backend.config import (
+    LOG_LEVEL,
+    STACKPORT_ALLOW_WRITES,
+    STACKPORT_CORS_ORIGINS,
+    STACKPORT_LEARN,
+    STACKPORT_LOG_AWS_WIRE,
+    STACKPORT_PORT,
+)
 from backend import emulators
 from backend.error_handlers import install_aws_error_handlers
 from backend.origins import CrossSiteGuard, HostGuard
-from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, learn, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags, kms
+from backend.routes import dynamodb, ec2, endpoints, explorer, iam, lambda_svc, learn, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags, kms
+from backend.service_models import is_read_operation
 from backend.websocket import logs_tail_endpoint, probe_loop, websocket_endpoint
 
 
@@ -40,6 +49,20 @@ logging.basicConfig(
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# botocore logs every request and response at DEBUG, bodies and signed headers
+# included: parameter values, secrets and session tokens.
+AWS_WIRE_LOGGERS = ("botocore.endpoint", "botocore.parsers", "botocore.auth")
+
+
+def configure_aws_wire_logs(enabled: bool) -> None:
+    """Leave botocore's wire logs out of LOG_LEVEL=DEBUG unless STACKPORT_LOG_AWS_WIRE asks for them."""
+    level = logging.NOTSET if enabled else max(logging.INFO, logging.getLogger().level)
+    for name in AWS_WIRE_LOGGERS:
+        logging.getLogger(name).setLevel(level)
+
+
+configure_aws_wire_logs(STACKPORT_LOG_AWS_WIRE)
 
 # Suppress noisy healthcheck access logs at non-DEBUG levels
 logging.getLogger("uvicorn.access").addFilter(HealthcheckFilter())
@@ -91,7 +114,7 @@ class ReadOnlyMiddleware:
         return False
 
     @classmethod
-    def _is_allowed(cls, method: str, path: str) -> bool:
+    async def _is_allowed(cls, method: str, path: str) -> bool:
         # Allow all GET/HEAD/OPTIONS
         if method not in cls.WRITE_METHODS:
             return True
@@ -106,11 +129,19 @@ class ReadOnlyMiddleware:
         if path.startswith("/api/learn"):
             return True
 
+        if method != "POST":
+            return False
+        # API Explorer runs: only operations that exist and only read. Telling
+        # may load a service model (tens of milliseconds), so off the event loop.
+        explorer_run = explorer.operation_run_by(path)
+        if explorer_run is not None:
+            return await run_in_threadpool(is_read_operation, *explorer_run)
+
         # Allow read-only POST operations (query, invoke)
-        return method == "POST" and cls._is_read_only_post(path)
+        return cls._is_read_only_post(path)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or STACKPORT_ALLOW_WRITES or self._is_allowed(scope["method"], scope["path"]):
+        if scope["type"] != "http" or STACKPORT_ALLOW_WRITES or await self._is_allowed(scope["method"], scope["path"]):
             await self.app(scope, receive, send)
             return
 
@@ -160,6 +191,7 @@ app.include_router(rds.router, prefix="/api/rds", tags=["rds"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["monitoring"])
 app.include_router(sns.router, prefix="/api/sns", tags=["sns"])
 app.include_router(kms.router, prefix="/api/kms", tags=["kms"])
+app.include_router(explorer.router, prefix=explorer.PREFIX, tags=["explorer"])
 if STACKPORT_LEARN:
     app.include_router(learn.router, prefix="/api/learn", tags=["learn"])
 
