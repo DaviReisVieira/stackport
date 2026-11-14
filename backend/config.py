@@ -2,6 +2,7 @@ import logging
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -171,13 +172,18 @@ endpoint_store = EndpointStore(
 
 _UNSET = object()
 
+# The domains AWS serves its endpoints under.
+_AWS_DOMAINS = ("amazonaws.com", "amazonaws.com.cn")
+
 
 def is_local_endpoint(endpoint_url: str | None = _UNSET) -> bool:
     """Return True when targeting a local emulator (LocalStack, MiniStack, Moto, MinIO, etc.).
 
-    Logic: a custom endpoint that is NOT an amazonaws.com domain is assumed to be
-    a local emulator.  This covers localhost, 127.0.0.1, 0.0.0.0, Docker service
-    names (localstack, minio, moto, …), and .local TLDs.
+    Logic: a custom endpoint whose host is NOT in an AWS domain (amazonaws.com,
+    or amazonaws.com.cn for the China Regions) is assumed to be a local
+    emulator.  This covers localhost, 127.0.0.1, 0.0.0.0, Docker service names
+    (localstack, minio, moto, …), and .local TLDs. Only the host counts: a path,
+    query or user name that mentions amazonaws.com doesn't make a URL AWS.
 
     None means real AWS (no custom endpoint) → returns False.
     Omitted means use DEFAULT_ENDPOINT.
@@ -185,4 +191,8 @@ def is_local_endpoint(endpoint_url: str | None = _UNSET) -> bool:
     url = DEFAULT_ENDPOINT if endpoint_url is _UNSET else endpoint_url
     if url is None:
         return False
-    return ".amazonaws.com" not in url
+    try:
+        host = (urlsplit(url).hostname or "").rstrip(".")
+    except ValueError:  # an unclosed IPv6 bracket, say: not an AWS host either
+        return True
+    return not any(host == domain or host.endswith("." + domain) for domain in _AWS_DOMAINS)

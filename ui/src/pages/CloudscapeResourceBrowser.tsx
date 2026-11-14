@@ -29,7 +29,7 @@ import {
   ServiceStatusAlert,
   ServiceStatusIndicator,
 } from '@/components/cloudscape/ServiceStatus'
-import { CLOUDSCAPE_SERVICE_VIEWS } from '@/components/cloudscape/views'
+import { CLOUDSCAPE_DETAIL_TABS, CLOUDSCAPE_SERVICE_VIEWS } from '@/components/cloudscape/views'
 import {
   fetchResourceDetail,
   fetchResources,
@@ -207,29 +207,34 @@ function DetailModal({
     </>
   )
 
+  const tabs = [
+    { id: 'details', label: 'Details', content: detailsContent },
+    ...(tagSupport
+      ? [
+          {
+            id: 'tags',
+            label: 'Tags',
+            content: (
+              <ResourceTagsPanel
+                service={service}
+                resourceType={resourceType}
+                resourceId={resourceId}
+                writable={tagSupport.writable}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(CLOUDSCAPE_DETAIL_TABS[`${service}/${resourceType}`] ?? []).map(({ id, label, Component }) => ({
+      id,
+      label,
+      content: <Component resourceId={resourceId} />,
+    })),
+  ]
+
   return (
     <Modal visible onDismiss={onClose} header={resourceId} size="large">
-      {tagSupport ? (
-        <Tabs
-          tabs={[
-            { id: 'details', label: 'Details', content: detailsContent },
-            {
-              id: 'tags',
-              label: 'Tags',
-              content: (
-                <ResourceTagsPanel
-                  service={service}
-                  resourceType={resourceType}
-                  resourceId={resourceId}
-                  writable={tagSupport.writable}
-                />
-              ),
-            },
-          ]}
-        />
-      ) : (
-        detailsContent
-      )}
+      {tabs.length > 1 ? <Tabs tabs={tabs} /> : detailsContent}
     </Modal>
   )
 }

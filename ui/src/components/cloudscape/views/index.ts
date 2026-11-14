@@ -12,6 +12,7 @@ import { CloudscapeSNSBrowser } from './SNSBrowser'
 import { CloudscapeSQSBrowser } from './SQSBrowser'
 import { CloudscapeKMSBrowser } from './KMSBrowser'
 import { CloudscapeStepFunctionsBrowser } from './StepFunctionsBrowser'
+import { HttpApiTryIt, RestApiTryIt } from '../tryit/ApiGatewayTryIt'
 
 /**
  * Registry of Cloudscape service-specific views (launch PR #149).
@@ -34,4 +35,17 @@ export const CLOUDSCAPE_SERVICE_VIEWS: Record<string, ComponentType> = {
   sqs: CloudscapeSQSBrowser,
   kms: CloudscapeKMSBrowser,
   stepfunctions: CloudscapeStepFunctionsBrowser,
+}
+
+/** A tab the generic resource detail adds for one resource type, next to Details and Tags. */
+export interface DetailTab {
+  id: string
+  label: string
+  Component: ComponentType<{ resourceId: string }>
+}
+
+/** Extra detail tabs for resource types without a view of their own, keyed `service/resourceType`. */
+export const CLOUDSCAPE_DETAIL_TABS: Record<string, DetailTab[]> = {
+  'apigateway/rest_apis': [{ id: 'try-it', label: 'Try it', Component: RestApiTryIt }],
+  'apigateway/apis': [{ id: 'try-it', label: 'Try it', Component: HttpApiTryIt }],
 }

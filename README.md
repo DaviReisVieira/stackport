@@ -45,6 +45,7 @@ Local emulators give you AWS on your laptop. StackPort gives you a console to lo
 - **Write operations** in 9 of those views, from S3 uploads and DynamoDB item edits to SQS messages, Lambda invokes, EC2 start/stop, and Step Functions executions
 - **API Explorer** to call any operation of any service boto3 knows, with a form built from the API's own model and the same request ready to copy as an AWS CLI command or boto3 code
 - **Activity**: recent API calls from CloudTrail's event history, with who made them, what they touched and how they went
+- **Try it** for API Gateway stages and Lambda function URLs: send an HTTP request from the console and see the status, headers, body and timing
 - **Guided lessons** that run inside the console and check your real resource state as you go
 - **Real AWS and multiple endpoints**, each with its own auth (default chain, AWS profile with SSO/AssumeRole, or static keys)
 - **Read-only mode** with `STACKPORT_ALLOW_WRITES=false`
@@ -215,7 +216,7 @@ STACKPORT_ALLOW_WRITES=false AWS_PROFILE=my-profile stackport
 
 An endpoint without a URL sends every request to AWS itself. Endpoint URLs set up for other AWS tools, in `AWS_ENDPOINT_URL_<SERVICE>` variables (like `AWS_ENDPOINT_URL_S3`) or in a profile's `endpoint_url` and `services` settings in `~/.aws/config`, don't apply to StackPort. A profile still provides the credentials.
 
-When connected to real AWS, StackPort shows a warning banner on every page. Writes stay enabled unless you set `STACKPORT_ALLOW_WRITES=false`, so use that whenever you only want to look. In read-only mode a lock appears in the top bar, and the only POST calls still allowed are the ones that read: DynamoDB queries, CloudWatch metric queries, Lambda invokes (which run your function, so keep that in mind on a live account), and API Explorer operations that read.
+When connected to real AWS, StackPort shows a warning banner on every page. Writes stay enabled unless you set `STACKPORT_ALLOW_WRITES=false`, so use that whenever you only want to look. In read-only mode a lock appears in the top bar, and the only POST calls still allowed are the ones that read: DynamoDB queries, CloudWatch metric queries, Lambda invokes and Try it requests (both run your code, so keep that in mind on a live account), and API Explorer operations that read.
 
 ### Multiple endpoints
 
@@ -337,6 +338,23 @@ What shows up depends on the endpoint. As checked with each emulator:
 | LocalStack (4.14, no auth token) | Answers that CloudTrail isn't in the current license plan, so the page says the endpoint doesn't support it |
 | Moto (5.2) | `LookupEvents` isn't implemented; Moto answers with an internal error, which the page shows |
 
+## Try it
+
+The **Try it** tab of a REST or HTTP API (in its API Gateway detail) and the **Function URL** tab of a Lambda function send an HTTP request to a stage or function URL and show the status, headers, body and timing. Pick the method, add a path below the stage, query parameters, headers and a body, and copy the address to use it from your own tools.
+
+The browser can't call these addresses itself, so StackPort sends the request, with the same TLS settings it uses for the endpoint. Each emulator serves stages and function URLs at its own address, and StackPort builds the right one for the emulator it recognises:
+
+| Emulator | API Gateway stage | Function URL |
+|---|---|---|
+| AWS Emulator (1.0.367) | `/_aws/execute-api/{api}/{stage}` | `/_aws/lambda-url/{url-id}` |
+| MiniStack (1.5.19) | `/_aws/execute-api/{api}/{stage}` | `/_aws/lambda-url/{url-id}` |
+| Floci (2.4.0) | `/_aws/execute-api/{api}/{stage}` | `/lambda-url/{url-id}` |
+| LocalStack (4.14) | REST APIs at `/_aws/execute-api/{api}/{stage}`; HTTP APIs at host `{api}.execute-api.localhost.localstack.cloud` | host `{url-id}.lambda-url.{region}.localhost.localstack.cloud` |
+| Moto (5.1) | not served over HTTP | not served over HTTP |
+| Real AWS | `https://{api}.execute-api.{region}.amazonaws.com/{stage}` | the URL AWS returns |
+
+Requests only go to the selected endpoint's own address (or, on AWS, to the API's or function URL's own host), and only for saved endpoints. When StackPort can't tell how an endpoint serves a stage or URL, it says so instead of guessing. Bodies are sent as text up to 1 MB, and the answer shows up to its first 1 MB, as text when it is UTF-8 and as base64 otherwise; redirects are shown, not followed, and a request that hasn't been fully answered after 60 seconds is given up. On real AWS, sending asks for confirmation first. Function URLs with `AWS_IAM` auth get unsigned requests, so an endpoint that checks signatures answers 403.
+
 ## Guided lessons
 
 Learn AWS hands-on without an AWS account or a bill. Lessons run inside StackPort against your own emulator: a panel walks you through each step while hotspots point at the actual controls, and StackPort checks the live resource state, so a step only turns green when the thing really exists.
@@ -447,7 +465,7 @@ Yes, and with any other endpoint that speaks the AWS API, since StackPort only m
 No. Against a local emulator, StackPort's requests only go to the emulator, and no AWS account is involved.
 
 **Can I use it with real AWS safely?**
-Yes, with some care. Leave `AWS_ENDPOINT_URL` unset and StackPort uses your usual credentials or a profile, with a warning banner on every page. Set `STACKPORT_ALLOW_WRITES=false` to block writes from the UI and API; a few calls that only read stay allowed, including Lambda invokes, which run your function. For a guarantee from AWS itself, use a profile whose IAM permissions are read-only. StackPort has no login, so keep it on `127.0.0.1`, the default.
+Yes, with some care. Leave `AWS_ENDPOINT_URL` unset and StackPort uses your usual credentials or a profile, with a warning banner on every page. Set `STACKPORT_ALLOW_WRITES=false` to block writes from the UI and API; a few calls that only read stay allowed, including Lambda invokes and Try it requests, which run your code. For a guarantee from AWS itself, use a profile whose IAM permissions are read-only. StackPort has no login, so keep it on `127.0.0.1`, the default.
 
 **Does StackPort send data anywhere?**
 No. It has no telemetry, analytics or update checks. The server only talks to the endpoints you configure (on real AWS, that includes the STS or SSO calls your credentials need), and the UI loads everything from StackPort itself. Endpoints and lesson progress are saved in `~/.stackport`, and API Explorer history in your browser. The emulator you run may collect telemetry of its own, so check its documentation.
