@@ -4,6 +4,14 @@
 the endpoint it targets. ``plan_connection`` turns it into a ``ConnectionPlan``,
 the single place where the precedence rules live:
 
+Endpoint: the endpoint's URL, or AWS itself when it has none. Endpoint URLs
+boto3 would find on its own (``AWS_ENDPOINT_URL_<SERVICE>``, ``AWS_ENDPOINT_URL``,
+or a profile's ``endpoint_url`` and ``services`` settings) never apply to
+StackPort's clients, so a real-AWS endpoint reaches AWS for every service. A
+profile still gives its credentials. The STS or SSO calls boto3 makes to get
+them are boto3's own and keep its configuration, apart from
+``AWS_ENDPOINT_URL``, which ``config`` takes out of the environment.
+
 Credentials, most specific first:
 
 1. the endpoint's own auth (a profile, or an access key pair);

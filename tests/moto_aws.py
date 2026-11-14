@@ -42,8 +42,9 @@ def _assert_on_aws(client) -> None:
 @contextmanager
 def moto_account() -> Iterator[None]:
     """StackPort's AWS calls go to a new, empty moto account until the block ends."""
-    # Without this, clients built with no endpoint URL (AWS, as StackPort sees it)
-    # would use AWS_ENDPOINT_URL, which conftest points at a local emulator.
+    # StackPort's clients ignore configured endpoint URLs on their own; the plain
+    # boto3 clients from aws() would otherwise use AWS_ENDPOINT_URL, which
+    # conftest points at a local emulator.
     with patch.dict(os.environ, {"AWS_IGNORE_CONFIGURED_ENDPOINT_URLS": "true"}), mock_aws():
         _forget_cached()
         _assert_on_aws(get_client("sts", **MOTO.client_kwargs()))

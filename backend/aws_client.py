@@ -17,6 +17,12 @@ logger = logging.getLogger(__name__)
 
 _UNSET = object()
 
+# Every client goes to the endpoint's URL, or to AWS when it has none. boto3
+# would otherwise take an endpoint from AWS_ENDPOINT_URL_<SERVICE> or from a
+# profile's endpoint_url or services section in ~/.aws/config, and send some of
+# a real-AWS endpoint's calls somewhere else. A profile still gives credentials.
+_CLIENT_CONFIG = Config(ignore_configured_endpoint_urls=True)
+
 # Client options for local emulators (custom endpoints that aren't *.amazonaws.com):
 # - Emulators serve every service on one host, so host prefixes such as Step
 #   Functions' "sync-" or Cloud Map's "data-" point at hosts that don't exist.
@@ -32,12 +38,14 @@ _UNSET = object()
 #   whole object, so a download of it failed its check. Without asking for them,
 #   StackPort's multipart uploads don't leave such objects behind for other
 #   clients either.
-_LOCAL_ENDPOINT_CONFIG = Config(
-    inject_host_prefix=False,
-    connect_timeout=STACKPORT_PROBE_TIMEOUT,
-    retries={"mode": "standard", "total_max_attempts": 1},
-    request_checksum_calculation="when_required",
-    response_checksum_validation="when_required",
+_LOCAL_ENDPOINT_CONFIG = _CLIENT_CONFIG.merge(
+    Config(
+        inject_host_prefix=False,
+        connect_timeout=STACKPORT_PROBE_TIMEOUT,
+        retries={"mode": "standard", "total_max_attempts": 1},
+        request_checksum_calculation="when_required",
+        response_checksum_validation="when_required",
+    )
 )
 
 # Last stat stamp seen per AWS Emulator files directory, to notice restarts.
@@ -59,13 +67,14 @@ def _build_client(service_name: str, plan: ConnectionPlan):
             session_kwargs["aws_session_token"] = plan.session_token
         session = boto3.Session(**session_kwargs)
 
-    client_kwargs: dict = {"service_name": service_name}
+    client_kwargs: dict = {
+        "service_name": service_name,
+        "config": _LOCAL_ENDPOINT_CONFIG if plan.local_endpoint else _CLIENT_CONFIG,
+    }
     if plan.endpoint_url is not None:
         client_kwargs["endpoint_url"] = plan.endpoint_url
     if plan.verify is not None:
         client_kwargs["verify"] = plan.verify
-    if plan.local_endpoint:
-        client_kwargs["config"] = _LOCAL_ENDPOINT_CONFIG
     return session.client(**client_kwargs)
 
 
