@@ -27,6 +27,9 @@ export const AWS_ICON_MAP: Record<string, React.FC<AwsIconProps>> = {
   kinesis: createAwsIcon('kinesis'),
   events: createAwsIcon('events'),
   'events-scheduler': createAwsIcon('events'),
+  // EventBridge Scheduler and Pipes are part of EventBridge, and AWS draws them with its icon.
+  scheduler: createAwsIcon('events'),
+  pipes: createAwsIcon('events'),
   ec2: createAwsIcon('ec2'),
   route53: createAwsIcon('route53'),
   kms: createAwsIcon('kms'),

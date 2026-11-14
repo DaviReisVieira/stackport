@@ -72,7 +72,14 @@ SERVICE_REGISTRY: dict[str, list[tuple[str, str, str, str]]] = {
         ("alarms", "cloudwatch", "describe_alarms", "MetricAlarms"),
         ("dashboards", "cloudwatch", "list_dashboards", "DashboardEntries"),
     ],
-    "ses": [("identities", "ses", "list_identities", "Identities")],
+    # The classic SES API, like identities. AWS keeps one set of configuration
+    # sets and templates behind both APIs, and every emulator StackPort supports
+    # answers these calls, while LocalStack has no SES v2 and moto no v2 templates.
+    "ses": [
+        ("identities", "ses", "list_identities", "Identities"),
+        ("configuration_sets", "ses", "list_configuration_sets", "ConfigurationSets"),
+        ("email_templates", "ses", "list_templates", "TemplatesMetadata"),
+    ],
     "acm": [("certificates", "acm", "list_certificates", "CertificateSummaryList")],
     "wafv2": [("web_acls", "wafv2", "list_web_acls", "WebACLs")],
     "ecr": [("repositories", "ecr", "describe_repositories", "repositories")],
@@ -94,6 +101,35 @@ SERVICE_REGISTRY: dict[str, list[tuple[str, str, str, str]]] = {
     "elasticfilesystem": [("file_systems", "efs", "describe_file_systems", "FileSystems")],
     "cloudfront": [("distributions", "cloudfront", "list_distributions", "DistributionList")],
     "appsync": [("graphql_apis", "appsync", "list_graphql_apis", "graphqlApis")],
+    "scheduler": [
+        ("schedules", "scheduler", "list_schedules", "Schedules"),
+        ("schedule_groups", "scheduler", "list_schedule_groups", "ScheduleGroups"),
+    ],
+    "pipes": [("pipes", "pipes", "list_pipes", "Pipes")],
+    "appconfig": [("applications", "appconfig", "list_applications", "Items")],
+    "servicediscovery": [
+        ("namespaces", "servicediscovery", "list_namespaces", "Namespaces"),
+        ("services", "servicediscovery", "list_services", "Services"),
+    ],
+    "codebuild": [("projects", "codebuild", "list_projects", "projects")],
+    "codepipeline": [("pipelines", "codepipeline", "list_pipelines", "pipelines")],
+    "codecommit": [("repositories", "codecommit", "list_repositories", "repositories")],
+    "codedeploy": [("applications", "codedeploy", "list_applications", "applications")],
+    "batch": [
+        ("compute_environments", "batch", "describe_compute_environments", "computeEnvironments"),
+        ("job_queues", "batch", "describe_job_queues", "jobQueues"),
+    ],
+    "eks": [("clusters", "eks", "list_clusters", "clusters")],
+    # Keyed by the name OpenSearch Service signs requests with, like monitoring
+    # or elasticmapreduce; boto3 calls it opensearch.
+    "es": [("domains", "opensearch", "list_domain_names", "DomainNames")],
+    # ListClusters, not ListClustersV2: MiniStack only serves the first. It
+    # leaves out serverless clusters, which only V2 lists.
+    "kafka": [("clusters", "kafka", "list_clusters", "ClusterInfoList")],
+    "bedrock": [("custom_models", "bedrock", "list_custom_models", "modelSummaries")],
+    "cloudtrail": [("trails", "cloudtrail", "describe_trails", "trailList")],
+    "xray": [("groups", "xray", "get_groups", "Groups")],
+    "verifiedpermissions": [("policy_stores", "verifiedpermissions", "list_policy_stores", "policyStores")],
     "sts": [],
 }
 

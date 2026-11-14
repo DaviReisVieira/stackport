@@ -5,6 +5,7 @@ import io
 from unittest.mock import MagicMock
 
 import boto3
+import botocore.session
 import pytest
 from click.testing import CliRunner
 
@@ -44,6 +45,18 @@ class TestServiceRegistry:
     def test_expected_services_present(self):
         expected = {"s3", "sqs", "sns", "dynamodb", "lambda", "iam", "ec2", "logs"}
         assert expected.issubset(SERVICE_REGISTRY.keys())
+
+    def test_services_are_keyed_by_the_name_they_sign_requests_with(self):
+        # The name emulators route a request by: monitoring for CloudWatch, es for OpenSearch.
+        session = botocore.session.get_session()
+        keyed_otherwise = {
+            service
+            for service, entries in SERVICE_REGISTRY.items()
+            for _, boto3_service, _, _ in entries
+            if session.get_service_model(boto3_service).signing_name != service
+        }
+        # Step Functions signs as "states"; links and saved favorites use its older key.
+        assert keyed_otherwise == {"stepfunctions"}
 
 
 class TestDescribeRegistry:
@@ -123,6 +136,24 @@ class TestPreferredIdField:
         ("rds", "db_clusters", "DBClusterIdentifier", "DBClusterIdentifier"),
         ("elasticloadbalancing", "load_balancers", "LoadBalancerArn", "LoadBalancerArns"),
         ("cloudformation", "stacks", "StackId", "StackName"),
+        ("scheduler", "schedules", "Arn", "Name"),
+        ("scheduler", "schedule_groups", "Name", "Name"),
+        ("pipes", "pipes", "Name", "Name"),
+        ("ses", "configuration_sets", "Name", "ConfigurationSetName"),
+        ("ses", "email_templates", "Name", "TemplateName"),
+        ("kafka", "clusters", "ClusterArn", "ClusterArn"),
+        ("appconfig", "applications", "Id", "ApplicationId"),
+        ("servicediscovery", "namespaces", "Id", "Id"),
+        ("servicediscovery", "services", "Id", "Id"),
+        ("batch", "compute_environments", "computeEnvironmentName", "computeEnvironments"),
+        ("batch", "job_queues", "jobQueueName", "jobQueues"),
+        ("codepipeline", "pipelines", "name", "name"),
+        ("codecommit", "repositories", "repositoryName", "repositoryName"),
+        ("es", "domains", "DomainName", "DomainName"),
+        ("bedrock", "custom_models", "modelArn", "modelIdentifier"),
+        ("cloudtrail", "trails", "TrailARN", "trailNameList"),
+        ("xray", "groups", "GroupName", "GroupName"),
+        ("verifiedpermissions", "policy_stores", "policyStoreId", "policyStoreId"),
     ], ids=lambda case: f"{case[0]}/{case[1]}")
     def resource_case(self, request):
         service, resource_type, id_field, id_param = request.param
