@@ -68,7 +68,23 @@ const converseReply = {
   roundTripMs: 530,
 }
 
+const customModels = {
+  service: 'bedrock',
+  resources: {
+    custom_models: [
+      {
+        id: 'arn:aws:bedrock:us-east-1:000000000000:custom-model/my-tuned',
+        modelArn: 'arn:aws:bedrock:us-east-1:000000000000:custom-model/my-tuned',
+        modelName: 'my-tuned',
+        baseModelName: 'Claude 3 Haiku',
+        creationTime: '2026-10-01T10:00:00+00:00',
+      },
+    ],
+  },
+}
+
 let fetchMock: ReturnType<typeof vi.fn>
+let customModelsReply: unknown
 let models: { status: number; body: unknown }
 let converse: { ok: boolean; status: number; body: unknown }
 
@@ -77,7 +93,8 @@ function mockFetchByUrl() {
     const url = String(input)
     let status = 200
     let payload: unknown = statsPayload
-    if (url.includes('/api/bedrock/converse')) {
+    if (url.includes('/api/resources/bedrock')) payload = customModelsReply
+    else if (url.includes('/api/bedrock/converse')) {
       status = converse.status
       payload = converse.body
     } else if (url.includes('/api/bedrock/models')) {
@@ -116,6 +133,7 @@ beforeEach(() => {
   localStorage.clear()
   env.endpoint = 'local'
   env.connectionType = 'local'
+  customModelsReply = customModels
   models = { status: 200, body: modelsPayload }
   converse = { ok: true, status: 200, body: converseReply }
   mockFetchByUrl()
@@ -359,5 +377,24 @@ describe('CloudscapeBedrockBrowser (via registry dispatch)', () => {
 
       await waitFor(() => expect(screen.queryByTestId('bedrock-response-text')).not.toBeInTheDocument())
     })
+  })
+
+  it('lists the custom models from the generic resource listing', async () => {
+    renderBedrock()
+    fireEvent.click(await screen.findByRole('tab', { name: 'Custom models' }))
+
+    expect(await screen.findByText('my-tuned')).toBeInTheDocument()
+    expect(screen.getByText('Claude 3 Haiku')).toBeInTheDocument()
+    expect(screen.getByText('2026-10-01T10:00:00+00:00')).toBeInTheDocument()
+    // The resource browser also fetches the whole service unfiltered; the tab asks for its one type
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/resources/bedrock?type=custom_models'))).toBe(true)
+  })
+
+  it('says so when there are no custom models', async () => {
+    customModelsReply = { service: 'bedrock', resources: { custom_models: [] } }
+    renderBedrock()
+    fireEvent.click(await screen.findByRole('tab', { name: 'Custom models' }))
+
+    expect(await screen.findByText('No custom models')).toBeInTheDocument()
   })
 })

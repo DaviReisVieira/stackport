@@ -17,8 +17,15 @@ import Tabs from '@cloudscape-design/components/tabs'
 import Textarea from '@cloudscape-design/components/textarea'
 import TextFilter from '@cloudscape-design/components/text-filter'
 import { ClassifiedErrorDetails } from '@/components/cloudscape/ServiceStatus'
-import { ApiError, converseBedrock, fetchBedrockModels } from '@/lib/api'
-import type { BedrockConverseResponse, BedrockModel, BedrockModelsResponse, ClassifiedError } from '@/lib/types'
+import { ApiError, converseBedrock, fetchBedrockModels, fetchResources } from '@/lib/api'
+import type {
+  BedrockConverseResponse,
+  BedrockModel,
+  BedrockModelsResponse,
+  ClassifiedError,
+  ResourceItem,
+  ResourceListResponse,
+} from '@/lib/types'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
 import { useHealth } from '@/hooks/useHealth'
@@ -259,6 +266,60 @@ function ModelsTab({ models, loading }: { models: BedrockModel[]; loading: boole
   )
 }
 
+// --- Custom models ------------------------------------------------------------
+
+const text = (value: unknown) => (value === null || value === undefined || value === '' ? '-' : String(value))
+
+/** Models trained or imported in this account. They come from the generic resource listing. */
+function CustomModelsTab() {
+  const { activeEndpoint } = useEndpoint()
+  const fetcher = useCallback(() => fetchResources('bedrock', 'custom_models', activeEndpoint), [activeEndpoint])
+  const { data, loading, error, errorDetail, refresh } = useFetch<ResourceListResponse>(fetcher)
+  const models = data?.resources.custom_models ?? []
+  const { items, filteredItemsCount, collectionProps, filterProps } = useCollection(models, {
+    filtering: {
+      fields: ['id', 'modelName', 'baseModelName'],
+      empty: <Box textAlign="center" color="inherit">No custom models</Box>,
+    },
+    sorting: {},
+  })
+
+  return (
+    <SpaceBetween size="l">
+      {!loading && error && (
+        <Alert type="error" header="Could not load custom models" action={<Button onClick={() => refresh()}>Retry</Button>}>
+          <SpaceBetween size="xs">
+            <Box>{error}</Box>
+            {errorDetail && <ClassifiedErrorDetails error={errorDetail} />}
+          </SpaceBetween>
+        </Alert>
+      )}
+      <Table
+        {...collectionProps}
+        items={items}
+        trackBy="id"
+        loading={loading}
+        loadingText="Loading custom models"
+        variant="borderless"
+        header={<Header variant="h2" counter={data ? `(${models.length})` : undefined}>Custom models</Header>}
+        filter={
+          <TextFilter
+            {...filterProps}
+            filteringPlaceholder="Find custom models"
+            countText={`${filteredItemsCount ?? models.length} matches`}
+          />
+        }
+        columnDefinitions={[
+          { id: 'name', header: 'Name', cell: (m: ResourceItem) => text(m.modelName ?? m.id), sortingField: 'modelName' },
+          { id: 'baseModel', header: 'Base model', cell: (m: ResourceItem) => text(m.baseModelName), sortingField: 'baseModelName' },
+          { id: 'arn', header: 'Model ARN', cell: (m: ResourceItem) => text(m.modelArn ?? m.id) },
+          { id: 'created', header: 'Created', cell: (m: ResourceItem) => text(m.creationTime), sortingField: 'creationTime' },
+        ]}
+      />
+    </SpaceBetween>
+  )
+}
+
 // --- Browser ----------------------------------------------------------------
 
 export function CloudscapeBedrockBrowser() {
@@ -301,6 +362,7 @@ export function CloudscapeBedrockBrowser() {
         tabs={[
           { id: 'playground', label: 'Playground', content: <PlaygroundTab models={models} /> },
           { id: 'models', label: 'Models', content: <ModelsTab models={models} loading={loading} /> },
+          { id: 'custom', label: 'Custom models', content: <CustomModelsTab /> },
         ]}
       />
     </SpaceBetween>
