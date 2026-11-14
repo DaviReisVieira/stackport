@@ -94,6 +94,9 @@ import type {
   StopExecutionResponse,
   TagsSupportedResponse,
   CloudWatchAlarm,
+  BedrockConverseRequest,
+  BedrockConverseResponse,
+  BedrockModelsResponse,
   SNSTopic,
   SNSTopicDetail,
   CloudWatchDashboardDetail,
@@ -1389,6 +1392,26 @@ export async function publishSNSMessage(
   endpoint?: string | null,
 ): Promise<{ messageId: string }> {
   const url = buildUrl(`/sns/topics/${encodeURIComponent(arn)}/publish`, endpoint)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw await apiErrorFrom(res)
+  return res.json()
+}
+
+// --- Bedrock ---
+
+export async function fetchBedrockModels(endpoint?: string | null): Promise<BedrockModelsResponse> {
+  return fetchJSON<BedrockModelsResponse>(buildUrl('/bedrock/models', endpoint))
+}
+
+export async function converseBedrock(
+  body: BedrockConverseRequest,
+  endpoint?: string | null,
+): Promise<BedrockConverseResponse> {
+  const url = buildUrl('/bedrock/converse', endpoint)
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+from botocore.config import Config
+
 from backend.aws_client import get_client
 
 
@@ -32,3 +34,43 @@ class TestGetClient:
         from backend.config import AWS_REGION
         assert client.meta.region_name == AWS_REGION
         get_client.cache_clear()
+
+
+class TestClientConfig:
+    """A per-call config is applied on top of the defaults, local or not."""
+
+    def setup_method(self):
+        get_client.cache_clear()
+
+    def teardown_method(self):
+        get_client.cache_clear()
+
+    def test_override_applies_on_real_aws(self):
+        override = Config(retries={"mode": "standard", "total_max_attempts": 1}, read_timeout=300)
+
+        client = get_client("bedrock-runtime", endpoint_url=None, client_config=override)
+
+        assert client.meta.config.read_timeout == 300
+        assert client.meta.config.retries["total_max_attempts"] == 1
+
+    def test_override_keeps_the_local_emulator_options(self):
+        override = Config(retries={"mode": "standard", "total_max_attempts": 1}, read_timeout=300)
+
+        client = get_client("bedrock-runtime", "http://localhost:4566", client_config=override)
+
+        assert client.meta.config.read_timeout == 300
+        assert client.meta.config.inject_host_prefix is False
+
+    def test_default_client_still_retries_on_real_aws(self):
+        client = get_client("bedrock-runtime", endpoint_url=None)
+
+        assert client.meta.config.read_timeout == 60
+        assert client.meta.config.retries.get("total_max_attempts", 5) != 1
+
+    def test_the_same_config_object_reuses_the_cached_client(self):
+        override = Config(read_timeout=300)
+
+        first = get_client("bedrock-runtime", "http://localhost:4566", client_config=override)
+        second = get_client("bedrock-runtime", "http://localhost:4566", client_config=override)
+
+        assert first is second

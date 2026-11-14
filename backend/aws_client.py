@@ -104,10 +104,13 @@ class _SessionSettings:
         )
 
 
-def _new_client(session: boto3.Session, service_name: str, plan: ConnectionPlan) -> BaseClient:
+def _new_client(
+    session: boto3.Session, service_name: str, plan: ConnectionPlan, client_config: Config | None = None
+) -> BaseClient:
+    config = _LOCAL_ENDPOINT_CONFIG if plan.local_endpoint else _CLIENT_CONFIG
     client_kwargs: dict = {
         "service_name": service_name,
-        "config": _LOCAL_ENDPOINT_CONFIG if plan.local_endpoint else _CLIENT_CONFIG,
+        "config": config.merge(client_config) if client_config is not None else config,
     }
     if plan.endpoint_url is not None:
         client_kwargs["endpoint_url"] = plan.endpoint_url
@@ -128,10 +131,10 @@ class _SharedSession:
         self.lock = threading.Lock()
         self._session: boto3.Session | None = None
 
-    def new_client(self, service_name: str, plan: ConnectionPlan) -> BaseClient:
+    def new_client(self, service_name: str, plan: ConnectionPlan, client_config: Config | None = None) -> BaseClient:
         """Build a client. The caller holds ``lock``."""
         session = self._session if self._session is not None else self.settings.new_session()
-        client = _new_client(session, service_name, plan)
+        client = _new_client(session, service_name, plan, client_config)
         # Kept once it has built a client: a session keeps the config it read,
         # so one whose first client failed (an assumed role whose source profile
         # isn't in ~/.aws/config yet) would fail until the cache is cleared.
@@ -147,7 +150,7 @@ class CacheInfo(NamedTuple):
 
 
 class _SharedSessionClients:
-    """Clients per (service, plan), built from one ``_SharedSession`` per credential set.
+    """Clients per (service, plan, client config), built from one ``_SharedSession`` per credential set.
 
     Keeps the ``maxsize`` most recently used clients. Sessions stay until
     ``clear``: there is one per credential set and region in use (saved
@@ -159,13 +162,13 @@ class _SharedSessionClients:
     def __init__(self, maxsize: int):
         self.maxsize = maxsize
         self._lock = threading.Lock()
-        self._clients: OrderedDict[tuple[str, ConnectionPlan], BaseClient] = OrderedDict()
+        self._clients: OrderedDict[tuple[str, ConnectionPlan, Config | None], BaseClient] = OrderedDict()
         self._sessions: dict[_SessionSettings, _SharedSession] = {}
         # Bumped by clear(), so a client built from a session it dropped isn't cached.
         self._generation = 0
 
-    def get(self, service_name: str, plan: ConnectionPlan) -> BaseClient:
-        key = (service_name, plan)
+    def get(self, service_name: str, plan: ConnectionPlan, client_config: Config | None = None) -> BaseClient:
+        key = (service_name, plan, client_config)
         with self._lock:
             client = self._cached(key)
             if client is not None:
@@ -181,7 +184,7 @@ class _SharedSessionClients:
                 client = self._cached(key)
             if client is not None:
                 return client
-            client = shared.new_client(service_name, plan)
+            client = shared.new_client(service_name, plan, client_config)
             with self._lock:
                 if generation == self._generation:
                     self._clients[key] = client
@@ -189,7 +192,7 @@ class _SharedSessionClients:
                         self._clients.popitem(last=False)
         return client
 
-    def _cached(self, key: tuple[str, ConnectionPlan]) -> BaseClient | None:
+    def _cached(self, key: tuple[str, ConnectionPlan, Config | None]) -> BaseClient | None:
         client = self._clients.get(key)
         if client is not None:
             self._clients.move_to_end(key)
@@ -274,6 +277,7 @@ def get_client(
     auth_secret_access_key: str | None = None,
     tls_verify: bool = True,
     ca_bundle: str | None = None,
+    client_config: Config | None = None,
 ):
     """Return a boto3 client for the given service and endpoint.
 
@@ -288,6 +292,9 @@ def get_client(
         auth_secret_access_key: Secret key (for auth_type="credentials")
         tls_verify: False turns certificate verification off for this endpoint
         ca_bundle: Path of a CA bundle to trust for this endpoint
+        client_config: Options for one kind of call, applied over the defaults (and over
+                     the local-emulator options). Clients are cached per config object,
+                     so pass a module-level constant, not a new Config per request.
 
     Returns:
         Configured boto3 client, built from the session shared by every client
@@ -307,7 +314,7 @@ def get_client(
         tls_verify=tls_verify,
         ca_bundle=ca_bundle,
     )
-    return _shared_clients.get(service_name, plan)
+    return _shared_clients.get(service_name, plan, client_config)
 
 
 def get_isolated_client(

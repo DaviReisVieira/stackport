@@ -21,7 +21,7 @@ from backend.config import LOG_LEVEL, STACKPORT_ALLOW_WRITES, STACKPORT_CORS_ORI
 from backend import emulators
 from backend.error_handlers import install_aws_error_handlers
 from backend.origins import CrossSiteGuard, HostGuard
-from backend.routes import dynamodb, ec2, endpoints, iam, lambda_svc, learn, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags, kms
+from backend.routes import bedrock, dynamodb, ec2, endpoints, iam, lambda_svc, learn, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags, kms
 from backend.websocket import logs_tail_endpoint, probe_loop, websocket_endpoint
 
 
@@ -86,6 +86,9 @@ class ReadOnlyMiddleware:
         if path.startswith("/api/lambda/functions/") and path.endswith("/invoke"):
             return True
         if path == "/api/monitoring/metric-data":
+            return True
+        # Invoking a model runs inference but changes no AWS resource
+        if path == "/api/bedrock/converse":
             return True
         # Step Functions start/stop execution are writes, not reads
         return False
@@ -160,6 +163,7 @@ app.include_router(rds.router, prefix="/api/rds", tags=["rds"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["monitoring"])
 app.include_router(sns.router, prefix="/api/sns", tags=["sns"])
 app.include_router(kms.router, prefix="/api/kms", tags=["kms"])
+app.include_router(bedrock.router, prefix="/api/bedrock", tags=["bedrock"])
 if STACKPORT_LEARN:
     app.include_router(learn.router, prefix="/api/learn", tags=["learn"])
 
