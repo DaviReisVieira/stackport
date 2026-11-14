@@ -1,7 +1,7 @@
 {
   "name": "stackport",
   "displayName": "StackPort",
-  "description": "Universal AWS resource browser for local emulators (MiniStack, Floci, LocalStack, Moto)",
+  "description": "Web console and dashboard for local AWS emulators (AWS Emulator, MiniStack, Floci, LocalStack, Moto) and real AWS",
   "version": "0.1.0",
   "publisher": "DaviReisVieira",
   "license": "MIT",

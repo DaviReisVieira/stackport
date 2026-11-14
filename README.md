@@ -407,7 +407,7 @@ ACM, API Gateway, AppConfig, AppSync, Athena, Batch, Bedrock, Cloud Map, CloudFo
 StackPort works as one. Start the emulator as in AWS's guide and run `AWS_ENDPOINT_URL=https://127.0.0.1:9297 stackport`: it finds the emulator's keys and certificate by itself. [AWS Emulator](#aws-emulator) has the details and a Docker Compose example.
 
 **Does it work with MiniStack, Floci, LocalStack and Moto?**
-Yes, and with any other endpoint that speaks the AWS API, since StackPort only makes standard AWS calls. How much of the dashboard fills in depends on the services each emulator implements: the ones it doesn't are shown as unavailable rather than failing. MiniStack is StackPort's partner project, and Floci can start StackPort as its web console.
+Yes, and with any other endpoint that speaks the AWS API, since StackPort only makes standard AWS calls. How much of the dashboard fills in depends on the services each emulator implements: the ones it doesn't are shown as not supported rather than failing. MiniStack is StackPort's partner project, and Floci can start StackPort as its web console.
 
 **Do I need an AWS account?**
 No. Against a local emulator, StackPort's requests only go to the emulator, and no AWS account is involved.
