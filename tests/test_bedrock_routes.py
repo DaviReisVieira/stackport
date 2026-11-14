@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 from fastapi.testclient import TestClient
 
 from backend.main import app
@@ -13,11 +13,14 @@ MODEL_ID = "anthropic.claude-3-haiku-20240307-v1:0"
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    return TestClient(app, raise_server_exceptions=False)
 
 
-def _client_error(code: str) -> ClientError:
-    return ClientError({"Error": {"Code": code, "Message": f"{code} happened"}}, "Converse")
+def _client_error(code: str, status: int, operation: str = "Converse") -> ClientError:
+    return ClientError(
+        {"Error": {"Code": code, "Message": f"{code} happened"}, "ResponseMetadata": {"HTTPStatusCode": status}},
+        operation,
+    )
 
 
 def _mock_runtime(text: str = "Hello there") -> MagicMock:
@@ -52,7 +55,6 @@ class TestModels:
 
         assert response.status_code == 200
         body = response.json()
-        assert body["available"] is True
         assert body["models"] == [
             {
                 "modelId": MODEL_ID,
@@ -75,18 +77,46 @@ class TestModels:
         assert model["modelName"] == MODEL_ID
 
     @patch("backend.routes.bedrock.get_client")
-    def test_unsupported_endpoint_degrades_to_empty(self, mock_client, client):
+    def test_unsupported_endpoint_is_a_classified_501(self, mock_client, client):
         bedrock = MagicMock()
-        bedrock.list_foundation_models.side_effect = Exception("Unknown service: bedrock")
+        bedrock.list_foundation_models.side_effect = _client_error(
+            "UnknownOperationException", 501, "ListFoundationModels"
+        )
         mock_client.return_value = bedrock
 
         response = client.get("/api/bedrock/models")
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["models"] == []
-        assert body["available"] is False
-        assert "Unknown service" in body["message"]
+        assert response.status_code == 501
+        assert response.json()["error"]["kind"] == "not_implemented"
+
+    @pytest.mark.parametrize(
+        ("code", "status", "kind"),
+        [
+            ("UnrecognizedClientException", 403, "credentials"),
+            ("AccessDeniedException", 403, "forbidden"),
+        ],
+    )
+    @patch("backend.routes.bedrock.get_client")
+    def test_credential_and_access_problems_are_not_hidden(self, mock_client, code, status, kind, client):
+        bedrock = MagicMock()
+        bedrock.list_foundation_models.side_effect = _client_error(code, status, "ListFoundationModels")
+        mock_client.return_value = bedrock
+
+        response = client.get("/api/bedrock/models")
+
+        assert response.json()["error"]["kind"] == kind
+        assert "models" not in response.json()
+
+    @patch("backend.routes.bedrock.get_client")
+    def test_unreachable_endpoint_is_a_classified_502(self, mock_client, client):
+        bedrock = MagicMock()
+        bedrock.list_foundation_models.side_effect = EndpointConnectionError(endpoint_url="http://localhost:4566")
+        mock_client.return_value = bedrock
+
+        response = client.get("/api/bedrock/models")
+
+        assert response.status_code == 502
+        assert response.json()["error"]["kind"] == "unreachable"
 
 
 class TestConverse:
@@ -182,19 +212,19 @@ class TestConverse:
         assert body["stopReason"] is None
 
     @pytest.mark.parametrize(
-        ("code", "status"),
+        ("code", "upstream_status", "status"),
         [
-            ("ValidationException", 400),
-            ("ResourceNotFoundException", 404),
-            ("AccessDeniedException", 403),
-            ("ThrottlingException", 429),
-            ("InternalServerException", 502),
+            ("ValidationException", 400, 400),
+            ("ResourceNotFoundException", 404, 404),
+            ("AccessDeniedException", 403, 403),
+            ("ThrottlingException", 429, 429),
+            ("InternalServerException", 500, 502),
         ],
     )
     @patch("backend.routes.bedrock.get_client")
-    def test_maps_bedrock_errors_to_http_status(self, mock_client, code, status, client):
+    def test_keeps_the_upstream_status(self, mock_client, code, upstream_status, status, client):
         runtime = MagicMock()
-        runtime.converse.side_effect = _client_error(code)
+        runtime.converse.side_effect = _client_error(code, upstream_status)
         mock_client.return_value = runtime
 
         response = client.post("/api/bedrock/converse", json={"modelId": MODEL_ID, "prompt": "hi"})
@@ -203,14 +233,44 @@ class TestConverse:
         assert code in response.json()["detail"]
 
     @patch("backend.routes.bedrock.get_client")
-    def test_unexpected_failure_is_a_502(self, mock_client, client):
+    def test_rejected_credentials_are_classified(self, mock_client, client):
         runtime = MagicMock()
-        runtime.converse.side_effect = Exception("Could not connect to the endpoint URL")
+        runtime.converse.side_effect = _client_error("UnrecognizedClientException", 403)
+        mock_client.return_value = runtime
+
+        response = client.post("/api/bedrock/converse", json={"modelId": MODEL_ID, "prompt": "hi"})
+
+        assert response.status_code == 401
+        assert response.json()["error"]["kind"] == "credentials"
+
+    @patch("backend.routes.bedrock.get_client")
+    def test_unreachable_endpoint_is_a_classified_502(self, mock_client, client):
+        runtime = MagicMock()
+        runtime.converse.side_effect = EndpointConnectionError(endpoint_url="http://localhost:4566")
         mock_client.return_value = runtime
 
         response = client.post("/api/bedrock/converse", json={"modelId": MODEL_ID, "prompt": "hi"})
 
         assert response.status_code == 502
+        assert response.json()["error"]["kind"] == "unreachable"
+
+    @patch("backend.routes.bedrock.get_client")
+    def test_does_not_retry_a_billed_invocation(self, mock_client, client):
+        mock_client.return_value = _mock_runtime()
+
+        client.post("/api/bedrock/converse", json={"modelId": MODEL_ID, "prompt": "Say hi"})
+
+        config = mock_client.call_args.kwargs["client_config"]
+        assert config.retries["total_max_attempts"] == 1
+        assert config.read_timeout > 60
+
+    @patch("backend.routes.bedrock.get_client")
+    def test_model_listing_keeps_the_default_client_config(self, mock_client, client):
+        mock_client.return_value = MagicMock(list_foundation_models=MagicMock(return_value={}))
+
+        client.get("/api/bedrock/models")
+
+        assert "client_config" not in mock_client.call_args.kwargs
 
     @pytest.mark.parametrize(
         "payload",

@@ -1,28 +1,23 @@
 """Bedrock routes: foundation models and a Converse playground."""
 
-import logging
 import time
 
-from botocore.exceptions import ClientError
-from fastapi import APIRouter, Depends, HTTPException
+from botocore.config import Config
+from fastapi import APIRouter, Depends
 
 from backend.aws_client import get_client
 from backend.routes.common import EndpointInfo, get_endpoint_info
 from backend.schemas.bedrock import ConverseBody
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
-# Bedrock error codes that mean the request itself is wrong or not allowed,
-# as opposed to the service being unavailable.
-_STATUS_BY_ERROR_CODE = {
-    "ValidationException": 400,
-    "ResourceNotFoundException": 404,
-    "AccessDeniedException": 403,
-    "ThrottlingException": 429,
-    "ModelNotReadyException": 429,
-}
+# A Converse call runs a model and is billed per invocation. botocore's defaults
+# (up to 5 attempts, and a read timeout counts as retryable) would send a slow
+# answer to the model several times, so make one attempt and wait for it.
+_CONVERSE_CONFIG = Config(
+    retries={"mode": "standard", "total_max_attempts": 1},
+    read_timeout=300,
+)
 
 
 def _serialize_model(model: dict) -> dict:
@@ -39,17 +34,12 @@ def _serialize_model(model: dict) -> dict:
 def list_models(ep: EndpointInfo = Depends(get_endpoint_info)):
     """List the text foundation models the endpoint offers.
 
-    Bedrock is optional on emulators and needs its own permissions on real AWS,
-    so a failure reports the model list as unavailable instead of a 500.
+    Failures are not caught here: the app-wide handlers answer them with the
+    right status and a classified message (not implemented, credentials, ...).
     """
     bedrock = get_client("bedrock", **ep.client_kwargs())
-    try:
-        response = bedrock.list_foundation_models(byOutputModality="TEXT")
-    except Exception as exc:
-        logger.debug("Failed to list foundation models", exc_info=True)
-        return {"models": [], "available": False, "message": str(exc)}
-    models = [_serialize_model(m) for m in response.get("modelSummaries", [])]
-    return {"models": models, "available": True, "message": None}
+    response = bedrock.list_foundation_models(byOutputModality="TEXT")
+    return {"models": [_serialize_model(m) for m in response.get("modelSummaries", [])]}
 
 
 @router.post("/converse")
@@ -57,9 +47,11 @@ def converse(body: ConverseBody, ep: EndpointInfo = Depends(get_endpoint_info)):
     """Send one prompt to a model through the Converse API.
 
     Invoking a model does not change any AWS resource, so this POST is allowed
-    in read-only mode (see ReadOnlyMiddleware).
+    in read-only mode (see ReadOnlyMiddleware). Failures are answered by the
+    app-wide handlers, which keep the upstream status (a rejected parameter is
+    a 400, throttling a 429) and classify credentials and access problems.
     """
-    runtime = get_client("bedrock-runtime", **ep.client_kwargs())
+    runtime = get_client("bedrock-runtime", client_config=_CONVERSE_CONFIG, **ep.client_kwargs())
     params: dict = {
         "modelId": body.model_id,
         "messages": [{"role": "user", "content": [{"text": body.prompt}]}],
@@ -79,16 +71,7 @@ def converse(body: ConverseBody, ep: EndpointInfo = Depends(get_endpoint_info)):
         params["inferenceConfig"] = inference_config
 
     started = time.perf_counter()
-    try:
-        response = runtime.converse(**params)
-    except ClientError as exc:
-        code = exc.response.get("Error", {}).get("Code", "")
-        raise HTTPException(
-            status_code=_STATUS_BY_ERROR_CODE.get(code, 502),
-            detail=f"Failed to invoke model: {exc}",
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Failed to invoke model: {exc}")
+    response = runtime.converse(**params)
     round_trip_ms = round((time.perf_counter() - started) * 1000)
 
     blocks = response.get("output", {}).get("message", {}).get("content", [])

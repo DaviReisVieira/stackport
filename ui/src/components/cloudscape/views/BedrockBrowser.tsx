@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useCollection } from '@cloudscape-design/collection-hooks'
 import Alert from '@cloudscape-design/components/alert'
 import Box from '@cloudscape-design/components/box'
@@ -16,10 +16,15 @@ import Table from '@cloudscape-design/components/table'
 import Tabs from '@cloudscape-design/components/tabs'
 import Textarea from '@cloudscape-design/components/textarea'
 import TextFilter from '@cloudscape-design/components/text-filter'
-import { converseBedrock, fetchBedrockModels } from '@/lib/api'
-import type { BedrockConverseResponse, BedrockModel, BedrockModelsResponse } from '@/lib/types'
+import { ClassifiedErrorDetails } from '@/components/cloudscape/ServiceStatus'
+import { ApiError, converseBedrock, fetchBedrockModels } from '@/lib/api'
+import type { BedrockConverseResponse, BedrockModel, BedrockModelsResponse, ClassifiedError } from '@/lib/types'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
+import { useHealth } from '@/hooks/useHealth'
+
+/** Without a cap a model can answer at length, and real AWS bills per output token. */
+const DEFAULT_MAX_TOKENS = '512'
 
 /** Blank means "use the model default"; anything else must be a finite number. */
 function parseOptionalNumber(value: string): number | undefined | null {
@@ -91,18 +96,29 @@ function ResponsePanel({ result }: { result: BedrockConverseResponse }) {
 
 function PlaygroundTab({ models }: { models: BedrockModel[] }) {
   const { activeEndpoint } = useEndpoint()
+  const { data: health } = useHealth()
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [system, setSystem] = useState('')
   const [prompt, setPrompt] = useState('')
-  const [maxTokens, setMaxTokens] = useState('')
+  const [maxTokens, setMaxTokens] = useState(DEFAULT_MAX_TOKENS)
   const [temperature, setTemperature] = useState('')
   const [topP, setTopP] = useState('')
   const [invoking, setInvoking] = useState(false)
   const [result, setResult] = useState<BedrockConverseResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [errorDetail, setErrorDetail] = useState<ClassifiedError | null>(null)
+
+  // Another endpoint has other models, and its answer is not the previous one's
+  useEffect(() => {
+    setSelectedModelId(null)
+    setResult(null)
+    setError(null)
+    setErrorDetail(null)
+  }, [activeEndpoint])
 
   const options = models.map((m) => ({ label: m.modelName, value: m.modelId, description: m.modelId, tags: [m.providerName] }))
-  const modelId = selectedModelId ?? models[0]?.modelId ?? null
+  // A model picked on another endpoint may not exist here: fall back to the first one listed
+  const modelId = models.some((m) => m.modelId === selectedModelId) ? selectedModelId : (models[0]?.modelId ?? null)
   const selectedOption = options.find((o) => o.value === modelId) ?? null
 
   const maxTokensError = validateMaxTokens(maxTokens)
@@ -114,6 +130,7 @@ function PlaygroundTab({ models }: { models: BedrockModel[] }) {
     if (!modelId) return
     setInvoking(true)
     setError(null)
+    setErrorDetail(null)
     try {
       setResult(
         await converseBedrock(
@@ -131,6 +148,7 @@ function PlaygroundTab({ models }: { models: BedrockModel[] }) {
     } catch (e) {
       setResult(null)
       setError(e instanceof Error ? e.message : String(e))
+      setErrorDetail(e instanceof ApiError ? e.classified : null)
     } finally {
       setInvoking(false)
     }
@@ -140,9 +158,16 @@ function PlaygroundTab({ models }: { models: BedrockModel[] }) {
     <SpaceBetween size="l">
       <Form
         actions={
-          <Button variant="primary" onClick={invoke} loading={invoking} disabled={!canInvoke} data-testid="bedrock-invoke">
-            Invoke model
-          </Button>
+          <SpaceBetween direction="horizontal" size="s" alignItems="center">
+            {health?.connection_type === 'aws' && (
+              <Box color="text-status-warning" data-testid="bedrock-billing-notice">
+                This runs the model on your AWS account and is billed per token.
+              </Box>
+            )}
+            <Button variant="primary" onClick={invoke} loading={invoking} disabled={!canInvoke} data-testid="bedrock-invoke">
+              Invoke model
+            </Button>
+          </SpaceBetween>
         }
       >
         <SpaceBetween size="m">
@@ -170,7 +195,7 @@ function PlaygroundTab({ models }: { models: BedrockModel[] }) {
             />
           </FormField>
           <ColumnLayout columns={3}>
-            <FormField label="Max tokens" description="Blank uses the model default" errorText={maxTokensError}>
+            <FormField label="Max tokens" description="Defaults to 512. Blank uses the model default" errorText={maxTokensError}>
               <Input type="number" value={maxTokens} onChange={({ detail }) => setMaxTokens(detail.value)} ariaLabel="Max tokens" />
             </FormField>
             <FormField label="Temperature" description="0 to 1. Blank uses the model default" errorText={temperatureError}>
@@ -185,7 +210,10 @@ function PlaygroundTab({ models }: { models: BedrockModel[] }) {
 
       {error && (
         <Alert type="error" header="Model invocation failed">
-          {error}
+          <SpaceBetween size="xs">
+            <Box>{error}</Box>
+            {errorDetail && <ClassifiedErrorDetails error={errorDetail} />}
+          </SpaceBetween>
         </Alert>
       )}
       {result && <ResponsePanel result={result} />}
@@ -237,24 +265,31 @@ export function CloudscapeBedrockBrowser() {
   const { activeEndpoint } = useEndpoint()
   const [activeTab, setActiveTab] = useState('playground')
   const fetcher = useCallback(() => fetchBedrockModels(activeEndpoint), [activeEndpoint])
-  const { data, loading, error, refresh } = useFetch<BedrockModelsResponse>(fetcher)
+  const { data, loading, error, errorDetail, refresh } = useFetch<BedrockModelsResponse>(fetcher)
 
   const models = data?.models ?? []
-  const unavailable = !loading && data !== null && !data.available
+  // An endpoint that has no Bedrock is not a failure to report as one
+  const notImplemented = errorDetail?.kind === 'not_implemented'
 
   return (
     <SpaceBetween size="l">
-      {!loading && error && (
+      {!loading && error && notImplemented && (
+        <Alert type="info" header="Bedrock is not available on this endpoint">
+          <SpaceBetween size="xs">
+            <Box>{error}</Box>
+            {errorDetail && <ClassifiedErrorDetails error={errorDetail} />}
+          </SpaceBetween>
+        </Alert>
+      )}
+      {!loading && error && !notImplemented && (
         <Alert type="error" header="Could not load models" action={<Button onClick={() => refresh()}>Retry</Button>}>
-          {error}
+          <SpaceBetween size="xs">
+            <Box>{error}</Box>
+            {errorDetail && <ClassifiedErrorDetails error={errorDetail} />}
+          </SpaceBetween>
         </Alert>
       )}
-      {unavailable && (
-        <Alert type="warning" header="Bedrock is not available on this endpoint" action={<Button onClick={() => refresh()}>Retry</Button>}>
-          {data?.message}
-        </Alert>
-      )}
-      {!loading && data?.available && models.length === 0 && (
+      {!loading && data && models.length === 0 && (
         <Alert type="info" header="No text models found">
           This endpoint reports no foundation models that produce text.
         </Alert>

@@ -1291,8 +1291,6 @@ export interface BedrockModel {
 
 export interface BedrockModelsResponse {
   models: BedrockModel[]
-  available: boolean
-  message: string | null
 }
 
 export interface BedrockConverseRequest {
