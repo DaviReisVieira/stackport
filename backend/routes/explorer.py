@@ -34,7 +34,7 @@ from botocore.validate import validate_parameters
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend import service_models
-from backend.aws_client import get_client
+from backend.aws_client import get_isolated_client
 from backend.learn.cli_setup import cli_setup_for
 from backend.routes.common import EndpointInfo, get_endpoint_info
 from backend.schemas.explorer import RunOperationRequest
@@ -117,7 +117,9 @@ def run_operation(
         raise HTTPException(status_code=400, detail=f"{operation} doesn't paginate.")
     params = _decode_blobs(body.params, model.input_shape, "")
 
-    client = get_client(service, **ep.client_kwargs())
+    # Any of botocore's services can be run here, so these clients stay out of the
+    # console's shared sessions, which keep every model they load.
+    client = get_isolated_client(service, **ep.client_kwargs())
     method_name = xform_name(operation)
     # botocore leaves out of the client the few operations it can't call
     if client.meta.method_to_api_mapping.get(method_name) != operation:
