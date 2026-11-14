@@ -1,10 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import createWrapper from '@cloudscape-design/components/test-utils/dom'
+
+// What the mocked hooks report; each test can change them before it renders
+const env = vi.hoisted(() => ({ endpoint: 'local', connectionType: 'local' }))
 
 vi.mock('@/hooks/useEndpoint', () => ({
   useEndpoint: () => ({
-    activeEndpoint: 'local',
+    activeEndpoint: env.endpoint,
     endpoints: [],
     loading: false,
     setActiveEndpoint: vi.fn(),
@@ -21,7 +25,7 @@ vi.mock('@/hooks/useHealth', () => ({
       endpoint_url: 'http://localhost:4566',
       region: 'us-east-1',
       services_count: 1,
-      connection_type: 'local',
+      connection_type: env.connectionType,
       writes_enabled: true,
     },
     loading: false,
@@ -50,6 +54,11 @@ const modelsPayload = {
   ],
 }
 
+const classified = (kind: string, message: string, hint: string, cause?: string) => ({
+  detail: message,
+  error: { kind, message, hint, cause },
+})
+
 const converseReply = {
   modelId: HAIKU,
   text: 'Hello from the model',
@@ -60,7 +69,7 @@ const converseReply = {
 }
 
 let fetchMock: ReturnType<typeof vi.fn>
-let models: unknown
+let models: { status: number; body: unknown }
 let converse: { ok: boolean; status: number; body: unknown }
 
 function mockFetchByUrl() {
@@ -71,7 +80,10 @@ function mockFetchByUrl() {
     if (url.includes('/api/bedrock/converse')) {
       status = converse.status
       payload = converse.body
-    } else if (url.includes('/api/bedrock/models')) payload = models
+    } else if (url.includes('/api/bedrock/models')) {
+      status = models.status
+      payload = models.body
+    }
     return Promise.resolve({
       ok: status < 400,
       status,
@@ -102,7 +114,9 @@ function typeInto(label: string, value: string) {
 
 beforeEach(() => {
   localStorage.clear()
-  models = modelsPayload
+  env.endpoint = 'local'
+  env.connectionType = 'local'
+  models = { status: 200, body: modelsPayload }
   converse = { ok: true, status: 200, body: converseReply }
   mockFetchByUrl()
 })
@@ -146,7 +160,7 @@ describe('CloudscapeBedrockBrowser (via registry dispatch)', () => {
     const [url, init] = converseCalls()[0]
     expect(String(url)).toContain('endpoint=local')
     expect((init as RequestInit).method).toBe('POST')
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ modelId: HAIKU, prompt: 'Say hi' })
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ modelId: HAIKU, prompt: 'Say hi', maxTokens: 512 })
   })
 
   it('sends the system prompt and inference settings when they are filled in', async () => {
@@ -190,31 +204,160 @@ describe('CloudscapeBedrockBrowser (via registry dispatch)', () => {
     expect(converseCalls()).toHaveLength(0)
   })
 
-  it('shows the server error when the invocation fails', async () => {
-    converse = { ok: false, status: 429, body: { detail: 'Failed to invoke model: ThrottlingException' } }
+  it('shows the server error and its hint when the invocation fails', async () => {
+    converse = {
+      ok: false,
+      status: 401,
+      body: classified(
+        'credentials',
+        "The endpoint rejected StackPort's credentials (UnrecognizedClientException).",
+        'Check the credentials this endpoint uses in Settings.',
+      ),
+    }
     renderBedrock()
     await screen.findByRole('tab', { name: 'Playground' })
     typeInto('Prompt', 'Say hi')
     fireEvent.click(await screen.findByTestId('bedrock-invoke'))
 
     expect(await screen.findByText('Model invocation failed')).toBeInTheDocument()
-    expect(screen.getByText('Failed to invoke model: ThrottlingException')).toBeInTheDocument()
+    expect(screen.getByText("The endpoint rejected StackPort's credentials (UnrecognizedClientException).")).toBeInTheDocument()
+    expect(screen.getByText('Check the credentials this endpoint uses in Settings.')).toBeInTheDocument()
     expect(screen.queryByTestId('bedrock-response-text')).not.toBeInTheDocument()
   })
 
-  it('warns when Bedrock is not available on the endpoint', async () => {
-    models = { available: false, message: 'Unknown service: bedrock', models: [] }
+  it('shows a plain server error when it is not classified', async () => {
+    converse = { ok: false, status: 429, body: { detail: 'Failed to invoke model: ThrottlingException' } }
+    renderBedrock()
+    await screen.findByRole('tab', { name: 'Playground' })
+    typeInto('Prompt', 'Say hi')
+    fireEvent.click(await screen.findByTestId('bedrock-invoke'))
+
+    expect(await screen.findByText('Failed to invoke model: ThrottlingException')).toBeInTheDocument()
+  })
+
+  it('explains an endpoint without Bedrock as information, not a failure', async () => {
+    models = {
+      status: 501,
+      body: classified(
+        'not_implemented',
+        "This endpoint doesn't implement ListFoundationModels yet.",
+        "The endpoint doesn't support this operation.",
+      ),
+    }
     renderBedrock()
 
     expect(await screen.findByText('Bedrock is not available on this endpoint')).toBeInTheDocument()
-    expect(screen.getByText('Unknown service: bedrock')).toBeInTheDocument()
+    expect(screen.getByText("This endpoint doesn't implement ListFoundationModels yet.")).toBeInTheDocument()
+    expect(screen.getByText("The endpoint doesn't support this operation.")).toBeInTheDocument()
+    expect(screen.queryByText('Could not load models')).not.toBeInTheDocument()
     expect(await screen.findByTestId('bedrock-invoke')).toBeDisabled()
   })
 
+  it('shows other model-list failures as errors with their hint', async () => {
+    models = {
+      status: 401,
+      body: classified(
+        'credentials',
+        "The endpoint rejected StackPort's credentials (UnrecognizedClientException).",
+        'Check the credentials this endpoint uses in Settings.',
+      ),
+    }
+    renderBedrock()
+
+    expect(await screen.findByText('Could not load models')).toBeInTheDocument()
+    expect(screen.getByText("The endpoint rejected StackPort's credentials (UnrecognizedClientException).")).toBeInTheDocument()
+    expect(screen.getByText('Check the credentials this endpoint uses in Settings.')).toBeInTheDocument()
+    expect(screen.queryByText('Bedrock is not available on this endpoint')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
   it('says so when the endpoint has no text models', async () => {
-    models = { available: true, message: null, models: [] }
+    models = { status: 200, body: { models: [] } }
     renderBedrock()
 
     expect(await screen.findByText('No text models found')).toBeInTheDocument()
+  })
+
+  it('warns that invoking is billed only when connected to real AWS', async () => {
+    renderBedrock()
+    await screen.findByRole('tab', { name: 'Playground' })
+    await screen.findByTestId('bedrock-invoke')
+    expect(screen.queryByTestId('bedrock-billing-notice')).not.toBeInTheDocument()
+  })
+
+  it('shows the billing notice next to Invoke on real AWS', async () => {
+    env.connectionType = 'aws'
+    renderBedrock()
+
+    expect(await screen.findByTestId('bedrock-billing-notice')).toHaveTextContent(
+      'This runs the model on your AWS account and is billed per token.',
+    )
+  })
+
+  it('starts max tokens at 512 and lets it be cleared for the model default', async () => {
+    renderBedrock()
+    await screen.findByRole('tab', { name: 'Playground' })
+    expect(screen.getByLabelText('Max tokens')).toHaveValue(512)
+
+    typeInto('Prompt', 'Say hi')
+    typeInto('Max tokens', '')
+    fireEvent.click(await screen.findByTestId('bedrock-invoke'))
+    await screen.findByTestId('bedrock-response-text')
+
+    expect(JSON.parse((converseCalls()[0][1] as RequestInit).body as string)).toEqual({ modelId: HAIKU, prompt: 'Say hi' })
+  })
+
+  describe('switching endpoints', () => {
+    const OTHER = 'meta.llama3-8b-instruct-v1:0'
+
+    async function pickSonnetAndInvoke() {
+      const view = renderBedrock()
+      await screen.findByRole('tab', { name: 'Playground' })
+      const select = createWrapper(view.container).findSelect()!
+      await waitFor(() => expect(select.findTrigger()).toBeTruthy())
+      select.openDropdown()
+      select.selectOptionByValue(SONNET)
+      typeInto('Prompt', 'Say hi')
+      fireEvent.click(await screen.findByTestId('bedrock-invoke'))
+      await screen.findByTestId('bedrock-response-text')
+      return view
+    }
+
+    function switchTo(view: ReturnType<typeof renderBedrock>, endpoint: string) {
+      env.endpoint = endpoint
+      models = {
+        status: 200,
+        body: {
+          models: [{ modelId: OTHER, modelName: 'Llama 3 8B', providerName: 'Meta', inputModalities: ['TEXT'], outputModalities: ['TEXT'] }],
+        },
+      }
+      view.rerender(
+        <MemoryRouter initialEntries={['/resources/bedrock']}>
+          <Routes>
+            <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
+          </Routes>
+        </MemoryRouter>,
+      )
+    }
+
+    it('sends the model the new endpoint lists, not the one picked on the old endpoint', async () => {
+      const view = await pickSonnetAndInvoke()
+      expect(JSON.parse((converseCalls()[0][1] as RequestInit).body as string).modelId).toBe(SONNET)
+
+      switchTo(view, 'other')
+      await waitFor(() => expect(createWrapper(view.container).findSelect()!.findTrigger().getElement()).toHaveTextContent('Llama 3 8B'))
+      fireEvent.click(await screen.findByTestId('bedrock-invoke'))
+
+      await waitFor(() => expect(converseCalls()).toHaveLength(2))
+      expect(JSON.parse((converseCalls()[1][1] as RequestInit).body as string).modelId).toBe(OTHER)
+    })
+
+    it('clears the previous reply', async () => {
+      const view = await pickSonnetAndInvoke()
+
+      switchTo(view, 'other')
+
+      await waitFor(() => expect(screen.queryByTestId('bedrock-response-text')).not.toBeInTheDocument())
+    })
   })
 })
