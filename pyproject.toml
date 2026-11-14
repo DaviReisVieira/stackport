@@ -1,6 +1,6 @@
 [project]
 name = "stackport"
-version = "0.4.10"
+version = "0.4.11"
 description = "Web console and dashboard for local AWS emulators (AWS Emulator, MiniStack, Floci, LocalStack, Moto) and real AWS"
 readme = "README.md"
 license = {text = "MIT"}
