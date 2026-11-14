@@ -12,14 +12,19 @@ import io
 import json
 import zipfile
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 import pytest
+from botocore.stub import Stubber
 from fastapi.testclient import TestClient
 
+from backend.aws_client import get_client
 from backend.main import app
 from backend.routes.resources import DESCRIBE_REGISTRY
-from tests.moto_aws import REGION, aws, moto_account
+from backend.routes.stats import SERVICE_REGISTRY
+from tests.moto_aws import MOTO, REGION, aws, moto_account
 
 client = TestClient(app)
 
@@ -69,6 +74,13 @@ def two_subnets() -> tuple[str, list[str]]:
 
 def a_role(name: str = "stackport-test") -> str:
     return aws("iam").create_role(RoleName=name, AssumeRolePolicyDocument=json.dumps(TRUST_LAMBDA))["Role"]["Arn"]
+
+
+def a_queue(name: str) -> str:
+    """A new SQS queue's ARN."""
+    sqs = aws("sqs")
+    url = sqs.create_queue(QueueName=name)["QueueUrl"]
+    return sqs.get_queue_attributes(QueueUrl=url, AttributeNames=["QueueArn"])["Attributes"]["QueueArn"]
 
 
 class TestEc2Instances:
@@ -127,6 +139,52 @@ class TestEventBridgeRules:
         resp = detail("events", "rules", rules["orders-bus"].replace("audit", "gone"))
         assert resp.status_code == 404
         assert "wasn't found in events rules" in resp.json()["detail"]
+
+
+class TestSchedulerSchedules:
+    @pytest.fixture
+    def schedules(self, account):
+        scheduler = aws("scheduler")
+        scheduler.create_schedule_group(Name="ops")
+        target = {"Arn": a_queue("jobs"), "RoleArn": a_role()}
+        # The same name in two groups: two schedules.
+        return {
+            group: scheduler.create_schedule(
+                Name="nightly", GroupName=group, ScheduleExpression=expression, FlexibleTimeWindow={"Mode": "OFF"}, Target=target
+            )["ScheduleArn"]
+            for group, expression in (("default", "rate(1 day)"), ("ops", "cron(0 3 * * ? *)"))
+        }
+
+    def test_schedules_in_every_group_are_counted_and_listed(self, schedules, monkeypatch):
+        items = listed("scheduler", "schedules")
+        assert sorted((item["id"], item["GroupName"]) for item in items) == sorted((arn, group) for group, arn in schedules.items())
+        assert counted(monkeypatch, "scheduler", "schedules") == 2
+
+    @pytest.mark.parametrize("group, expression", [("default", "rate(1 day)"), ("ops", "cron(0 3 * * ? *)")])
+    def test_detail_is_the_schedule_in_its_own_group(self, schedules, group, expression):
+        resp = detail("scheduler", "schedules", schedules[group])
+        assert resp.status_code == 200, resp.text
+        schedule = resp.json()["detail"]
+        assert (schedule["Arn"], schedule["GroupName"], schedule["ScheduleExpression"]) == (schedules[group], group, expression)
+
+
+class TestCloudTrailTrails:
+    def test_detail_asks_for_the_trail_by_its_arn(self, account):
+        # moto answers DescribeTrails with every trail, whatever it's asked for, so the request is checked here.
+        local = {"Name": "audit", "TrailARN": "arn:aws:cloudtrail:us-east-1:123456789012:trail/audit", "HomeRegion": "us-east-1"}
+        replicated = {
+            "Name": "org-audit", "TrailARN": "arn:aws:cloudtrail:eu-west-1:123456789012:trail/org-audit",
+            "HomeRegion": "eu-west-1", "IsMultiRegionTrail": True,
+        }
+        with Stubber(get_client("cloudtrail", **MOTO.client_kwargs())) as stubber:
+            stubber.add_response("describe_trails", {"trailList": [local, replicated]}, {})
+            stubber.add_response("describe_trails", {"trailList": [replicated]}, {"trailNameList": [replicated["TrailARN"]]})
+
+            assert [item["id"] for item in listed("cloudtrail", "trails")] == [local["TrailARN"], replicated["TrailARN"]]
+            resp = detail("cloudtrail", "trails", replicated["TrailARN"])
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["detail"] == [replicated]
+            stubber.assert_no_pending_responses()
 
 
 class TestSqsDetail:
@@ -347,6 +405,150 @@ def _identity():
     return "team@example.com"
 
 
+@creates("ses", "configuration_sets")
+def _configuration_set():
+    aws("ses").create_configuration_set(ConfigurationSet={"Name": "marketing"})
+    return "marketing"
+
+
+@creates("ses", "email_templates")
+def _email_template():
+    aws("ses").create_template(Template={"TemplateName": "welcome", "SubjectPart": "Hi {{name}}", "TextPart": "Hello"})
+    return "welcome"
+
+
+@creates("scheduler", "schedules")
+def _schedule():
+    scheduler = aws("scheduler")
+    scheduler.create_schedule_group(Name="ops")
+    target = {"Arn": a_queue("jobs"), "RoleArn": a_role()}
+    # The same name in two groups: two schedules.
+    scheduler.create_schedule(Name="nightly", ScheduleExpression="rate(1 day)", FlexibleTimeWindow={"Mode": "OFF"}, Target=target)
+    return scheduler.create_schedule(
+        Name="nightly", GroupName="ops", ScheduleExpression="rate(1 day)", FlexibleTimeWindow={"Mode": "OFF"}, Target=target
+    )["ScheduleArn"]
+
+
+@creates("scheduler", "schedule_groups")
+def _schedule_group():
+    aws("scheduler").create_schedule_group(Name="ops")
+    return "ops"
+
+
+@creates("pipes", "pipes")
+def _pipe():
+    aws("pipes").create_pipe(Name="orders-to-fulfilment", RoleArn=a_role(), Source=a_queue("orders"), Target=a_queue("fulfilment"))
+    return "orders-to-fulfilment"
+
+
+@creates("kafka", "clusters")
+def _kafka_cluster():
+    _, subnets = two_subnets()
+    return aws("kafka").create_cluster(
+        ClusterName="events", KafkaVersion="3.6.0", NumberOfBrokerNodes=2,
+        BrokerNodeGroupInfo={"InstanceType": "kafka.m5.large", "ClientSubnets": subnets},
+    )["ClusterArn"]
+
+
+@creates("servicediscovery", "namespaces")
+def _namespace():
+    servicediscovery = aws("servicediscovery")
+    servicediscovery.create_http_namespace(Name="shop.local")
+    return servicediscovery.list_namespaces()["Namespaces"][0]["Id"]
+
+
+@creates("servicediscovery", "services")
+def _discovered_service():
+    return aws("servicediscovery").create_service(Name="api", NamespaceId=_namespace())["Service"]["Id"]
+
+
+@creates("eks", "clusters")
+def _eks_cluster():
+    _, subnets = two_subnets()
+    aws("eks").create_cluster(name="prod", roleArn=a_role(), resourcesVpcConfig={"subnetIds": subnets})
+    return "prod"
+
+
+@creates("batch", "compute_environments")
+def _compute_environment():
+    aws("batch").create_compute_environment(computeEnvironmentName="on-demand", type="UNMANAGED", serviceRole=a_role())
+    return "on-demand"
+
+
+@creates("batch", "job_queues")
+def _job_queue():
+    batch = aws("batch")
+    batch.create_compute_environment(computeEnvironmentName="on-demand", type="UNMANAGED", serviceRole=a_role())
+    batch.create_job_queue(
+        jobQueueName="reports", state="ENABLED", priority=1, computeEnvironmentOrder=[{"order": 1, "computeEnvironment": "on-demand"}]
+    )
+    return "reports"
+
+
+@creates("codebuild", "projects")
+def _codebuild_project():
+    aws("codebuild").create_project(
+        name="web", source={"type": "S3", "location": "sources/web.zip"}, artifacts={"type": "NO_ARTIFACTS"},
+        environment={"type": "LINUX_CONTAINER", "image": "aws/codebuild/standard:7.0", "computeType": "BUILD_GENERAL1_SMALL"},
+        serviceRole=a_role(),
+    )
+    return "web"
+
+
+@creates("codepipeline", "pipelines")
+def _pipeline():
+    trust = {
+        "Version": "2012-10-17",
+        "Statement": [{"Effect": "Allow", "Principal": {"Service": "codepipeline.amazonaws.com"}, "Action": "sts:AssumeRole"}],
+    }
+    role = aws("iam").create_role(RoleName="releaser", AssumeRolePolicyDocument=json.dumps(trust))["Role"]["Arn"]
+    source = {"category": "Source", "owner": "AWS", "provider": "S3", "version": "1"}
+    build = {"category": "Build", "owner": "AWS", "provider": "CodeBuild", "version": "1"}
+    aws("codepipeline").create_pipeline(pipeline={
+        "name": "release",
+        "roleArn": role,
+        "artifactStore": {"type": "S3", "location": "artifacts"},
+        "stages": [
+            {"name": "Source", "actions": [{"name": "Fetch", "actionTypeId": source, "outputArtifacts": [{"name": "src"}],
+                                            "configuration": {"S3Bucket": "sources", "S3ObjectKey": "web.zip"}}]},
+            {"name": "Build", "actions": [{"name": "Build", "actionTypeId": build, "inputArtifacts": [{"name": "src"}],
+                                           "configuration": {"ProjectName": "web"}}]},
+        ],
+    })
+    return "release"
+
+
+@creates("codedeploy", "applications")
+def _codedeploy_application():
+    aws("codedeploy").create_application(applicationName="web", computePlatform="Server")
+    return "web"
+
+
+@creates("es", "domains")
+def _search_domain():
+    aws("opensearch").create_domain(DomainName="search")
+    return "search"
+
+
+@creates("bedrock", "custom_models")
+def _custom_model():
+    aws("s3").create_bucket(Bucket="training")
+    bedrock = aws("bedrock")
+    bedrock.create_model_customization_job(
+        jobName="tune-support", customModelName="support", roleArn=a_role(),
+        baseModelIdentifier="amazon.titan-text-express-v1",
+        trainingDataConfig={"s3Uri": "s3://training/data.jsonl"}, outputDataConfig={"s3Uri": "s3://training/output"},
+        hyperParameters={"epochCount": "1"},
+    )
+    return bedrock.get_custom_model(modelIdentifier="support")["modelArn"]
+
+
+@creates("cloudtrail", "trails")
+def _trail():
+    aws("s3").create_bucket(Bucket="audit-logs")
+    return aws("cloudtrail").create_trail(Name="audit", S3BucketName="audit-logs")["TrailARN"]
+
+
 @creates("logs", "log_groups")
 def _log_group():
     aws("logs").create_log_group(logGroupName="/app/web")
@@ -494,9 +696,131 @@ def _emr_cluster():
     )["JobFlowId"]
 
 
+# --- Detail lookups moto can't answer --------------------------------------
+#
+# moto has no ListApplications (AppConfig) nor ListRepositories (CodeCommit),
+# and no X-Ray groups or Verified Permissions at all. These go through botocore's
+# Stubber on the client the routes use: every request is held to the API's
+# model and to the parameters expected, and every answer to the model's shapes.
+
+CREATED = datetime(2026, 11, 13, 19, 51, 35, tzinfo=timezone.utc)
+UPDATED = datetime(2026, 11, 13, 20, 5, 0, tzinfo=timezone.utc)
+
+
+@dataclass(frozen=True)
+class Stubbed:
+    listing: dict  # the list call's answer, with one resource
+    listed_id: str  # the id the listing gives it
+    detail_params: dict  # what the detail call is asked for that id
+    detail: dict  # the detail call's answer
+    shown: dict  # the detail StackPort shows
+
+
+STUBBED: dict[tuple[str, str], Stubbed] = {
+    ("appconfig", "applications"): Stubbed(
+        listing={"Items": [{"Id": "q3ex1lf", "Name": "storefront", "Description": "Feature flags"}]},
+        listed_id="q3ex1lf",
+        detail_params={"ApplicationId": "q3ex1lf"},
+        detail={"Id": "q3ex1lf", "Name": "storefront", "Description": "Feature flags"},
+        shown={"Id": "q3ex1lf", "Name": "storefront", "Description": "Feature flags"},
+    ),
+    ("codecommit", "repositories"): Stubbed(
+        listing={"repositories": [{"repositoryName": "web", "repositoryId": "8d1f8c2e-0b7a-4c1e-9a55-0f3c1d2e4b6a"}]},
+        listed_id="web",
+        detail_params={"repositoryName": "web"},
+        detail={"repositoryMetadata": {
+            "repositoryName": "web",
+            "repositoryId": "8d1f8c2e-0b7a-4c1e-9a55-0f3c1d2e4b6a",
+            "Arn": "arn:aws:codecommit:us-east-1:123456789012:web",
+            "creationDate": CREATED,
+            "lastModifiedDate": UPDATED,
+        }},
+        shown={
+            "repositoryName": "web",
+            "repositoryId": "8d1f8c2e-0b7a-4c1e-9a55-0f3c1d2e4b6a",
+            "Arn": "arn:aws:codecommit:us-east-1:123456789012:web",
+            "creationDate": "2026-11-13T19:51:35+00:00",
+            "lastModifiedDate": "2026-11-13T20:05:00+00:00",
+        },
+    ),
+    ("xray", "groups"): Stubbed(
+        listing={"Groups": [{
+            "GroupName": "errors",
+            "GroupARN": "arn:aws:xray:us-east-1:123456789012:group/errors/7Q2DJ3XIFEC4",
+            "FilterExpression": "error = true",
+            "InsightsConfiguration": {"InsightsEnabled": True, "NotificationsEnabled": False},
+        }]},
+        listed_id="errors",
+        detail_params={"GroupName": "errors"},
+        detail={"Group": {
+            "GroupName": "errors",
+            "GroupARN": "arn:aws:xray:us-east-1:123456789012:group/errors/7Q2DJ3XIFEC4",
+            "FilterExpression": "error = true",
+            "InsightsConfiguration": {"InsightsEnabled": True, "NotificationsEnabled": False},
+        }},
+        shown={
+            "GroupName": "errors",
+            "GroupARN": "arn:aws:xray:us-east-1:123456789012:group/errors/7Q2DJ3XIFEC4",
+            "FilterExpression": "error = true",
+            "InsightsConfiguration": {"InsightsEnabled": True, "NotificationsEnabled": False},
+        },
+    ),
+    ("verifiedpermissions", "policy_stores"): Stubbed(
+        listing={"policyStores": [{
+            "policyStoreId": "PSEXAMPLEabcdefg111111",
+            "arn": "arn:aws:verifiedpermissions::123456789012:policy-store/PSEXAMPLEabcdefg111111",
+            "createdDate": CREATED,
+            "lastUpdatedDate": UPDATED,
+            "description": "Orders",
+        }]},
+        listed_id="PSEXAMPLEabcdefg111111",
+        detail_params={"policyStoreId": "PSEXAMPLEabcdefg111111"},
+        detail={
+            "policyStoreId": "PSEXAMPLEabcdefg111111",
+            "arn": "arn:aws:verifiedpermissions::123456789012:policy-store/PSEXAMPLEabcdefg111111",
+            "validationSettings": {"mode": "STRICT"},
+            "createdDate": CREATED,
+            "lastUpdatedDate": UPDATED,
+            "description": "Orders",
+            "deletionProtection": "DISABLED",
+        },
+        shown={
+            "policyStoreId": "PSEXAMPLEabcdefg111111",
+            "arn": "arn:aws:verifiedpermissions::123456789012:policy-store/PSEXAMPLEabcdefg111111",
+            "validationSettings": {"mode": "STRICT"},
+            "createdDate": "2026-11-13T19:51:35+00:00",
+            "lastUpdatedDate": "2026-11-13T20:05:00+00:00",
+            "description": "Orders",
+            "deletionProtection": "DISABLED",
+        },
+    ),
+}
+
+
+@pytest.mark.parametrize("service, res_type", sorted(STUBBED), ids=[f"{s}/{t}" for s, t in sorted(STUBBED)])
+def test_listed_id_opens_its_detail_where_moto_cant_answer(account, monkeypatch, service, res_type):
+    case = STUBBED[(service, res_type)]
+    _, boto3_service, list_method, _ = next(entry for entry in SERVICE_REGISTRY[service] if entry[0] == res_type)
+    _, detail_method, _, _ = DESCRIBE_REGISTRY[(service, res_type)]
+
+    with Stubber(get_client(boto3_service, **MOTO.client_kwargs())) as stubber:
+        # Listed by the resource browser, then counted by the dashboard.
+        stubber.add_response(list_method, case.listing, {})
+        stubber.add_response(list_method, case.listing, {})
+        stubber.add_response(detail_method, case.detail, case.detail_params)
+
+        assert [item["id"] for item in listed(service, res_type)] == [case.listed_id]
+        assert counted(monkeypatch, service, res_type) == 1
+        resp = detail(service, res_type, case.listed_id)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["detail"] == case.shown
+        stubber.assert_no_pending_responses()
+
+
 def test_every_detail_lookup_is_checked():
     # SES identities have a detail lookup of their own, outside the registry.
-    assert set(CREATORS) == set(DESCRIBE_REGISTRY) | {("ses", "identities")}
+    assert set(CREATORS) | set(STUBBED) == set(DESCRIBE_REGISTRY) | {("ses", "identities")}
+    assert not set(CREATORS) & set(STUBBED)
 
 
 @pytest.mark.parametrize("service, res_type", sorted(CREATORS), ids=[f"{s}/{t}" for s, t in sorted(CREATORS)])

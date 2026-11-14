@@ -36,6 +36,12 @@ DESCRIBE_REGISTRY: dict[tuple[str, str], tuple[str, str, str, str | None]] = {
     ("firehose", "delivery_streams"): ("firehose", "describe_delivery_stream", "DeliveryStreamName", "DeliveryStreamDescription"),
     ("events", "rules"): ("events", "describe_rule", "Name", None),
     ("events", "event_buses"): ("events", "describe_event_bus", "Name", None),
+    ("scheduler", "schedules"): ("scheduler", "get_schedule", "Name", None),
+    ("scheduler", "schedule_groups"): ("scheduler", "get_schedule_group", "Name", None),
+    ("pipes", "pipes"): ("pipes", "describe_pipe", "Name", None),
+    ("ses", "configuration_sets"): ("ses", "describe_configuration_set", "ConfigurationSetName", None),
+    ("ses", "email_templates"): ("ses", "get_template", "TemplateName", "Template"),
+    ("kafka", "clusters"): ("kafka", "describe_cluster", "ClusterArn", "ClusterInfo"),
     # Security & Identity
     ("iam", "roles"): ("iam", "get_role", "RoleName", "Role"),
     ("iam", "users"): ("iam", "get_user", "UserName", "User"),
@@ -46,7 +52,12 @@ DESCRIBE_REGISTRY: dict[tuple[str, str], tuple[str, str, str, str | None]] = {
     ("cognito-idp", "user_pools"): ("cognito-idp", "describe_user_pool", "UserPoolId", "UserPool"),
     ("cognito-identity", "identity_pools"): ("cognito-identity", "describe_identity_pool", "IdentityPoolId", None),
     ("wafv2", "web_acls"): ("wafv2", "get_web_acl", "Name", "WebACL"),
+    ("verifiedpermissions", "policy_stores"): ("verifiedpermissions", "get_policy_store", "policyStoreId", None),
     # Management
+    ("appconfig", "applications"): ("appconfig", "get_application", "ApplicationId", None),
+    # DescribeTrails, not GetTrail: Floci only serves the first.
+    ("cloudtrail", "trails"): ("cloudtrail", "describe_trails", "trailNameList", "trailList"),
+    ("xray", "groups"): ("xray", "get_group", "GroupName", "Group"),
     ("logs", "log_groups"): ("logs", "describe_log_groups", "logGroupNamePrefix", "logGroups"),
     ("ssm", "parameters"): ("ssm", "get_parameter", "Name", "Parameter"),
     ("cloudformation", "stacks"): ("cloudformation", "describe_stacks", "StackName", "Stacks"),
@@ -57,6 +68,8 @@ DESCRIBE_REGISTRY: dict[tuple[str, str], tuple[str, str, str, str | None]] = {
     ("route53", "hosted_zones"): ("route53", "get_hosted_zone", "Id", "HostedZone"),
     ("cloudfront", "distributions"): ("cloudfront", "get_distribution", "Id", "Distribution"),
     ("elasticloadbalancing", "load_balancers"): ("elbv2", "describe_load_balancers", "LoadBalancerArns", "LoadBalancers"),
+    ("servicediscovery", "namespaces"): ("servicediscovery", "get_namespace", "Id", "Namespace"),
+    ("servicediscovery", "services"): ("servicediscovery", "get_service", "Id", "Service"),
     # EC2
     ("ec2", "instances"): ("ec2", "describe_instances", "InstanceIds", "Reservations"),
     ("ec2", "vpcs"): ("ec2", "describe_vpcs", "VpcIds", "Vpcs"),
@@ -64,12 +77,23 @@ DESCRIBE_REGISTRY: dict[tuple[str, str], tuple[str, str, str, str | None]] = {
     ("ec2", "security_groups"): ("ec2", "describe_security_groups", "GroupIds", "SecurityGroups"),
     ("ec2", "volumes"): ("ec2", "describe_volumes", "VolumeIds", "Volumes"),
     ("elasticfilesystem", "file_systems"): ("efs", "describe_file_systems", "FileSystemId", "FileSystems"),
-    # Containers
+    # Containers & batch
     ("ecr", "repositories"): ("ecr", "describe_repositories", "repositoryNames", "repositories"),
+    ("eks", "clusters"): ("eks", "describe_cluster", "name", "cluster"),
+    ("batch", "compute_environments"): ("batch", "describe_compute_environments", "computeEnvironments", "computeEnvironments"),
+    ("batch", "job_queues"): ("batch", "describe_job_queues", "jobQueues", "jobQueues"),
+    # Developer tools
+    ("codebuild", "projects"): ("codebuild", "batch_get_projects", "names", "projects"),
+    ("codepipeline", "pipelines"): ("codepipeline", "get_pipeline", "name", None),
+    ("codecommit", "repositories"): ("codecommit", "get_repository", "repositoryName", "repositoryMetadata"),
+    ("codedeploy", "applications"): ("codedeploy", "get_application", "applicationName", "application"),
     # Analytics & ETL
     ("glue", "databases"): ("glue", "get_database", "Name", "Database"),
     ("glue", "crawlers"): ("glue", "get_crawler", "Name", "Crawler"),
     ("athena", "workgroups"): ("athena", "get_work_group", "WorkGroup", "WorkGroup"),
+    ("es", "domains"): ("opensearch", "describe_domain", "DomainName", "DomainStatus"),
+    # Machine learning
+    ("bedrock", "custom_models"): ("bedrock", "get_custom_model", "modelIdentifier", None),
     # API
     ("apigateway", "rest_apis"): ("apigateway", "get_rest_api", "restApiId", None),
     ("apigateway", "apis"): ("apigatewayv2", "get_api", "ApiId", None),
@@ -83,14 +107,20 @@ _DESCRIBE_KWARGS: dict[tuple[str, str], dict] = {
     # Without AttributeNames, GetQueueAttributes answers with no attributes at all.
     ("sqs", "queues"): {"AttributeNames": ["All"]},
     ("wafv2", "web_acls"): {"Scope": "REGIONAL"},
+    # Without attribute names, only the name comes back.
+    ("ses", "configuration_sets"): {
+        "ConfigurationSetAttributeNames": ["eventDestinations", "trackingOptions", "deliveryOptions", "reputationOptions"],
+    },
 }
 
 # Detail calls that need more of the resource than its id. The resource is found
 # in its listing by id, and the detail call's id parameter and these are passed
 # the listed item's fields of the same names. A rule is only found on its own
-# event bus (rules on two buses can share a name); a web ACL needs its Id too.
+# event bus (rules on two buses can share a name), and a schedule in its own
+# group; a web ACL needs its Id too.
 _DESCRIBE_FROM_LISTING: dict[tuple[str, str], tuple[str, ...]] = {
     ("events", "rules"): ("EventBusName",),
+    ("scheduler", "schedules"): ("GroupName",),
     ("wafv2", "web_acls"): ("Id",),
 }
 
@@ -98,6 +128,7 @@ _DESCRIBE_FROM_LISTING: dict[tuple[str, str], tuple[str, ...]] = {
 _LIST_PARAMS = frozenset({
     "InstanceIds", "VpcIds", "SubnetIds", "GroupIds", "VolumeIds",
     "repositoryNames", "clusters", "AlarmNames", "LoadBalancerArns",
+    "names", "computeEnvironments", "jobQueues", "trailNameList",
 })
 
 # Override the generic _ID_FIELDS for services where the default order picks
@@ -107,6 +138,17 @@ _PREFERRED_ID_FIELD: dict[tuple[str, str], str] = {
     # Unique across event buses, unlike the name.
     ("events", "rules"): "Arn",
     ("events", "event_buses"): "Name",
+    # Unique across schedule groups, unlike the name.
+    ("scheduler", "schedules"): "Arn",
+    ("scheduler", "schedule_groups"): "Name",
+    ("pipes", "pipes"): "Name",
+    ("appconfig", "applications"): "Id",
+    ("servicediscovery", "namespaces"): "Id",
+    ("servicediscovery", "services"): "Id",
+    ("codepipeline", "pipelines"): "name",
+    ("xray", "groups"): "GroupName",
+    # Trails replicated from another region are listed too; only their ARN finds them.
+    ("cloudtrail", "trails"): "TrailARN",
     ("wafv2", "web_acls"): "Name",
     ("appsync", "graphql_apis"): "apiId",
     ("elasticmapreduce", "clusters"): "Id",
@@ -172,6 +214,12 @@ _ID_FIELDS = [
     "DistributionId",
     "apiId",
     "ClusterId",
+    "computeEnvironmentName",
+    "jobQueueName",
+    "DomainName",
+    "ClusterArn",
+    "modelArn",
+    "policyStoreId",
 ]
 
 

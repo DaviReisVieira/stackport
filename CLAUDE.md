@@ -39,7 +39,7 @@ Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves 
 - `emulators.py` — `DETECTORS` registry identifying MiniStack, Floci, LocalStack, Moto and AWS Emulator by an unauthenticated GET each; `detect_emulator` (cached) for connection checks, `detect_emulator_quickly` (bounded wait) for `/api/health`
 - `routes/common.py` — `get_endpoint_url` FastAPI dependency resolves `?endpoint=` query param → endpoint URL
 - `cache.py` — Thread-safe `TTLCache` singleton (dict + timestamps + threading.Lock)
-- `routes/stats.py` — `GET /api/stats` — probes 35 services concurrently via ThreadPoolExecutor, cached 5s
+- `routes/stats.py` — `GET /api/stats` — probes 51 services concurrently via ThreadPoolExecutor, cached 5s
 - `routes/resources.py` — `GET /api/resources/{svc}` and `GET /api/resources/{svc}/{type}/{id}` — generic list/detail
 - `routes/s3.py` — `GET /api/s3/buckets`, `/api/s3/buckets/{name}/objects`, `/api/s3/buckets/{name}/objects/{key}` — S3-specific with download support
 
@@ -50,12 +50,12 @@ Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves 
 - Uses `Field(alias="camelCase")` + `populate_by_name: True` for camelCase JSON ↔ snake_case Python
 
 **Key registries in backend:**
-- `SERVICE_REGISTRY` (stats.py) — maps service name → list of `(resource_type, boto3_service, method, response_key)` tuples. 35 services.
+- `SERVICE_REGISTRY` (stats.py) — maps service name → list of `(resource_type, boto3_service, method, response_key)` tuples. 51 services, keyed by the name each signs requests with (`monitoring`, `es`), `stepfunctions` aside.
 - `DESCRIBE_REGISTRY` (resources.py) — maps `(service, resource_type)` → boto3 describe call for detail views.
 - `_METHOD_KWARGS` (stats.py) — extra params for APIs that require them (cognito `MaxResults`, wafv2 `Scope`, iam `Scope=Local`).
 - `_GROUPED_ITEMS` / `_PER_PARENT` (stats.py) — list calls whose resources sit inside groups (EC2 reservations) or that cover one parent per call (EventBridge rules per bus). `list_items()` applies them; the dashboard count, generic listing, CLI and Learn checks all go through it.
 - `_DESCRIBE_KWARGS` / `_DESCRIBE_FROM_LISTING` (resources.py) — extra params for detail calls (SQS `AttributeNames`), and detail calls that need more of the resource than its id (a rule's event bus), found through the listing. `describe_resource()` serves both the detail route and `stackport describe`.
-- `tests/test_generic_resources.py` creates one resource per detail lookup in moto and opens every listed id: a new `DESCRIBE_REGISTRY` entry needs a creator there.
+- `tests/test_generic_resources.py` creates one resource per detail lookup in moto and opens every listed id: a new `DESCRIBE_REGISTRY` entry needs a creator there, or a `STUBBED` case (botocore's Stubber) where moto lacks the calls.
 
 **Frontend** (`ui/src/`):
 - React 18 + Vite 5 + TypeScript + Cloudscape Design System (`@cloudscape-design/components`), Tailwind CSS 3 kept as a small utility layer
@@ -68,7 +68,7 @@ Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves 
 - `components/cloudscape/views/stepfunctions/` — Framework-agnostic ASL graph (dagre + SVG) and execution timeline shared by the Step Functions view
 - `lib/api.ts` — `API_BASE = '/api'`, fetch functions for all endpoints
 - `lib/types.ts` — `ServiceStats`, `StatsResponse`
-- `lib/service-icons.ts` — 35+ service → lucide icon mappings, fallback to `Server`
+- `lib/service-icons.ts` — service → lucide icon mappings (AWS icons from `lib/aws-icons.tsx` win), fallback to `Server`; a test fails for a default service without one
 - `hooks/useFetch.ts` — Generic polling hook with toast on error
 
 ## Environment Variables
@@ -83,7 +83,7 @@ Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves 
 | `STACKPORT_PORT` | `8080` | HTTP port |
 | `STACKPORT_HOST` | `127.0.0.1` | Interface to listen on; the Docker image sets `0.0.0.0` |
 | `STACKPORT_S3_MAX_UPLOAD_MB` | `100` | Max S3 upload size per object (whole mebibytes; × 1024²) |
-| `STACKPORT_SERVICES` | *(35 services)* | Comma-separated list to probe |
+| `STACKPORT_SERVICES` | *(51 services)* | Comma-separated list to probe |
 | `STACKPORT_PROBE_TIMEOUT` | `5` | Seconds to wait when connecting to a local emulator; calls to local emulators aren't retried |
 | `STACKPORT_CACHE_TTL` | `5` | Seconds to cache service stats |
 | `STACKPORT_PROBE_WORKERS` | `10` | ThreadPoolExecutor max workers for concurrent probing |
@@ -125,7 +125,8 @@ Adding an anchor: add the id to **both** `backend/learn/hotspots.py` and `ui/src
 3. Add detail lookup to `DESCRIBE_REGISTRY` in `backend/routes/resources.py` (plus `_DESCRIBE_KWARGS` / `_DESCRIBE_FROM_LISTING` if the id alone isn't enough)
 4. Add ID field names to `_ID_FIELDS` in `resources.py`, or a `_PREFERRED_ID_FIELD` entry when another field of the item comes first
 5. Add the service to `STACKPORT_SERVICES` default in `backend/config.py`
-6. Add a creator for each new detail lookup in `tests/test_generic_resources.py`
+6. Add a creator for each new detail lookup in `tests/test_generic_resources.py` (a `STUBBED` case where moto lacks the calls)
+7. Add an icon for the key in `ui/src/lib/service-icons.ts`
 
 ## Adding a Service-Specific UI View
 
@@ -162,6 +163,6 @@ View conventions (match the existing views): deep links via query params (`?queu
 - `ui/dist/` is committed — rebuild with `cd ui && npm run build` after frontend changes
 - Dockerfile is two-stage (node builds UI, python runs backend)
 
-## Supported Services (35)
+## Supported Services (51)
 
-acm, apigateway, appsync, athena, cloudformation, cloudfront, cognito-idp, cognito-identity, dynamodb, ec2, ecr, ecs, elasticache, elasticfilesystem, elasticloadbalancing, elasticmapreduce, events, firehose, glue, iam, kinesis, kms, lambda, logs, monitoring, rds, route53, s3, secretsmanager, ses, sns, sqs, ssm, stepfunctions, wafv2
+acm, apigateway, appconfig, appsync, athena, batch, bedrock, cloudformation, cloudfront, cloudtrail, codebuild, codecommit, codedeploy, codepipeline, cognito-identity, cognito-idp, dynamodb, ec2, ecr, ecs, eks, elasticache, elasticfilesystem, elasticloadbalancing, elasticmapreduce, es, events, firehose, glue, iam, kafka, kinesis, kms, lambda, logs, monitoring, pipes, rds, route53, s3, scheduler, secretsmanager, servicediscovery, ses, sns, sqs, ssm, stepfunctions, verifiedpermissions, wafv2, xray

@@ -4,7 +4,7 @@
 
 <h1 align="center">StackPort</h1>
 <p align="center"><strong>A web console for local AWS emulators and real AWS accounts.</strong></p>
-<p align="center">Browse, inspect, and manage resources across 35 AWS services, with dedicated views for 13 of them and guided lessons that teach AWS hands-on.</p>
+<p align="center">Browse, inspect, and manage resources across 51 AWS services, with dedicated views for 13 of them and guided lessons that teach AWS hands-on.</p>
 
 <p align="center">
   <a href="https://github.com/DaviReisVieira/stackport/actions/workflows/ci.yml"><img src="https://github.com/DaviReisVieira/stackport/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -26,7 +26,7 @@ Local emulators give you AWS on your laptop, but no console to look at it with. 
 
 ## Features
 
-- **35 AWS services** discovered and counted on a live dashboard (WebSocket updates, pinned favorites, light and dark themes)
+- **51 AWS services** discovered and counted on a live dashboard (WebSocket updates, pinned favorites, light and dark themes)
 - **13 dedicated service views**: S3, DynamoDB, Lambda, SQS, SNS, IAM, EC2, RDS, CloudWatch Logs, CloudWatch metrics and alarms, Secrets Manager, KMS, and Step Functions. Every other service gets a searchable resource table
 - **Write operations** in 9 of those views, from S3 uploads and DynamoDB item edits to SQS messages, Lambda invokes, EC2 start/stop, and Step Functions executions
 - **Guided lessons** that run inside the console and check your real resource state as you go
@@ -228,7 +228,7 @@ You can test a connection before saving it with the "Test Connection" button in 
 | **CloudWatch** | Dashboards, alarms, metric charts | Read-only |
 | **KMS** | Keys, key policies, grants, aliases | Read-only |
 
-### Generic resource browser (22 services)
+### Generic resource browser (38 services)
 
 Every other service uses a searchable resource table with a JSON detail view, tag editing where supported, pagination, and export to JSON or CSV.
 
@@ -314,7 +314,7 @@ Press `?` anywhere to see all shortcuts.
 | `STACKPORT_ALLOW_WRITES` | `true` | Allow write operations. `false` makes StackPort read-only |
 | `STACKPORT_S3_MAX_UPLOAD_MB` | `100` | Max S3 upload size per object (MiB) |
 | `STACKPORT_LEARN` | `true` | Guided lessons. `false` removes the Learn routes and UI |
-| `STACKPORT_SERVICES` | *(35 services)* | Comma-separated list of services to probe |
+| `STACKPORT_SERVICES` | *(51 services)* | Comma-separated list of services to probe |
 | `STACKPORT_PROBE_TIMEOUT` | `5` | Seconds to wait when connecting to a local emulator. Calls to local emulators aren't retried |
 | `STACKPORT_CACHE_TTL` | `5` | Seconds to cache service stats |
 | `STACKPORT_PROBE_WORKERS` | `10` | Max concurrent workers for service probing |
@@ -325,9 +325,9 @@ Press `?` anywhere to see all shortcuts.
 | `STACKPORT_AWS_EMULATOR_DIR` | `~/.aws/emulator` | Where to look for the keys and certificate AWS Emulator writes for each port. Empty turns the lookup off |
 | `LOG_LEVEL` | `INFO` | Python log level (`DEBUG` shows healthcheck logs) |
 
-## Supported services (35)
+## Supported services (51)
 
-ACM, API Gateway, AppSync, Athena, CloudFormation, CloudFront, CloudWatch (metrics and alarms), CloudWatch Logs, Cognito (User Pools + Identity Pools), DynamoDB, EC2, ECR, ECS, EFS, ElastiCache, ELB, EMR, EventBridge, Firehose, Glue, IAM, Kinesis, KMS, Lambda, RDS, Route 53, S3, Secrets Manager, SES, SNS, SQS, SSM, Step Functions, WAFv2
+ACM, API Gateway, AppConfig, AppSync, Athena, Batch, Bedrock, Cloud Map, CloudFormation, CloudFront, CloudTrail, CloudWatch (metrics and alarms), CloudWatch Logs, CodeBuild, CodeCommit, CodeDeploy, CodePipeline, Cognito (User Pools + Identity Pools), DynamoDB, EC2, ECR, ECS, EFS, EKS, ElastiCache, ELB, EMR, EventBridge, EventBridge Pipes, EventBridge Scheduler, Firehose, Glue, IAM, Kinesis, KMS, Lambda, MSK, OpenSearch, RDS, Route 53, S3, Secrets Manager, SES, SNS, SQS, SSM, Step Functions, Verified Permissions, WAFv2, X-Ray
 
 ## Development
 

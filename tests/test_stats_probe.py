@@ -11,6 +11,7 @@ from backend.main import app
 from backend.routes import stats
 from backend.routes.common import EndpointInfo
 from backend.routes.stats import _probe_service, _service_result, collect_stats, summarize_problem
+from tests.fake_endpoint import FakeEndpoint, ministack_s3_fallback
 
 
 def not_implemented(operation="ListThings") -> ClientError:
@@ -83,6 +84,14 @@ class TestProbeService:
         mock_get_client.return_value.list_buckets.return_value = {"Buckets": []}
         _probe_service("s3", "https://x:1", None, ca_bundle="/ca.pem", tls_verify=True)
         assert mock_get_client.call_args.kwargs["ca_bundle"] == "/ca.pem"
+
+    @pytest.mark.parametrize("service", ["codepipeline", "xray", "verifiedpermissions", "bedrock"])
+    def test_a_service_the_endpoint_hands_to_s3_is_unsupported(self, service):
+        # MiniStack gives requests for APIs it doesn't serve to S3, which refuses them.
+        with FakeEndpoint(handler=ministack_s3_fallback) as endpoint:
+            _, result = _probe_service(service, endpoint.url)
+        assert result["status"] == "unsupported"
+        assert result["error"]["kind"] == "not_implemented"
 
 
 class TestSummarizeProblem:
