@@ -142,6 +142,7 @@ export function CloudscapeShell({
     [
       { sequence: ['g', 'd'], handler: () => navigate('/') },
       { sequence: ['g', 'r'], handler: () => navigate('/resources') },
+      { sequence: ['g', 'e'], handler: () => navigate('/explorer') },
       { sequence: ['g', 's'], handler: () => navigate('/settings') },
       { sequence: ['g', 'a'], handler: () => navigate('/about') },
       ...(learnEnabled ? [{ sequence: ['g', 'l'], handler: () => navigate('/learn') }] : []),
@@ -323,6 +324,7 @@ export function CloudscapeShell({
                 info: <LearnHotspotMarker hotspotId={LEARN_HOTSPOTS.navResources} />,
               },
               ...extraNavItems,
+              { type: 'link', text: 'API Explorer', href: '/explorer' },
               ...(learnEnabled
                 ? [
                     {

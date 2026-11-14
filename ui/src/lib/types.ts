@@ -1435,3 +1435,112 @@ export interface KMSKeyAlias {
   aliasArn: string
   creationDate?: string
 }
+
+// --- API Explorer ---
+
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+export type JsonObject = { [key: string]: JsonValue }
+
+export type ExplorerAccess = 'read' | 'write'
+
+export interface ExplorerServiceSummary {
+  name: string
+  fullName: string | null
+}
+
+export interface ExplorerServicesResponse {
+  botocoreVersion: string
+  services: ExplorerServiceSummary[]
+}
+
+export interface ExplorerOperationSummary {
+  name: string
+  summary: string
+  access: ExplorerAccess
+  paginated: boolean
+  deprecated: boolean
+  streaming: boolean
+  eventStream: boolean
+}
+
+export interface ExplorerService {
+  name: string
+  fullName: string | null
+  apiVersion: string
+  protocol: string
+  documentation: string
+  operations: ExplorerOperationSummary[]
+}
+
+export interface ExplorerMember {
+  name: string
+  shape: string
+  documentation?: string
+  idempotencyToken?: boolean
+}
+
+interface ExplorerShapeBase {
+  min?: number
+  max?: number
+  pattern?: string
+  sensitive?: boolean
+}
+
+/** One shape of an operation's input. Members, list items and map entries name other shapes in the same graph. */
+export type ExplorerShape = ExplorerShapeBase &
+  (
+    | { type: 'structure'; required: string[]; members: ExplorerMember[]; union?: boolean }
+    | { type: 'list'; member: string }
+    | { type: 'map'; key: string; value: string }
+    | { type: 'string'; enum?: string[] }
+    | { type: 'blob'; streaming?: boolean }
+    | { type: 'integer' | 'long' | 'float' | 'double' | 'boolean' | 'timestamp' | 'document' }
+  )
+
+export interface ExplorerShapeGraph {
+  root: string
+  shapes: Record<string, ExplorerShape>
+}
+
+export interface ExplorerOperation {
+  service: string
+  name: string
+  documentation: string
+  access: ExplorerAccess
+  deprecated: boolean
+  methodName: string
+  cliCommand: string
+  /** The AWS CLI option for each top-level input member, such as `--queue-name` */
+  cliOptions: Record<string, string>
+  pagination: { inputTokens: string[]; limitKey: string | null; resultKeys: string[] } | null
+  streamingInput: boolean
+  streamingOutput: boolean
+  eventStreamInput: boolean
+  eventStreamOutput: boolean
+  input: ExplorerShapeGraph | null
+}
+
+export interface ExplorerRunRequest {
+  params: JsonObject
+  paginate: boolean
+  maxPages: number
+}
+
+export interface ExplorerResponse {
+  /** null when the response was too large to show */
+  body: JsonObject | null
+  metadata: {
+    httpStatusCode: number | null
+    requestId: string | null
+    retryAttempts: number | null
+  }
+}
+
+export interface ExplorerRunResponse {
+  /** One per call: more than one when pages were followed */
+  responses: ExplorerResponse[]
+  durationMs: number
+  /** The parameters that continue where this run stopped, when there's more */
+  nextToken: JsonObject | null
+  notices: string[]
+}

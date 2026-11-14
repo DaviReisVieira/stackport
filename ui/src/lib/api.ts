@@ -25,6 +25,11 @@ import type {
   EndpointConnectionSettings,
   EndpointsResponse,
   ErrorKind,
+  ExplorerOperation,
+  ExplorerRunRequest,
+  ExplorerRunResponse,
+  ExplorerService,
+  ExplorerServicesResponse,
   HealthResponse,
   IAMGroup,
   IAMGroupDetail,
@@ -1473,4 +1478,45 @@ export async function fetchKMSKeyGrants(id: string, endpoint?: string | null): P
 
 export async function fetchKMSKeyAliases(id: string, endpoint?: string | null): Promise<KMSKeyAlias[]> {
   return fetchJSON<KMSKeyAlias[]>(buildUrl(`/kms/keys/${encodeURIComponent(id)}/aliases`, endpoint))
+}
+
+// --- API Explorer ---
+
+const EXPLORER_SERVICES = '/explorer/services'
+
+export async function fetchExplorerServices(): Promise<ExplorerServicesResponse> {
+  return fetchJSON<ExplorerServicesResponse>(buildUrl(EXPLORER_SERVICES))
+}
+
+export async function fetchExplorerService(service: string): Promise<ExplorerService> {
+  return fetchJSON<ExplorerService>(buildUrl(`${EXPLORER_SERVICES}/${encodeURIComponent(service)}`))
+}
+
+export async function fetchExplorerOperation(service: string, operation: string): Promise<ExplorerOperation> {
+  return fetchJSON<ExplorerOperation>(
+    buildUrl(`${EXPLORER_SERVICES}/${encodeURIComponent(service)}/operations/${encodeURIComponent(operation)}`),
+  )
+}
+
+/** The shell setup copied commands need for this endpoint's emulator, or null when they need none. */
+export async function fetchExplorerCliSetup(endpoint?: string | null): Promise<LearnCliSetup | null> {
+  const data = await fetchJSON<{ cliSetup: LearnCliSetup | null }>(buildUrl('/explorer/cli-setup', endpoint))
+  return data.cliSetup
+}
+
+/** Run an operation against the endpoint. Endpoint errors reject with an ApiError carrying the endpoint's status. */
+export async function runExplorerOperation(
+  service: string,
+  operation: string,
+  request: ExplorerRunRequest,
+  endpoint?: string | null,
+): Promise<ExplorerRunResponse> {
+  const path = `${EXPLORER_SERVICES}/${encodeURIComponent(service)}/operations/${encodeURIComponent(operation)}/run`
+  const res = await fetch(buildUrl(path, endpoint), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) throw await apiErrorFrom(res)
+  return res.json()
 }

@@ -16,6 +16,7 @@ const GLOBAL_SHORTCUTS: Shortcut[] = [
   { keys: ['T'], label: 'Toggle theme' },
   { keys: ['G', 'D'], label: 'Go to Dashboard' },
   { keys: ['G', 'R'], label: 'Go to Resource Browser' },
+  { keys: ['G', 'E'], label: 'Go to API Explorer' },
   { keys: ['G', 'S'], label: 'Go to Settings' },
   { keys: ['G', 'A'], label: 'Go to About' },
   { keys: ['Esc'], label: 'Close modal' },
