@@ -14,8 +14,10 @@ from botocore.exceptions import (
 )
 from fastapi import HTTPException
 
+from backend.aws_client import get_client
 from backend.aws_emulator import AwsEmulatorFilesError
 from backend.aws_errors import ErrorKind, classify, classify_one
+from tests.fake_endpoint import FakeEndpoint, RecordedRequest, ministack_s3_fallback, s3_error
 
 
 def client_error(code: str, message: str = "boom", status: int = 400, operation: str = "ListThings") -> ClientError:
@@ -111,6 +113,60 @@ class TestTransportErrors:
         result = classify(AwsEmulatorFilesError(Path.home() / ".aws/emulator/9297/emulator_credentials", "permission denied"))
         assert result.kind is ErrorKind.CREDENTIALS
         assert "~/.aws/emulator/9297" in result.message
+
+
+def delete_marker_version(request: RecordedRequest):
+    """What S3 answers a GET or HEAD of a version that is a delete marker."""
+    headers = {"Content-Type": "application/xml", "x-amz-delete-marker": "true"}
+    if request.method == "HEAD":
+        return 405, headers, b""
+    return 405, headers, s3_error("MethodNotAllowed", "The specified method is not allowed against this resource.")
+
+
+class TestApisTheEndpointHandsToS3:
+    """An endpoint that gives requests for an API it doesn't serve to S3, as MiniStack does.
+
+    botocore parses the real answers: an error that isn't in the API's own
+    format keeps the HTTP status as its code.
+    """
+
+    @pytest.fixture
+    def endpoint(self):
+        with FakeEndpoint(handler=ministack_s3_fallback) as server:
+            yield server.url
+
+    @pytest.fixture
+    def s3_with_a_delete_marker(self):
+        with FakeEndpoint(handler=delete_marker_version) as server:
+            yield get_client("s3", endpoint_url=server.url)
+
+    @pytest.mark.parametrize(
+        ("service", "method", "operation", "s3_code"),
+        [
+            # JSON APIs post to "/"; REST ones post to a path of their own or get one.
+            ("codepipeline", "list_pipelines", "ListPipelines", "MethodNotAllowed"),
+            ("xray", "get_groups", "GetGroups", "MethodNotAllowed"),
+            ("bedrock", "list_custom_models", "ListCustomModels", "NoSuchBucket"),
+        ],
+    )
+    def test_is_not_implemented(self, endpoint, service, method, operation, s3_code):
+        with pytest.raises(ClientError) as raised:
+            getattr(get_client(service, endpoint_url=endpoint), method)()
+        result = classify(raised.value)
+        assert result.kind is ErrorKind.NOT_IMPLEMENTED
+        assert (result.code, result.operation) == (s3_code, operation)
+        assert result.message == f"This endpoint doesn't implement {operation} yet."
+
+    @pytest.mark.parametrize("method", ["get_object", "head_object"])
+    def test_s3s_own_errors_keep_their_meaning(self, s3_with_a_delete_marker, method):
+        with pytest.raises(ClientError) as raised:
+            getattr(s3_with_a_delete_marker, method)(Bucket="reports", Key="q3.csv", VersionId="3HL4kqtJlcpXroDTDmJ")
+        assert classify(raised.value).kind is ErrorKind.OTHER
+
+    def test_an_apis_own_error_without_a_code_is_left_alone(self):
+        # Not an S3 document: nothing says which part of the endpoint answered.
+        result = classify(client_error("405", "<html><body>Method Not Allowed</body></html>", 405))
+        assert result.kind is ErrorKind.OTHER
 
 
 class TestChains:
