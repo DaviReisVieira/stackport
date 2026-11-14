@@ -21,6 +21,7 @@ import Toggle from '@cloudscape-design/components/toggle'
 import { toast } from 'sonner'
 import { CloudscapeShell } from '@/components/cloudscape/CloudscapeShell'
 import { ConnectionCheckSummary } from '@/components/cloudscape/ConnectionCheckSummary'
+import { EmulatorPanel } from '@/components/cloudscape/EmulatorPanel'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import {
   addEndpoint,
@@ -509,6 +510,8 @@ function EndpointsPanel() {
           },
         ]}
       />
+
+      <EmulatorPanel />
 
       {form && (
         <EndpointFormModal mode={form.mode} endpoint={form.endpoint} onClose={() => setForm(null)} onSubmit={handleFormSubmit} />

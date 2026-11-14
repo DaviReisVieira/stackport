@@ -160,16 +160,18 @@ describe('health follows the saved endpoint settings', () => {
   })
 
   it('asks for the new default endpoint\'s health once when Set default switches to it', async () => {
+    // Each part of the page that reads health asks for it: the shell and the emulator panel
+    const readers = 2
     saved = [lab, dev]
     renderSettings()
-    await waitFor(() => expect(healthRequests('lab')).toBe(1))
+    await waitFor(() => expect(healthRequests('lab')).toBe(readers))
 
     // Switches the active endpoint and reloads the saved ones in the same render
     fireEvent.click(await screen.findByRole('button', { name: 'Set dev as default' }))
     await waitFor(() => expect(healthRequests('dev')).toBeGreaterThan(0))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Set lab as default' })).toBeInTheDocument())
     expect(fetchMock).toHaveBeenCalledWith('/api/endpoints/default', expect.objectContaining({ method: 'PUT', body: '{"name":"dev"}' }))
-    expect(healthRequests('dev')).toBe(1)
-    expect(healthRequests('lab')).toBe(1)
+    expect(healthRequests('dev')).toBe(readers)
+    expect(healthRequests('lab')).toBe(readers)
   })
 })

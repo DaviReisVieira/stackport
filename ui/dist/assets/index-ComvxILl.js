@@ -1,1 +1,0 @@
-import{R as a,D as n,E as r}from"./index-B6tsJr-P.js";import{I as s}from"./index-D4bypxZz.js";const c=a.forwardRef(({...e},o)=>{const t=n("Checkbox",{props:{readOnly:e.readOnly}});return a.createElement(s,{...e,...t,ref:o,__injectAnalyticsComponentMetadata:!0})});r(c,"Checkbox");export{c as C};
