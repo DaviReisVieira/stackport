@@ -29,6 +29,7 @@ Local emulators give you AWS on your laptop, but no console to look at it with. 
 - **51 AWS services** discovered and counted on a live dashboard (WebSocket updates, pinned favorites, light and dark themes)
 - **13 dedicated service views**: S3, DynamoDB, Lambda, SQS, SNS, IAM, EC2, RDS, CloudWatch Logs, CloudWatch metrics and alarms, Secrets Manager, KMS, and Step Functions. Every other service gets a searchable resource table
 - **Write operations** in 9 of those views, from S3 uploads and DynamoDB item edits to SQS messages, Lambda invokes, EC2 start/stop, and Step Functions executions
+- **API Explorer** to call any operation of any service boto3 knows, with a form built from the API's own model and the same request ready to copy as an AWS CLI command or boto3 code
 - **Guided lessons** that run inside the console and check your real resource state as you go
 - **Real AWS and multiple endpoints**, each with its own auth (default chain, AWS profile with SSO/AssumeRole, or static keys)
 - **Read-only mode** with `STACKPORT_ALLOW_WRITES=false`
@@ -158,7 +159,7 @@ STACKPORT_ALLOW_WRITES=false AWS_PROFILE=my-profile stackport
 
 An endpoint without a URL sends every request to AWS itself. Endpoint URLs set up for other AWS tools, in `AWS_ENDPOINT_URL_<SERVICE>` variables (like `AWS_ENDPOINT_URL_S3`) or in a profile's `endpoint_url` and `services` settings in `~/.aws/config`, don't apply to StackPort. A profile still provides the credentials.
 
-When connected to real AWS, StackPort shows a warning banner on every page. Writes stay enabled unless you set `STACKPORT_ALLOW_WRITES=false`, so use that whenever you only want to look. In read-only mode a lock appears in the top bar, and the only POST calls still allowed are the ones that read: DynamoDB queries, CloudWatch metric queries, and Lambda invokes (which run your function, so keep that in mind on a live account).
+When connected to real AWS, StackPort shows a warning banner on every page. Writes stay enabled unless you set `STACKPORT_ALLOW_WRITES=false`, so use that whenever you only want to look. In read-only mode a lock appears in the top bar, and the only POST calls still allowed are the ones that read: DynamoDB queries, CloudWatch metric queries, Lambda invokes (which run your function, so keep that in mind on a live account), and API Explorer operations that read.
 
 ### Multiple endpoints
 
@@ -232,6 +233,21 @@ You can test a connection before saving it with the "Test Connection" button in 
 
 Every other service uses a searchable resource table with a JSON detail view, tag editing where supported, pagination, and export to JSON or CSV.
 
+## API Explorer
+
+The service views cover what StackPort knows about, and emulators implement much more. Open **API Explorer** in the sidebar (or press `g e`) to call any operation of any service boto3 knows against the selected endpoint, including services StackPort has no view for.
+
+- Pick a service and an operation. The list comes from botocore's own models, with each operation's documentation and whether it reads or writes.
+- Fill in a form built from the operation's input: required fields first, dropdowns for enums, a key and value editor for maps, and JSON for nested structures. The JSON tab holds the whole request, and edits in either place show up in the other.
+- Run it and get the response as JSON with its HTTP status, request ID and duration. Errors come back with the endpoint's own status and message.
+- Paginated operations can follow up to 50 pages in one run, and "Fetch next page" continues where a run stopped.
+- The AWS CLI and Python (boto3) tabs show the same request as a command or code to copy. When the endpoint's emulator needs more than `--endpoint-url` (AWS Emulator's keys and certificate), the tabs show the shell setup to run first, the same as Learn does.
+- Links like `/explorer?service=sqs&operation=ListQueues` open an operation directly, and the History menu keeps your last requests in this browser (values the API marks as sensitive, such as secret strings, are left out).
+
+Bytes that aren't text travel as `{"$base64": "..."}`, both in responses and in the parameters you send. Streamed responses (an S3 object, a Lambda invoke) show their first 1 MB, responses over 5 MB of JSON aren't shown, and operations that stream events can only be copied, not run.
+
+In read-only mode the explorer only runs operations that read (Describe, Get, List and similar). Operations named like reads that create something or hand out credentials, tokens or passwords (`sts GetSessionToken`, `ecr GetAuthorizationToken`) count as writes; reading a stored value, such as a secret's value, stays a read, as it is in the console's views. The others stay visible so you can still build the request and copy it. On real AWS, and while StackPort can't yet tell whether the endpoint is AWS, operations that write ask for confirmation before they run.
+
 ## Guided lessons
 
 Learn AWS hands-on without an AWS account or a bill. Lessons run inside StackPort against your own emulator: a panel walks you through each step while hotspots point at the actual controls, and StackPort checks the live resource state, so a step only turns green when the thing really exists.
@@ -292,7 +308,7 @@ Press `?` anywhere to see all shortcuts.
 | `Alt+S` (`⌥S` on macOS) | Focus service search |
 | `b` | Toggle sidebar |
 | `t` | Toggle theme |
-| `g d` / `g r` / `g l` | Go to Dashboard / Resources / Learn |
+| `g d` / `g r` / `g e` / `g l` | Go to Dashboard / Resources / API Explorer / Learn |
 | `g s` / `g a` | Go to Settings / About |
 | `r` / `v` | Dashboard: refresh / switch grid and list view |
 | `j` / `k` | Next / previous row in a resource list |
@@ -324,6 +340,7 @@ Press `?` anywhere to see all shortcuts.
 | `STACKPORT_CORS_ORIGINS` | *(empty)* | Comma-separated origins allowed to call StackPort's API from another site. Empty means only StackPort's own pages |
 | `STACKPORT_AWS_EMULATOR_DIR` | `~/.aws/emulator` | Where to look for the keys and certificate AWS Emulator writes for each port. Empty turns the lookup off |
 | `LOG_LEVEL` | `INFO` | Python log level (`DEBUG` shows healthcheck logs) |
+| `STACKPORT_LOG_AWS_WIRE` | `false` | Also log botocore's requests and responses at `DEBUG`. They include parameter values, secrets and session tokens, so turn it on only to debug a connection |
 
 ## Supported services (51)
 

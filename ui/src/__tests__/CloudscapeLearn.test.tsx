@@ -296,7 +296,7 @@ describe('Running a lesson', () => {
     const step = await panel()
     fireEvent.click(step.getByRole('tab', { name: 'With the CLI' }))
     await waitFor(() => expect(step.getByText(/s3api create-bucket --bucket learn-bucket-a1/)).toBeInTheDocument())
-    expect(step.queryByTestId('learn-cli-setup')).not.toBeInTheDocument()
+    expect(step.queryByTestId('cli-setup')).not.toBeInTheDocument()
     expect(step.queryByText(/export /)).not.toBeInTheDocument()
   })
 
@@ -313,7 +313,7 @@ describe('Running a lesson', () => {
     const step = await panel()
     fireEvent.click(step.getByRole('tab', { name: 'With the CLI' }))
 
-    const setup = await step.findByTestId('learn-cli-setup')
+    const setup = await step.findByTestId('cli-setup')
     expect(setup).toHaveTextContent('AWS Emulator needs a little setup first')
     expect(setup).toHaveTextContent('unset AWS_PROFILE')
     expect(setup).toHaveTextContent('export AWS_CA_BUNDLE=~/.aws/emulator/4566/ca.pem')
@@ -329,7 +329,7 @@ describe('Running a lesson', () => {
     await startLesson()
     const step = await panel()
     fireEvent.click(step.getByRole('tab', { name: 'With the CLI' }))
-    expect(await step.findByTestId('learn-cli-setup')).toHaveTextContent('export AWS_CA_BUNDLE=/x/ca.pem')
+    expect(await step.findByTestId('cli-setup')).toHaveTextContent('export AWS_CA_BUNDLE=/x/ca.pem')
   })
 
   it('shows nothing when the setup cannot be fetched', async () => {
@@ -339,7 +339,7 @@ describe('Running a lesson', () => {
     const step = await panel()
     fireEvent.click(step.getByRole('tab', { name: 'With the CLI' }))
     await waitFor(() => expect(step.getByText(/s3api create-bucket --bucket learn-bucket-a1/)).toBeInTheDocument())
-    expect(step.queryByTestId('learn-cli-setup')).not.toBeInTheDocument()
+    expect(step.queryByTestId('cli-setup')).not.toBeInTheDocument()
   })
 })
 

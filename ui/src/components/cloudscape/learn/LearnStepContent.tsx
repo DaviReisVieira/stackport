@@ -10,7 +10,8 @@ import SpaceBetween from '@cloudscape-design/components/space-between'
 import StatusIndicator from '@cloudscape-design/components/status-indicator'
 import Tabs from '@cloudscape-design/components/tabs'
 import { useLearn } from '@/hooks/useLearn'
-import type { LearnCliSetup, LearnStep } from '@/lib/types'
+import type { LearnStep } from '@/lib/types'
+import { CliSetupBlock } from './CliSetupBlock'
 import { CopyableCode } from './CopyableCode'
 import { Prose } from './Prose'
 
@@ -201,26 +202,6 @@ function CliPath({ step }: { step: LearnStep }) {
         </ExpandableSection>
       )}
     </SpaceBetween>
-  )
-}
-
-/**
- * What this endpoint's emulator needs from the shell before the command below
- * will run, which the plain `--endpoint-url` form does not cover. Shown only
- * when the server reports some, so emulators that need nothing look unchanged.
- */
-function CliSetupBlock({ setup }: { setup: LearnCliSetup }) {
-  return (
-    <Alert type="info" header={`${setup.emulator} needs a little setup first`} data-testid="learn-cli-setup">
-      <SpaceBetween size="xs">
-        <Box variant="p" padding="n">
-          Run this once in the terminal you will use for the commands below. It points the CLI at the keys and
-          certificate {setup.emulator} created when it started.
-        </Box>
-        <CopyableCode text={setup.script} copyLabel="setup" />
-        {setup.note && <Prose text={setup.note} small />}
-      </SpaceBetween>
-    </Alert>
   )
 }
 
