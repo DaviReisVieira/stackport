@@ -13,7 +13,6 @@ from datetime import datetime, timedelta, timezone
 
 import botocore.session
 import pytest
-from fastapi.openapi.utils import get_openapi
 from fastapi.testclient import TestClient
 
 from backend.main import app
@@ -241,8 +240,7 @@ class TestLookupAttribute:
         assert fake.lookups == []
 
     def test_the_api_docs_list_each_parameter(self):
-        route = next(route for route in app.routes if getattr(route, "path", None) == "/api/activity/events")
-        parameters = get_openapi(title="StackPort", version="test", routes=[route])["paths"]["/api/activity/events"]["get"]["parameters"]
+        parameters = app.openapi()["paths"]["/api/activity/events"]["get"]["parameters"]
         assert [parameter["name"] for parameter in parameters] == [
             "start_time", "end_time", "attribute", "value", "next_token", "max_results", "endpoint",
         ]
