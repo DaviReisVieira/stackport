@@ -1,5 +1,8 @@
 """Extra shell setup the AWS CLI needs for the endpoint a learner is using.
 
+Learn serves it next to its CLI steps, and the API Explorer next to the AWS
+CLI and boto3 code it copies (the same environment variables work for both).
+
 Lessons show commands like ``aws --endpoint-url={{endpointUrl}} s3 ls``. That
 is all MiniStack, Floci, LocalStack and Moto need. Some emulators also want
 environment variables, for example AWS Emulator, which serves HTTPS with a
