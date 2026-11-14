@@ -593,7 +593,12 @@ class TestFailures:
 
         # The server keeps trickling for 6 seconds.
         assert time.monotonic() - started < 4
-        assert failure.value.error.message == f"http://127.0.0.1:{port} didn't answer within 0.5 seconds."
+        # Either the deadline ends it, or http.client refuses the answer first: newer
+        # Python releases cap the trailer lines they read.
+        assert failure.value.error.message in {
+            f"http://127.0.0.1:{port} didn't answer within 0.5 seconds.",
+            f"http://127.0.0.1:{port} didn't answer with a valid HTTP response.",
+        }
 
     def test_a_stalled_tls_handshake_ends_on_time(self, monkeypatch):
         monkeypatch.setattr(try_it, "RESPONSE_TIMEOUT", 0.5)
