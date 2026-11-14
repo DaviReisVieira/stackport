@@ -44,9 +44,10 @@ Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves 
 - `routes/s3.py` — `GET /api/s3/buckets`, `/api/s3/buckets/{name}/objects`, `/api/s3/buckets/{name}/objects/{key}` — S3-specific with download support
 - `service_models.py` — botocore's models for the API Explorer: `list_services()` (full names read from the start of each model file), models loaded on demand with an LRU of 16, operation input as a shape graph keyed by shape name (recursion-safe), and `is_read_operation(service, operation)`, the one read/write classification used by `ReadOnlyMiddleware` (off the event loop) and the UI: a read verb in the name, no credential-like member near the top of the response (`_hands_out_credentials`), and not in `_WRITES_DESPITE_THEIR_NAME`
 - `routes/explorer.py` — `GET /api/explorer/services[/{svc}[/operations/{op}]]` and `POST .../operations/{op}/run`. Only operations in the model are callable (through the client method botocore generated for them); input mistakes botocore finds while building the request (`ParamValidationError`, a handler's `TypeError` the validator explains, `EndpointResolutionError`) are a 400, `ClientError` goes to the app-wide handlers; streams are read up to 1 MB, event streams refused, responses capped at 5 MB. `operation_run_by(path)` is what the middleware reads. `GET /api/explorer/cli-setup` serves Learn's `cli_setup_for` for copied commands, so it works with Learn off
+- `routes/activity.py`: `GET /api/activity/events`, one CloudTrail `LookupEvents` call per request, never following pages (AWS allows two lookups a second per account and Region), with one lookup attribute as CloudTrail takes it. The response echoes the window it used, which the next page sends back with `next_token`; `CloudTrailEvent` is parsed, or kept as `rawRecord` when it isn't a JSON object. Errors go to the app-wide handlers, so an endpoint without `LookupEvents` answers `not_implemented`
 
 **Schemas** (`backend/schemas/`):
-- Pydantic request/response models, one module per service: `sqs.py`, `s3.py`, `dynamodb.py`, `tags.py`, `explorer.py`
+- Pydantic request/response models, one module per service: `sqs.py`, `s3.py`, `dynamodb.py`, `tags.py`, `explorer.py`, `activity.py`
 - Route files import schemas — they never define `BaseModel` subclasses inline
 - When adding a new service with write endpoints, create `backend/schemas/<service>.py`
 - Uses `Field(alias="camelCase")` + `populate_by_name: True` for camelCase JSON ↔ snake_case Python
@@ -62,13 +63,14 @@ Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves 
 **Frontend** (`ui/src/`):
 - React 18 + Vite 5 + TypeScript + Cloudscape Design System (`@cloudscape-design/components`), Tailwind CSS 3 kept as a small utility layer
 - `main.tsx` — BrowserRouter basename `/`, Sonner Toaster, EndpointProvider
-- `App.tsx` — Lazy routes: `/` (Dashboard), `/resources/:service?` (ResourceBrowser), `/explorer` (API Explorer), `/settings`, `/about`; old `/cloudscape/*` paths redirect
+- `App.tsx` — Lazy routes: `/` (Dashboard), `/resources/:service?` (ResourceBrowser), `/explorer` (API Explorer), `/activity` (Activity), `/settings`, `/about`; old `/cloudscape/*` paths redirect
 - `components/cloudscape/CloudscapeShell.tsx` — Shared AppLayout shell: TopNavigation (service search, pinned favorites, theme toggle, endpoint menu), SideNavigation, keyboard shortcuts (`g d/r/e/s/a`, `?`)
 - `pages/CloudscapeDashboard.tsx` — Service Cards/Table grid, live stats over WebSocket, favorites-first sort
 - `pages/CloudscapeResourceBrowser.tsx` — Service picker + per-type tabs with PropertyFilter tables, detail modal with tag editing, j/k/Enter navigation. Renders `CLOUDSCAPE_SERVICE_VIEWS[service]` when available, falls back to the generic table.
 - `components/cloudscape/views/index.ts` — Registry of service-specific views (`s3`, `sqs`, `dynamodb`, `lambda`, `iam`, `rds`, `ec2`, `logs`, `secretsmanager`, `stepfunctions`). Add new service UIs here.
 - `components/cloudscape/views/stepfunctions/` — Framework-agnostic ASL graph (dagre + SVG) and execution timeline shared by the Step Functions view
 - `pages/CloudscapeApiExplorer.tsx` + `components/cloudscape/views/explorer/` — API Explorer: operation list, a parameter form generated from the shape graph (`shapes.ts` picks a control per shape, JSON for nested ones), AWS CLI and boto3 snippets (`snippets.ts`), response view. History lives in `hooks/useExplorerHistory.ts` (localStorage, sensitive values and paging tokens left out). Text a field can't send yet is a draft the page keeps (`Workspace.drafts`), so it outlives tab switches and blocks Run
+- `pages/CloudscapeActivity.tsx` + `components/cloudscape/activity/`: Activity, CloudTrail's event history. Lookup attribute, time range and text filter live in the URL (`activity.ts` parses them); write calls only by default (`ReadOnly=false`), since reads, StackPort's own probes among them, would bury them. The text filter searches the loaded events and their records in the browser. "Load older events" continues the first page's lookup with its token and turns auto-refresh off; auto-refresh is `useFetch` polling every 10 s, paused while the tab is hidden (`hooks/usePageVisible.ts`)
 - `lib/api.ts` — `API_BASE = '/api'`, fetch functions for all endpoints
 - `lib/types.ts` — `ServiceStats`, `StatsResponse`
 - `lib/service-icons.ts` — service → lucide icon mappings (AWS icons from `lib/aws-icons.tsx` win), fallback to `Server`; a test fails for a default service without one

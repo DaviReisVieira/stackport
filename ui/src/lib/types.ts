@@ -1544,3 +1544,62 @@ export interface ExplorerRunResponse {
   nextToken: JsonObject | null
   notices: string[]
 }
+
+// --- Activity (CloudTrail LookupEvents) ---
+
+/** What CloudTrail's LookupEvents filters on. A lookup takes one of them, not a combination. */
+export type LookupAttributeKey =
+  | 'EventId'
+  | 'EventName'
+  | 'ReadOnly'
+  | 'Username'
+  | 'ResourceType'
+  | 'ResourceName'
+  | 'EventSource'
+  | 'AccessKeyId'
+
+export interface ActivityLookup {
+  attribute: LookupAttributeKey
+  value: string
+}
+
+export interface ActivityQuery {
+  startTime: string
+  /** null: up to now */
+  endTime: string | null
+  lookup: ActivityLookup | null
+  nextToken?: string
+}
+
+export interface ActivityResource {
+  type: string | null
+  name: string | null
+}
+
+export interface ActivityEvent {
+  eventId: string
+  eventName: string
+  eventSource: string
+  eventTime: string | null
+  username: string | null
+  accessKeyId: string | null
+  readOnly: boolean | null
+  resources: ActivityResource[]
+  errorCode: string | null
+  errorMessage: string | null
+  sourceIpAddress: string | null
+  userAgent: string | null
+  awsRegion: string | null
+  /** CloudTrailEvent, parsed */
+  record: JsonObject | null
+  /** CloudTrailEvent as the endpoint sent it, when it isn't a JSON object */
+  rawRecord: string | null
+}
+
+export interface ActivityPage {
+  events: ActivityEvent[]
+  nextToken: string | null
+  /** The window the lookup used: the next page asks for the same one */
+  startTime: string
+  endTime: string | null
+}

@@ -1,4 +1,6 @@
 import type {
+  ActivityPage,
+  ActivityQuery,
   BulkDeleteRequest,
   ClassifiedError,
   ConnectionCheck,
@@ -1519,4 +1521,18 @@ export async function runExplorerOperation(
   })
   if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
+}
+
+// --- Activity ---
+
+/** One LookupEvents call: a page of events, newest first. */
+export async function fetchActivityEvents(query: ActivityQuery, endpoint?: string | null): Promise<ActivityPage> {
+  const params = new URLSearchParams({ start_time: query.startTime })
+  if (query.endTime) params.set('end_time', query.endTime)
+  if (query.lookup) {
+    params.set('attribute', query.lookup.attribute)
+    params.set('value', query.lookup.value)
+  }
+  if (query.nextToken) params.set('next_token', query.nextToken)
+  return fetchJSON<ActivityPage>(buildUrl('/activity/events', endpoint, params))
 }

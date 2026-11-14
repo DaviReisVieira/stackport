@@ -44,6 +44,7 @@ Local emulators give you AWS on your laptop. StackPort gives you a console to lo
 - **13 dedicated service views**: S3, DynamoDB, Lambda, SQS, SNS, IAM, EC2, RDS, CloudWatch Logs, CloudWatch metrics and alarms, Secrets Manager, KMS, and Step Functions. Every other service gets a searchable resource table
 - **Write operations** in 9 of those views, from S3 uploads and DynamoDB item edits to SQS messages, Lambda invokes, EC2 start/stop, and Step Functions executions
 - **API Explorer** to call any operation of any service boto3 knows, with a form built from the API's own model and the same request ready to copy as an AWS CLI command or boto3 code
+- **Activity**: recent API calls from CloudTrail's event history, with who made them, what they touched and how they went
 - **Guided lessons** that run inside the console and check your real resource state as you go
 - **Real AWS and multiple endpoints**, each with its own auth (default chain, AWS profile with SSO/AssumeRole, or static keys)
 - **Read-only mode** with `STACKPORT_ALLOW_WRITES=false`
@@ -303,6 +304,25 @@ Bytes that aren't text travel as `{"$base64": "..."}`, both in responses and in 
 
 In read-only mode the explorer only runs operations that read (Describe, Get, List and similar). Operations named like reads that create something or hand out credentials, tokens or passwords (`sts GetSessionToken`, `ecr GetAuthorizationToken`) count as writes; reading a stored value, such as a secret's value, stays a read, as it is in the console's views. The others stay visible so you can still build the request and copy it. On real AWS, and while StackPort can't yet tell whether the endpoint is AWS, operations that write ask for confirmation before they run.
 
+## Activity
+
+Open **Activity** in the sidebar to see the API calls CloudTrail recorded (`LookupEvents`), newest first: the event name and source, who made the call, the resources it named, whether it only read, and the error code when it failed. Click an event to see its whole CloudTrail record, copy it or export it.
+
+- Choose a time range (the last hour to start with) and a lookup attribute: event name, event source, user name, resource name or type, access key, event ID, or read-only. CloudTrail looks up one attribute per call, so it's one choice rather than a set of filters. The text box then searches the events already loaded, records included.
+- The page starts with calls that change something (read-only is false). Choose **All events** to see reads too, StackPort's own among them.
+- Links keep the filters, for example `/activity?attribute=EventSource&value=sqs.amazonaws.com&range=3h`.
+- **Load older events** asks for the next page, and auto-refresh looks again every 10 seconds while the tab is visible. Each is a single `LookupEvents` call: AWS allows two a second per account and Region.
+
+What shows up depends on the endpoint. As checked with each emulator:
+
+| Emulator | Activity |
+|---|---|
+| AWS Emulator (1.0.367) | Records calls to about a dozen services (CloudFormation, CloudFront, CloudTrail, CodePipeline, Cognito Identity, EC2, Elastic Load Balancing, IAM, RDS, SQS, Step Functions, STS), failed calls and reads included. S3 and DynamoDB calls don't show up |
+| MiniStack (1.5.19) | Records every call when started with `CLOUDTRAIL_RECORDING=1` (off by default), up to 50 events per lookup. Calls to Query APIs such as IAM and STS are named `POST.iam`, `POST.sts` |
+| Floci (2.4.0) | Answers with no events |
+| LocalStack (4.14, no auth token) | Answers that CloudTrail isn't in the current license plan, so the page says the endpoint doesn't support it |
+| Moto (5.2) | `LookupEvents` isn't implemented; Moto answers with an internal error, which the page shows |
+
 ## Guided lessons
 
 Learn AWS hands-on without an AWS account or a bill. Lessons run inside StackPort against your own emulator: a panel walks you through each step while hotspots point at the actual controls, and StackPort checks the live resource state, so a step only turns green when the thing really exists.
@@ -463,13 +483,14 @@ backend/
     endpoints.py    Endpoint CRUD, health checks, profile listing
     tags.py         Unified tag management
     learn.py        Lessons, progress, verification
+    activity.py     CloudTrail event history for the Activity page
     explorer.py     API Explorer: any operation botocore knows
     s3.py, dynamodb.py, lambda_svc.py, sqs.py, sns.py, iam.py, ec2.py,
     rds.py, logs.py, monitoring.py, secretsmanager.py, kms.py,
     stepfunctions.py   One module per dedicated view
 
 ui/src/
-  pages/            Dashboard, ResourceBrowser, ApiExplorer, Learn, Settings, About
+  pages/            Dashboard, ResourceBrowser, Activity, ApiExplorer, Learn, Settings, About
   components/
     cloudscape/     AppLayout shell, service views, Learn panel (Cloudscape Design System)
   contexts/         Endpoint and Learn state
