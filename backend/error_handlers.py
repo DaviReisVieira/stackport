@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -102,9 +103,20 @@ class _AsciiJSONResponse(JSONResponse):
         return json.dumps(content, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode("ascii")
 
 
+def _json_safe(value: Any) -> Any:
+    """``value`` with NaN and the infinities as text: Python's JSON parser accepts them, JSON can't carry them."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 async def _request_validation_error(_request: Request, exc: RequestValidationError):
     """FastAPI's own 422 answer, written so that whatever the request sent can be repeated back."""
-    return _AsciiJSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
+    return _AsciiJSONResponse(status_code=422, content={"detail": _json_safe(jsonable_encoder(exc.errors()))})
 
 
 def install_aws_error_handlers(app: FastAPI) -> None:
