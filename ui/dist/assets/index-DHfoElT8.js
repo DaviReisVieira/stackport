@@ -1,1 +1,0 @@
-import{D as t,R as s,E as r}from"./index-B6tsJr-P.js";import{I as m}from"./index-Cd54Ex7h.js";function l(o){var e;const a=t("SegmentedControl",{props:{},metadata:{hasDisabledReasons:((e=o.options)!==null&&e!==void 0?e:[]).some(n=>!!n.disabledReason)}});return s.createElement(m,{...o,...a})}r(l,"SegmentedControl");export{l as S};

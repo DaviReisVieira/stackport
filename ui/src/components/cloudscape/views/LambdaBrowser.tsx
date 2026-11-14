@@ -41,6 +41,8 @@ import type {
   LambdaUpdateConfigRequest,
   LambdaVersion,
 } from '@/lib/types'
+import { EmulatorLimitList } from '@/components/cloudscape/EmulatorProfile'
+import { useEmulatorLimits } from '@/hooks/useEmulatorLimits'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useFetch } from '@/hooks/useFetch'
 
@@ -120,6 +122,7 @@ function stateIndicator(state?: string) {
 
 function InvokeModal({ functionName, onClose }: { functionName: string; onClose: () => void }) {
   const { activeEndpoint } = useEndpoint()
+  const limits = useEmulatorLimits('lambda')
   const [template, setTemplate] = useState<keyof typeof EVENT_TEMPLATES>('Custom')
   const [payload, setPayload] = useState(JSON.stringify(EVENT_TEMPLATES.Custom, null, 2))
   const [error, setError] = useState<string | null>(null)
@@ -157,6 +160,7 @@ function InvokeModal({ functionName, onClose }: { functionName: string; onClose:
   return (
     <Modal visible onDismiss={onClose} header={`Invoke ${functionName}`} size="large">
       <SpaceBetween size="m">
+        {limits.length > 0 && <EmulatorLimitList limits={limits} />}
         <FormField label="Event template">
           <Select
             selectedOption={{ value: template, label: template }}
@@ -211,6 +215,7 @@ function ConfigEditorModal({
   onDone: () => void
 }) {
   const { activeEndpoint } = useEndpoint()
+  const limits = useEmulatorLimits('lambda')
   const config = detail.configuration
   const [description, setDescription] = useState(config.Description ?? '')
   const [handler, setHandler] = useState(config.Handler ?? '')
@@ -271,7 +276,7 @@ function ConfigEditorModal({
           <FormField label="Handler">
             <Input value={handler} onChange={({ detail: d }) => setHandler(d.value)} />
           </FormField>
-          <FormField label="Runtime">
+          <FormField label="Runtime" description={limits.length > 0 ? <EmulatorLimitList limits={limits} /> : undefined}>
             <Select
               selectedOption={runtime ? { value: runtime, label: runtime } : null}
               onChange={({ detail: d }) => setRuntime(d.selectedOption.value ?? '')}

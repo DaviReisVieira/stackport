@@ -26,6 +26,7 @@ import Table from '@cloudscape-design/components/table'
 import Tabs from '@cloudscape-design/components/tabs'
 import TextFilter from '@cloudscape-design/components/text-filter'
 import { toast } from 'sonner'
+import { EmulatorLimitList } from '@/components/cloudscape/EmulatorProfile'
 import { LearnHotspot, LearnHotspotMarker } from '@/components/cloudscape/learn/LearnHotspot'
 import { LEARN_HOTSPOTS } from '@/components/cloudscape/learn/hotspots'
 import {
@@ -43,6 +44,7 @@ import {
   uploadS3Object,
 } from '@/lib/api'
 import type { S3Bucket, S3File, S3ObjectDetail, S3ObjectsResponse } from '@/lib/types'
+import { useEmulatorLimits } from '@/hooks/useEmulatorLimits'
 import { useEndpoint } from '@/hooks/useEndpoint'
 import { useHealth } from '@/hooks/useHealth'
 import { useFetch } from '@/hooks/useFetch'
@@ -495,6 +497,7 @@ function CreateBucketModal({ onClose, onDone }: { onClose: () => void; onDone: (
 
 function ObjectBrowser({ bucket, prefix }: { bucket: string; prefix: string }) {
   const { activeEndpoint } = useEndpoint()
+  const limits = useEmulatorLimits('s3')
   const [, setSearchParams] = useSearchParams()
   const containerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -794,6 +797,7 @@ function ObjectBrowser({ bucket, prefix }: { bucket: string; prefix: string }) {
                     <Header
                       variant="h2"
                       counter={objectsData ? `(${folderCount} folders, ${fileCount} files)` : undefined}
+                      description={limits.length > 0 ? <EmulatorLimitList limits={limits} /> : undefined}
                       actions={
                         <SpaceBetween direction="horizontal" size="xs">
                           <Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh objects" />

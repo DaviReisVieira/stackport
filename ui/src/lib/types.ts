@@ -38,6 +38,22 @@ export interface ConnectionDescription {
   aws_emulator_lookup_dir?: string | null
 }
 
+/** Something an emulator refuses that AWS would accept (backend/emulator_profiles.py). */
+export interface EmulatorLimit {
+  /** The service it concerns ('s3', 'lambda'), or null when it applies to every request. */
+  service: string | null
+  /** A sentence naming the emulator. */
+  text: string
+}
+
+/** What StackPort knows about an emulator beyond its name. */
+export interface EmulatorProfile {
+  docs_url: string
+  /** The emulator can wipe its state with one request, which StackPort sends for it. */
+  reset: boolean
+  limits: EmulatorLimit[]
+}
+
 /** The emulator StackPort recognised behind an endpoint. */
 export interface EmulatorInfo {
   id: string
@@ -45,6 +61,15 @@ export interface EmulatorInfo {
   version?: string | null
   /** False when the emulator was only identified with certificate checks off. */
   tls_trusted?: boolean
+  /** Null for an emulator this version of StackPort has no profile for. */
+  profile?: EmulatorProfile | null
+}
+
+/** The answer to resetting the emulator behind a saved endpoint. */
+export interface EmulatorResetResponse {
+  name: string
+  url: string
+  emulator: { id: string; name: string }
 }
 
 export interface HealthResponse {

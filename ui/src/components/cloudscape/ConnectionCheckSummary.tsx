@@ -5,6 +5,7 @@ import type { KeyValuePairsProps } from '@cloudscape-design/components/key-value
 import LiveRegion from '@cloudscape-design/components/live-region'
 import SpaceBetween from '@cloudscape-design/components/space-between'
 import StatusIndicator from '@cloudscape-design/components/status-indicator'
+import { EmulatorDocsLink, EmulatorLimitList } from '@/components/cloudscape/EmulatorProfile'
 import type {
   ClassifiedError,
   ConnectionCheck,
@@ -13,7 +14,7 @@ import type {
   EmulatorInfo,
   TlsTrustSource,
 } from '@/lib/types'
-import { isHttpsUrl, lookup } from '@/lib/utils'
+import { emulatorLabel, isHttpsUrl, lookup } from '@/lib/utils'
 
 const withPath = (label: string, path: string | null) => (path ? `${label} (${path})` : label)
 
@@ -49,10 +50,6 @@ function usesTls(url: string | null): boolean {
   return url === null || isHttpsUrl(url)
 }
 
-function emulatorLabel(emulator: EmulatorInfo): string {
-  return emulator.version ? `${emulator.name} ${emulator.version}` : emulator.name
-}
-
 function connectionPairs(check: ConnectionCheck): KeyValuePairsProps.Pair[] {
   const connection = check.connection
   if (!connection) return []
@@ -65,6 +62,12 @@ function connectionPairs(check: ConnectionCheck): KeyValuePairsProps.Pair[] {
     pairs.push({ label: 'Certificates', value: trust ? trust(connection) : connection.tls_trust_source })
   }
   return pairs
+}
+
+/** Where to read about the emulator, from its profile. */
+function docsPairs(emulator: EmulatorInfo | null | undefined): KeyValuePairsProps.Pair[] {
+  if (!emulator?.profile) return []
+  return [{ label: 'Documentation', value: <EmulatorDocsLink name={emulator.name} url={emulator.profile.docs_url} /> }]
 }
 
 function errorPairs(detail: ClassifiedError | null): KeyValuePairsProps.Pair[] {
@@ -92,7 +95,8 @@ function errorPairs(detail: ClassifiedError | null): KeyValuePairsProps.Pair[] {
  */
 export function ConnectionCheckSummary({ check }: { check: ConnectionCheck }) {
   if (check.health === 'healthy') {
-    const pairs = connectionPairs(check)
+    const pairs = [...connectionPairs(check), ...docsPairs(check.emulator)]
+    const limits = check.emulator?.profile?.limits ?? []
     return (
       <SpaceBetween size="s">
         <LiveRegion>
@@ -101,6 +105,10 @@ export function ConnectionCheckSummary({ check }: { check: ConnectionCheck }) {
           </StatusIndicator>
         </LiveRegion>
         {pairs.length > 0 && <KeyValuePairs columns={2} items={pairs} />}
+        {/* Full width: the sentences are long */}
+        {limits.length > 0 && (
+          <KeyValuePairs columns={1} items={[{ label: 'Known limits', value: <EmulatorLimitList limits={limits} /> }]} />
+        )}
       </SpaceBetween>
     )
   }
@@ -109,6 +117,7 @@ export function ConnectionCheckSummary({ check }: { check: ConnectionCheck }) {
   const detailPairs = [
     // Identifying the emulator while the connection fails narrows it down to setup.
     ...(check.emulator ? [{ label: 'Emulator found', value: emulatorLabel(check.emulator) }] : []),
+    ...docsPairs(check.emulator),
     ...connectionPairs(check),
     ...errorPairs(detail),
   ]

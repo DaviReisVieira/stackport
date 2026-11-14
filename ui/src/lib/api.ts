@@ -24,6 +24,7 @@ import type {
   EC2ListASGsResponse,
   EC2SecurityGroup,
   EC2VPC,
+  EmulatorResetResponse,
   EndpointConnectionSettings,
   EndpointsResponse,
   ErrorKind,
@@ -275,6 +276,13 @@ export async function checkEndpointHealth(name: string): Promise<ConnectionCheck
   const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}/health`, {
     method: 'POST',
   })
+  if (!res.ok) throw await apiErrorFrom(res)
+  return res.json()
+}
+
+/** Wipe the state of the emulator behind a saved endpoint, with the emulator's own reset request. */
+export async function resetEndpointEmulator(name: string): Promise<EmulatorResetResponse> {
+  const res = await fetch(`${API_BASE}/endpoints/${encodeURIComponent(name)}/reset`, { method: 'POST' })
   if (!res.ok) throw await apiErrorFrom(res)
   return res.json()
 }

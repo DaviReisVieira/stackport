@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import type { EmulatorInfo } from "./types"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -26,4 +27,9 @@ export function lookup<V>(table: Readonly<Record<string, V>>, key: string): V | 
 /** Whether `url` is an https:// URL, the only kind where certificates come into it for an emulator. */
 export function isHttpsUrl(url: string | null): boolean {
   return url !== null && url.trim().toLowerCase().startsWith('https://')
+}
+
+/** The emulator's name, with its version when it reports one. */
+export function emulatorLabel(emulator: EmulatorInfo): string {
+  return emulator.version ? `${emulator.name} ${emulator.version}` : emulator.name
 }
