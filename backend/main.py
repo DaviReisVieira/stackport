@@ -29,7 +29,7 @@ from backend.config import (
 from backend import emulators
 from backend.error_handlers import install_aws_error_handlers
 from backend.origins import CrossSiteGuard, HostGuard
-from backend.routes import dynamodb, ec2, endpoints, explorer, iam, lambda_svc, learn, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags, kms
+from backend.routes import activity, dynamodb, ec2, endpoints, explorer, iam, lambda_svc, learn, logs, monitoring, resources, rds, s3, secretsmanager, sns, sqs, stats, stepfunctions, tags, kms
 from backend.service_models import is_read_operation
 from backend.websocket import logs_tail_endpoint, probe_loop, websocket_endpoint
 
@@ -192,6 +192,7 @@ app.include_router(monitoring.router, prefix="/api/monitoring", tags=["monitorin
 app.include_router(sns.router, prefix="/api/sns", tags=["sns"])
 app.include_router(kms.router, prefix="/api/kms", tags=["kms"])
 app.include_router(explorer.router, prefix=explorer.PREFIX, tags=["explorer"])
+app.include_router(activity.router, prefix="/api/activity", tags=["activity"])
 if STACKPORT_LEARN:
     app.include_router(learn.router, prefix="/api/learn", tags=["learn"])
 
