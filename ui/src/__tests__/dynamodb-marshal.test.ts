@@ -4,6 +4,7 @@ import {
   countUnprocessed,
   dynamoItemToPlainMap,
   extractKeyDynamo,
+  hasUnsafePlainTypes,
   plainItemToDynamoMap,
 } from '@/lib/dynamodb-marshal'
 import type { DynamoDBWriteResponse } from '@/lib/types'
@@ -62,4 +63,39 @@ describe('dynamodb-marshal', () => {
       expect(countUnprocessed(mk('oops' as unknown), 't1')).toBe(0)
     })
   })
+  
+  describe("hasUnsafePlainTypes", () => {
+    it("detects a set, binary, and an unsafely large number together", () => {
+      const item = {
+        key: { S: "Hello" },
+        tags: { SS: ["a", "b"] },
+        bin: { B: "aGVsbG8=" },
+        big: { N: "12345678901234567890" },
+      };
+      expect(hasUnsafePlainTypes(item)).toBe(true);
+    });
+
+    it("is false for a plain-safe item", () => {
+      const item = { key: { S: "Hello" }, count: { N: "42" } };
+      expect(hasUnsafePlainTypes(item)).toBe(false);
+    });
+
+    it("catches unsafe types nested inside a map", () => {
+      const item = { key: { S: "Hello" }, meta: { M: { tags: { SS: ["a"] } } } };
+      expect(hasUnsafePlainTypes(item)).toBe(true);
+    });
+
+    it("catches unsafe types nested inside a list", () => {
+      const item = {
+        key: { S: "Hello" },
+        items: { L: [{ N: "99999999999999999999" }] },
+      };
+      expect(hasUnsafePlainTypes(item)).toBe(true);
+    });
+
+    it("treats a safe integer N as fine", () => {
+      const item = { key: { S: "Hello" }, count: { N: "9007199254740991" } };
+      expect(hasUnsafePlainTypes(item)).toBe(false);
+    });
+  });
 })

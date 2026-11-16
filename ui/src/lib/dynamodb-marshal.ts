@@ -97,3 +97,46 @@ export function countUnprocessed(resp: DynamoDBWriteResponse, table: string): nu
   const arr = (u as Record<string, unknown>)[table]
   return Array.isArray(arr) ? arr.length : 0
 }
+
+/**
+ * Checks whether a DynamoDB item contains any attribute type that cannot survive
+ * a round-trip through Plain JSON without silent data loss.
+ *
+ * Plain JSON has no representation for DynamoDB sets (`SS`, `NS`, `BS`) or binary
+ * (`B`) — they get flattened to plain arrays/strings and lose their type on save.
+ * Large integers (`N`) outside JavaScript's safe integer range also lose precision
+ * the moment they're parsed into a JS `number`.
+ *
+ * @param item - The DynamoDB-typed item to check (as returned by the API).
+ * @returns `true` if the item has at least one unsafe attribute, anywhere in its
+ *          structure (including nested inside `L` lists or `M` maps).
+ */
+export function hasUnsafePlainTypes(item: DynamoDBItem): boolean {
+  return Object.values(item).some(attrHasUnsafeType)
+}
+
+/**
+ * Recursively checks a single DynamoDB attribute value for an unsafe type.
+ *
+ * Recurses into `L` (list) and `M` (map) attributes so that unsafe types nested
+ * arbitrarily deep in the item are still detected, not just top-level attributes.
+ *
+ * @param v - A single DynamoDB attribute value, e.g. `{ S: "hello" }` or `{ N: "42" }`.
+ * @returns `true` if this attribute (or anything nested inside it) is unsafe.
+ */
+function attrHasUnsafeType(v: unknown): boolean {
+  if (v === null || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  if ('SS' in o || 'NS' in o || 'BS' in o || 'B' in o) return true
+  if ('N' in o) {
+    const n = Number(o.N)
+    return Number.isInteger(n) && !Number.isSafeInteger(n)
+  }
+  if ('L' in o && Array.isArray((o as { L: unknown[] }).L)) {
+    return (o as { L: unknown[] }).L.some(attrHasUnsafeType)
+  }
+  if ('M' in o && o.M && typeof o.M === 'object') {
+    return Object.values(o.M as Record<string, unknown>).some(attrHasUnsafeType)
+  }
+  return false
+}
