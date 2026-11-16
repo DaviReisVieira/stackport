@@ -41,7 +41,7 @@ Local emulators give you AWS on your laptop. StackPort gives you a console to lo
 ## Features
 
 - **51 AWS services** discovered and counted on a live dashboard (WebSocket updates, pinned favorites, light and dark themes)
-- **13 dedicated service views**: S3, DynamoDB, Lambda, SQS, SNS, IAM, EC2, RDS, CloudWatch Logs, CloudWatch metrics and alarms, Secrets Manager, KMS, and Step Functions. Every other service gets a searchable resource table
+- **14 dedicated service views**: S3, DynamoDB, Lambda, SQS, SNS, IAM, EC2, RDS, CloudWatch Logs, CloudWatch metrics and alarms, Secrets Manager, KMS, Step Functions, and Bedrock with a model playground. Every other service gets a searchable resource table
 - **Write operations** in 9 of those views, from S3 uploads and DynamoDB item edits to SQS messages, Lambda invokes, EC2 start/stop, and Step Functions executions
 - **API Explorer** to call any operation of any service boto3 knows, with a form built from the API's own model and the same request ready to copy as an AWS CLI command or boto3 code
 - **Activity**: recent API calls from CloudTrail's event history, with who made them, what they touched and how they went
@@ -217,7 +217,7 @@ STACKPORT_ALLOW_WRITES=false AWS_PROFILE=my-profile stackport
 
 An endpoint without a URL sends every request to AWS itself. Endpoint URLs set up for other AWS tools, in `AWS_ENDPOINT_URL_<SERVICE>` variables (like `AWS_ENDPOINT_URL_S3`) or in a profile's `endpoint_url` and `services` settings in `~/.aws/config`, don't apply to StackPort. A profile still provides the credentials.
 
-When connected to real AWS, StackPort shows a warning banner on every page. Writes stay enabled unless you set `STACKPORT_ALLOW_WRITES=false`, so use that whenever you only want to look. In read-only mode a lock appears in the top bar, and the only POST calls still allowed are the ones that read: DynamoDB queries, CloudWatch metric queries, Lambda invokes and Try it requests (both run your code, so keep that in mind on a live account), and API Explorer operations that read.
+When connected to real AWS, StackPort shows a warning banner on every page. Writes stay enabled unless you set `STACKPORT_ALLOW_WRITES=false`, so use that whenever you only want to look. In read-only mode a lock appears in the top bar, and the only POST calls still allowed are the ones that read: DynamoDB queries, CloudWatch metric queries, Lambda invokes and Try it requests (both run your code, so keep that in mind on a live account), Bedrock playground prompts (billed per token on real AWS), and API Explorer operations that read.
 
 ### Multiple endpoints
 
@@ -283,7 +283,7 @@ To reset, type the endpoint's name to confirm. StackPort sends the emulator's ow
 
 ## Service views
 
-### Dedicated views (13 services)
+### Dedicated views (14 services)
 
 | Service | Browse | Write operations |
 |---------|--------|------------------|
@@ -300,8 +300,9 @@ To reset, type the endpoint's name to confirm. StackPort sends the emulator's ow
 | **RDS** | Instances, clusters, snapshots, parameter groups | Read-only |
 | **CloudWatch** | Dashboards, alarms, metric charts | Read-only |
 | **KMS** | Keys, key policies, grants, aliases | Read-only |
+| **Bedrock** | Text foundation models, custom models | Playground: send a prompt to a model through Converse, with a system prompt, max tokens, temperature and top P. On real AWS it runs on your account and is billed per token |
 
-### Generic resource browser (38 services)
+### Generic resource browser (37 services)
 
 Every other service uses a searchable resource table with a JSON detail view, tag editing where supported, pagination, and export to JSON or CSV.
 
@@ -472,7 +473,7 @@ Yes, and with any other endpoint that speaks the AWS API, since StackPort only m
 No. Against a local emulator, StackPort's requests only go to the emulator, and no AWS account is involved.
 
 **Can I use it with real AWS safely?**
-Yes, with some care. Leave `AWS_ENDPOINT_URL` unset and StackPort uses your usual credentials or a profile, with a warning banner on every page. Set `STACKPORT_ALLOW_WRITES=false` to block writes from the UI and API; a few calls that only read stay allowed, including Lambda invokes and Try it requests, which run your code. For a guarantee from AWS itself, use a profile whose IAM permissions are read-only. StackPort has no login, so keep it on `127.0.0.1`, the default.
+Yes, with some care. Leave `AWS_ENDPOINT_URL` unset and StackPort uses your usual credentials or a profile, with a warning banner on every page. Set `STACKPORT_ALLOW_WRITES=false` to block writes from the UI and API; a few calls that only read stay allowed, including Lambda invokes and Try it requests, which run your code, and Bedrock playground prompts, which are billed per token. For a guarantee from AWS itself, use a profile whose IAM permissions are read-only. StackPort has no login, so keep it on `127.0.0.1`, the default.
 
 **Does StackPort send data anywhere?**
 No. It has no telemetry, analytics or update checks. The server only talks to the endpoints you configure (on real AWS, that includes the STS or SSO calls your credentials need), and the UI loads everything from StackPort itself. Endpoints and lesson progress are saved in `~/.stackport`, and API Explorer history in your browser. The emulator you run may collect telemetry of its own, so check its documentation.
