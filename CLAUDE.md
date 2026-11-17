@@ -72,7 +72,7 @@ Requires a running AWS-compatible emulator (:4566 for most; AWS Emulator serves 
 - `components/cloudscape/CloudscapeShell.tsx` — Shared AppLayout shell: TopNavigation (service search, pinned favorites, theme toggle, endpoint menu), SideNavigation, keyboard shortcuts (`g d/r/e/s/a`, `?`)
 - `pages/CloudscapeDashboard.tsx` — Service Cards/Table grid, live stats over WebSocket, favorites-first sort
 - `pages/CloudscapeResourceBrowser.tsx` — Service picker + per-type tabs with PropertyFilter tables, detail modal with tag editing, j/k/Enter navigation. Renders `CLOUDSCAPE_SERVICE_VIEWS[service]` when available, falls back to the generic table.
-- `components/cloudscape/views/index.ts` — Registry of service-specific views (`s3`, `sqs`, `dynamodb`, `lambda`, `iam`, `rds`, `ec2`, `logs`, `monitoring`, `secretsmanager`, `sns`, `kms`, `stepfunctions`, `bedrock`). Add new service UIs here.
+- `components/cloudscape/views/index.ts` — Registry of service-specific views (`s3`, `sqs`, `dynamodb`, `lambda`, `iam`, `rds`, `ec2`, `logs`, `monitoring`, `secretsmanager`, `sns`, `kms`, `stepfunctions`, `bedrock`, `cognito-idp`, `cognito-identity`). Add new service UIs here.
 - `CLOUDSCAPE_DETAIL_TABS` (same file): extra tabs for the generic detail modal, keyed `service/resourceType` (API Gateway's Try it, the Connect tab of ElastiCache, OpenSearch and MSK)
 - `components/cloudscape/connect/ConnectionDetails.tsx`: the connection details panel, also used by the RDS and SQS views
 - `components/cloudscape/tryit/`: Try it: `TryItForm` (request editor and answer), used by the API Gateway detail tabs and the Lambda view's Function URL tab
