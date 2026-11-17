@@ -1675,6 +1675,7 @@ export async function fetchCognitoGroup(id: string, name: string, endpoint?: str
   )
 }
 
+/** Failed per-client lookups keep the summary with detailsAvailable=false. Secrets are never returned. */
 export async function fetchCognitoClients(id: string, endpoint?: string | null): Promise<{ clients: CognitoUserPoolClient[] }> {
   return fetchJSON<{ clients: CognitoUserPoolClient[] }>(
     buildUrl(`/cognito/user-pools/${encodeURIComponent(id)}/clients`, endpoint),

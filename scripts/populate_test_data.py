@@ -2333,6 +2333,8 @@ def populate_cognito_idp():
                 )
                 pool_id = response["UserPool"]["Id"]
                 created_users = []
+                group_count = 0
+                client_count = 0
 
                 for j in range(users_per_pool):
                     username = f"{random.choice(ADJECTIVES)}.{random.choice(NOUNS)}"
@@ -2359,6 +2361,7 @@ def populate_cognito_idp():
                         Description="Administrators",
                         Precedence=1,
                     )
+                    group_count += 1
                     if created_users:
                         client.admin_add_user_to_group(
                             UserPoolId=pool_id,
@@ -2374,10 +2377,11 @@ def populate_cognito_idp():
                         ClientName="web-app",
                         ExplicitAuthFlows=["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
                     )
+                    client_count += 1
                 except Exception as e:
                     print(f"    ✗ App client error: {e}")
 
-                print(f"  ✓ {pool_name} ({len(created_users)} users, 1 group, 1 app client)")
+                print(f"  ✓ {pool_name} ({len(created_users)} users, {group_count} group, {client_count} app client)")
             except Exception as e:
                 print(f"  ✗ Error: {e}")
 

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
+import { exportData } from '@/lib/export'
+
+vi.mock('@/lib/export', () => ({ exportData: vi.fn() }))
+const healthState = vi.hoisted(() => ({ writesEnabled: true }))
 
 vi.mock('@/hooks/useEndpoint', () => ({
   useEndpoint: () => ({
@@ -22,7 +26,7 @@ vi.mock('@/hooks/useHealth', () => ({
       region: 'us-east-1',
       services_count: 2,
       connection_type: 'local',
-      writes_enabled: true,
+      writes_enabled: healthState.writesEnabled,
     },
     loading: false,
     error: null,
@@ -54,7 +58,11 @@ const userPoolDetail = {
   MfaConfiguration: 'OFF',
   Policies: { PasswordPolicy: { MinimumLength: 8, RequireUppercase: true } },
   SchemaAttributes: [{ Name: 'email', AttributeDataType: 'String', Required: false, Mutable: true }],
-  LambdaConfig: { PreSignUp: 'arn:aws:lambda:us-east-1:000000000000:function:pre-signup' },
+  LambdaConfig: {
+    PreSignUp: 'arn:aws:lambda:us-east-1:000000000000:function:pre-signup',
+    KMSKeyID: 'arn:aws:kms:us-east-1:000000000000:key/key-1',
+  },
+  UserPoolTags: { environment: 'dev' },
 }
 const user = {
   username: 'alice',
@@ -80,6 +88,8 @@ const emptyGroupDetail = { ...emptyGroup, created: ISO, modified: ISO, members: 
 const appClient = {
   clientId: 'client-1',
   clientName: 'web-app',
+  detailsAvailable: true,
+  hasSecret: true,
   explicitAuthFlows: ['ALLOW_USER_PASSWORD_AUTH'],
   allowedOAuthFlows: [],
   callbackURLs: [],
@@ -88,6 +98,8 @@ const appClient = {
 const bareClient = {
   clientId: 'client-2',
   clientName: 'cli-app',
+  detailsAvailable: true,
+  hasSecret: false,
   explicitAuthFlows: [],
   allowedOAuthFlows: [],
   callbackURLs: [],
@@ -127,19 +139,25 @@ let requested: string[] = []
 /** Per-test responses matched by URL substring before the defaults. A null payload means 404. */
 function mockFetchByUrl(overrides: Record<string, unknown> = {}) {
   requested = []
-  globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+  let tags = { ...userPoolDetail.UserPoolTags }
+  globalThis.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     requested.push(url)
     const override = Object.keys(overrides).find((key) => url.includes(key))
     if (override !== undefined) {
       const body = overrides[override]
+      if (body instanceof Response) return Promise.resolve(body.clone())
       if (body === null) {
         return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found', json: () => Promise.resolve({}) } as Response)
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) } as Response)
     }
     let payload: unknown = statsPayload
-    if (url.includes(`/api/cognito/user-pools/${POOL_ID}/users/alice`)) payload = userDetail
+    if (url.includes(`/api/tags/cognito-idp/user_pools/${POOL_ID}`)) {
+      if (init?.method === 'PUT') tags = JSON.parse(String(init.body)).tags
+      payload = { tags }
+    }
+    else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/users/alice`)) payload = userDetail
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/users`)) payload = { users: [user] }
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/groups/admins`)) payload = groupDetail
     else if (url.includes(`/api/cognito/user-pools/${POOL_ID}/groups/${encodeURIComponent(emptyGroup.name)}`))
@@ -156,9 +174,15 @@ function mockFetchByUrl(overrides: Record<string, unknown> = {}) {
   }) as unknown as typeof fetch
 }
 
+function BrowserBack() {
+  const navigate = useNavigate()
+  return <button onClick={() => navigate(-1)}>Browser back</button>
+}
+
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
+      <BrowserBack />
       <Routes>
         <Route path="/resources/:service" element={<CloudscapeResourceBrowser />} />
       </Routes>
@@ -167,8 +191,96 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
+  healthState.writesEnabled = true
   localStorage.clear()
   mockFetchByUrl()
+})
+
+function unsupportedResponse() {
+  return new Response(JSON.stringify({
+    detail: 'Not supported by this endpoint',
+    error: { kind: 'not_implemented', message: 'Not supported by this endpoint', hint: 'Try a different endpoint.', cause: 'UnknownOperationException' },
+  }), { status: 501 })
+}
+
+describe('Cognito list errors', () => {
+  it.each([
+    { path: '/resources/cognito-idp', api: '/api/cognito/user-pools', empty: 'No user pools exist yet' },
+    { path: '/resources/cognito-identity', api: '/api/cognito/identity-pools', empty: 'No identity pools exist yet' },
+    { path: `/resources/cognito-idp?pool=${POOL_ID}`, api: `/api/cognito/user-pools/${POOL_ID}/users`, empty: 'No users in this pool' },
+    { path: `/resources/cognito-idp?pool=${POOL_ID}`, api: `/api/cognito/user-pools/${POOL_ID}/groups`, empty: 'No groups in this pool', tab: 'Groups' },
+    { path: `/resources/cognito-idp?pool=${POOL_ID}`, api: `/api/cognito/user-pools/${POOL_ID}/clients`, empty: 'No app clients in this pool', tab: 'App clients' },
+  ])('shows a classified alert and retries $api', async ({ path, api, empty, tab }) => {
+    const overrides: Record<string, unknown> = { [api]: unsupportedResponse() }
+    mockFetchByUrl(overrides)
+    renderAt(path)
+    if (tab) fireEvent.click(await screen.findByRole('tab', { name: tab }))
+    expect(await screen.findByText('Not supported by this endpoint')).toBeInTheDocument()
+    expect(screen.getByText('Try a different endpoint.')).toBeInTheDocument()
+    expect(screen.queryByText(empty)).not.toBeInTheDocument()
+    const calls = requested.filter((url) => url.includes(api)).length
+    delete overrides[api]
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.queryByText('Not supported by this endpoint')).not.toBeInTheDocument())
+    expect(requested.filter((url) => url.includes(api)).length).toBe(calls + 1)
+  })
+
+  it('keeps the previous data visible when a refresh fails', async () => {
+    const overrides: Record<string, unknown> = {}
+    mockFetchByUrl(overrides)
+    renderAt('/resources/cognito-idp')
+    expect(await screen.findByText('main-pool')).toBeInTheDocument()
+    overrides['/api/cognito/user-pools'] = unsupportedResponse()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh user pools' }))
+    expect(await screen.findByText('Not supported by this endpoint')).toBeInTheDocument()
+    expect(screen.getByText('main-pool')).toBeInTheDocument()
+  })
+})
+
+describe('Cognito pool filter empty states', () => {
+  it.each([
+    { service: 'cognito-idp', label: 'user pools', pool: 'main-pool' },
+    { service: 'cognito-identity', label: 'identity pools', pool: 'ids-pool' },
+  ])('distinguishes no matches from no $label', async ({ service, label, pool }) => {
+    renderAt(`/resources/${service}`)
+    expect(await screen.findByText(pool)).toBeInTheDocument()
+    const filter = screen.getByPlaceholderText(`Find ${label}`)
+    fireEvent.change(filter, { target: { value: 'no-such-pool' } })
+    expect(screen.getByText(`No matching ${label}`)).toBeInTheDocument()
+    expect(screen.queryByText(`No ${label} exist yet`)).not.toBeInTheDocument()
+    fireEvent.change(filter, { target: { value: '' } })
+    expect(screen.getByText(pool)).toBeInTheDocument()
+  })
+
+  it.each([
+    { service: 'cognito-idp', api: '/api/cognito/user-pools', payload: { userPools: [] }, label: 'user pools' },
+    { service: 'cognito-identity', api: '/api/cognito/identity-pools', payload: { identityPools: [] }, label: 'identity pools' },
+  ])('keeps the empty state when no $label exist', async ({ service, api, payload, label }) => {
+    mockFetchByUrl({ [api]: payload })
+    renderAt(`/resources/${service}`)
+    expect(await screen.findByText(`No ${label} exist yet`)).toBeInTheDocument()
+    expect(screen.queryByText(`No matching ${label}`)).not.toBeInTheDocument()
+  })
+})
+
+describe('Cognito list exports', () => {
+  it.each([
+    { path: '/resources/cognito-idp', service: 'cognito-idp', resourceType: 'user_pools', data: [userPool, otherPool], ready: 'main-pool' },
+    { path: '/resources/cognito-identity', service: 'cognito-identity', resourceType: 'identity_pools', data: [identityPool, bareIdentityPool], ready: 'ids-pool' },
+    { path: `/resources/cognito-idp?pool=${POOL_ID}`, service: 'cognito-idp', resourceType: 'users', data: [user], ready: 'alice' },
+    { path: `/resources/cognito-idp?pool=${POOL_ID}`, service: 'cognito-idp', resourceType: 'groups', data: [group, emptyGroup], ready: 'admins', tab: 'Groups' },
+    { path: `/resources/cognito-idp?pool=${POOL_ID}`, service: 'cognito-idp', resourceType: 'app_clients', data: [appClient, bareClient], ready: 'web-app', tab: 'App clients' },
+  ])('exports $resourceType to JSON and CSV', async ({ path, service, resourceType, data, ready, tab }) => {
+    renderAt(path)
+    if (tab) fireEvent.click(await screen.findByRole('tab', { name: tab }))
+    expect(await screen.findByText(ready)).toBeInTheDocument()
+    for (const [label, format] of [['Export JSON', 'json'], ['Export CSV', 'csv']]) {
+      fireEvent.click(screen.getByRole('button', { name: /Export/ }))
+      fireEvent.click(await screen.findByRole('menuitem', { name: label }))
+      expect(exportData).toHaveBeenLastCalledWith({ service, resourceType, data, format })
+    }
+  })
 })
 
 describe('CloudscapeCognitoUserPoolsBrowser (via registry dispatch)', () => {
@@ -243,6 +355,177 @@ describe('CloudscapeCognitoUserPoolsBrowser (via registry dispatch)', () => {
     expect(screen.getByText('OFF')).toBeInTheDocument()
   })
 
+  it.each([
+    { tab: 'Users', api: 'users', ready: 'alice', payload: { users: [{ ...user, username: 'new-user' }] }, added: 'new-user' },
+    { tab: 'Groups', api: 'groups', ready: 'admins', payload: { groups: [{ ...group, name: 'new-group' }] }, added: 'new-group' },
+    { tab: 'App clients', api: 'clients', ready: 'web-app', payload: { clients: [{ ...appClient, clientName: 'new-client' }] }, added: 'new-client' },
+  ])('refreshes the pool and active $tab without switching tabs', async ({ tab, api, ready, payload, added }) => {
+    const overrides: Record<string, unknown> = {}
+    mockFetchByUrl(overrides)
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByRole('tab', { name: tab }))
+    expect(await screen.findByText(ready)).toBeInTheDocument()
+    overrides[`/api/cognito/user-pools/${POOL_ID}/${api}`] = payload
+    const before = requested.filter((url) => url.includes(`/api/cognito/user-pools/${POOL_ID}?`)).length
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh user pool' }))
+    expect(await screen.findByText(added)).toBeInTheDocument()
+    expect(requested.filter((url) => url.includes(`/api/cognito/user-pools/${POOL_ID}?`)).length).toBe(before + 1)
+  })
+
+  it('filters users by attributes as well as username', async () => {
+    mockFetchByUrl({ [`/api/cognito/user-pools/${POOL_ID}/users`]: { users: [user, { ...user, username: 'bob', attributes: { email: 'bob@example.com' } }] } })
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    expect(await screen.findByText('bob')).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('Find users'), { target: { value: 'ALICE@' } })
+    expect(screen.getByText('alice')).toBeInTheDocument()
+    expect(screen.queryByText('bob')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('Find users'), { target: { value: 'nobody' } })
+    expect(screen.getByText('No matching users')).toBeInTheDocument()
+    expect(screen.queryByText('No users in this pool')).not.toBeInTheDocument()
+  })
+
+  it('shows secret presence and unavailable client details without inventing values', async () => {
+    mockFetchByUrl({ [`/api/cognito/user-pools/${POOL_ID}/clients`]: { clients: [
+      appClient, bareClient, { ...bareClient, clientId: 'missing', clientName: 'unavailable', detailsAvailable: false, hasSecret: null, tokenValidity: {} },
+    ] } })
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByRole('tab', { name: 'App clients' }))
+    const secretRow = (await screen.findByText('web-app')).closest('tr') as HTMLElement
+    expect(within(secretRow).getByText('Yes')).toBeInTheDocument()
+    expect(within(screen.getByText('cli-app').closest('tr') as HTMLElement).getByText('No')).toBeInTheDocument()
+    expect(within(screen.getByText('unavailable').closest('tr') as HTMLElement).getByText('Could not load details')).toBeInTheDocument()
+  })
+
+  it('shows group metadata when the members call fails', async () => {
+    mockFetchByUrl({ [`/api/cognito/user-pools/${POOL_ID}/groups/admins`]: { ...groupDetail, members: null } })
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Groups' }))
+    fireEvent.click(await screen.findByText('admins'))
+    const dialog = await screen.findByRole('dialog', { name: 'admins' })
+    expect(await within(dialog).findByText('Could not load members')).toBeInTheDocument()
+    expect(within(dialog).getByText('Administrators')).toBeInTheDocument()
+    expect(within(dialog).queryByText('No users in this group')).not.toBeInTheDocument()
+  })
+
+  it('separates the trigger KMS key from Lambda triggers and edits pool tags', async () => {
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Configuration' }))
+    expect(await screen.findByDisplayValue('dev')).toBeEnabled()
+    expect(screen.queryByText('KMSKeyID')).not.toBeInTheDocument()
+    expect(screen.getByText(userPoolDetail.LambdaConfig.KMSKeyID)).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Tag value 1' }), { target: { value: 'staging' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith(
+      `/api/tags/cognito-idp/user_pools/${POOL_ID}?endpoint=local`,
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ tags: { environment: 'staging' } }) }),
+    ))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save tags' })).toBeDisabled())
+    expect(screen.getByDisplayValue('staging')).toBeInTheDocument()
+  })
+
+  it('keeps saved tags after a failed reload and adopts the next successful response', async () => {
+    const defaultFetch = globalThis.fetch
+    let saved = false
+    let failReload = true
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes(`/api/tags/cognito-idp/user_pools/${POOL_ID}`)) {
+        if (init?.method === 'PUT') {
+          const response = await defaultFetch(input, init)
+          saved = true
+          return response
+        }
+        if (saved) {
+          return failReload ? unsupportedResponse() : new Response(JSON.stringify({ tags: { environment: 'confirmed' } }))
+        }
+      }
+      return defaultFetch(input, init)
+    }) as typeof fetch
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Configuration' }))
+    expect(await screen.findByDisplayValue('dev')).toBeEnabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Tag value 1' }), { target: { value: 'staging' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
+    expect(await screen.findByText('Try a different endpoint.')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('staging')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('dev')).not.toBeInTheDocument()
+
+    failReload = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByDisplayValue('confirmed')).toBeEnabled()
+    expect(screen.queryByDisplayValue('staging')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save tags' })).toBeDisabled()
+  })
+
+  it('retains tag edits after a failed save and lets the user retry', async () => {
+    const overrides: Record<string, unknown> = {}
+    const tagsPath = `/api/tags/cognito-idp/user_pools/${POOL_ID}`
+    mockFetchByUrl(overrides)
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Configuration' }))
+    expect(await screen.findByDisplayValue('dev')).toBeEnabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Tag value 1' }), { target: { value: 'staging' } })
+    overrides[tagsPath] = new Response(JSON.stringify({ detail: 'Could not save tags' }), { status: 500 })
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save tags' })).toBeEnabled())
+    expect(screen.getByDisplayValue('staging')).toBeEnabled()
+    expect(requested.filter((url) => url.includes(tagsPath))).toHaveLength(2)
+
+    delete overrides[tagsPath]
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save tags' })).toBeDisabled())
+    expect(screen.getByDisplayValue('staging')).toBeInTheDocument()
+    expect(requested.filter((url) => url.includes(tagsPath))).toHaveLength(4)
+  })
+
+  it('sends added tags and removes deleted tags from the save payload', async () => {
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Configuration' }))
+    expect(await screen.findByDisplayValue('dev')).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Add tag' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Tag key 2' }), { target: { value: 'team' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Tag value 2' }), { target: { value: 'platform' } })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0])
+    expect(screen.queryByDisplayValue('environment')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith(
+      `/api/tags/cognito-idp/user_pools/${POOL_ID}?endpoint=local`,
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ tags: { team: 'platform' } }) }),
+    ))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save tags' })).toBeDisabled())
+    expect(screen.getByDisplayValue('platform')).toBeInTheDocument()
+  })
+
+  it('saves an empty tag map when the last tag is removed', async () => {
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Configuration' }))
+    expect(await screen.findByDisplayValue('dev')).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith(
+      `/api/tags/cognito-idp/user_pools/${POOL_ID}?endpoint=local`,
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ tags: {} }) }),
+    ))
+    expect(await screen.findByText('No tags')).toBeInTheDocument()
+  })
+
+  it('keeps tags visible but disables editing in read-only mode', async () => {
+    healthState.writesEnabled = false
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Configuration' }))
+    expect(await screen.findByDisplayValue('dev')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add tag' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('button', { name: 'Save tags' })).toBeDisabled()
+  })
+
+  it('does not allow tag edits after a failed tag lookup', async () => {
+    mockFetchByUrl({ [`/api/tags/cognito-idp/user_pools/${POOL_ID}`]: unsupportedResponse() })
+    renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Configuration' }))
+    expect(await screen.findByText('Try a different endpoint.')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Tag value 1' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save tags' })).toBeDisabled()
+  })
+
   it('opens a group modal with its members', async () => {
     renderAt(`/resources/cognito-idp?pool=${POOL_ID}`)
     fireEvent.click(await screen.findByText('Groups'))
@@ -282,6 +565,15 @@ describe('CloudscapeCognitoIdentityPoolsBrowser (via registry dispatch)', () => 
     expect(requested.some((u) => u.includes(`/api/cognito/identity-pools/${encodeURIComponent(IDENTITY_POOL_ID)}`))).toBe(
       true,
     )
+  })
+
+  it('closes the identity pool after one browser Back press', async () => {
+    renderAt('/resources/cognito-identity')
+    fireEvent.click(await screen.findByText('ids-pool'))
+    expect(await screen.findByRole('dialog', { name: 'ids-pool' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Browser back' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'ids-pool' })).not.toBeInTheDocument())
+    expect(screen.getByText('ids-pool')).toBeInTheDocument()
   })
 
   it('shows identity pool roles and role mappings', async () => {

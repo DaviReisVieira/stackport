@@ -7,7 +7,8 @@ os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-from botocore.exceptions import ClientError
+import pytest
+from botocore.exceptions import ClientError, EndpointConnectionError
 from fastapi.testclient import TestClient
 
 from backend.main import app
@@ -175,7 +176,8 @@ class TestGetUserPool:
             {"Error": {"Code": "InternalErrorException", "Message": "x"}}, "DescribeUserPool"
         )
         response = client.get(f"/api/cognito/user-pools/{POOL_ID}")
-        assert response.status_code == 500
+        assert response.status_code == 502
+        assert response.json()["error"]["kind"] == "other"
 
 
 class TestListUsers:
@@ -395,12 +397,15 @@ class TestGetGroup:
         assert response.status_code == 404
 
     @patch("backend.routes.cognito.get_client")
-    def test_members_not_found(self, mock_get_client):
+    def test_members_unavailable_preserves_group(self, mock_get_client):
         mock = _mock_client(mock_get_client)
         mock.get_group.return_value = {"Group": self.GROUP}
         _raising_paginator(mock, _not_found("ListUsersInGroup"))
         response = client.get(f"/api/cognito/user-pools/{POOL_ID}/groups/admins")
-        assert response.status_code == 404
+        assert response.status_code == 200
+        assert response.json()["name"] == "admins"
+        assert response.json()["description"] == "Admins"
+        assert response.json()["members"] is None
 
 
 class TestListClients:
@@ -435,6 +440,8 @@ class TestListClients:
             {
                 "clientId": "c1",
                 "clientName": "web",
+                "detailsAvailable": True,
+                "hasSecret": True,
                 "explicitAuthFlows": ["ALLOW_USER_PASSWORD_AUTH"],
                 "allowedOAuthFlows": ["code"],
                 "callbackURLs": ["http://localhost:3000/callback"],
@@ -461,6 +468,28 @@ class TestListClients:
         _raising_paginator(mock, _not_found("ListUserPoolClients"))
         response = client.get(f"/api/cognito/user-pools/{POOL_ID}/clients")
         assert response.status_code == 404
+
+
+    @patch("backend.routes.cognito.get_client")
+    def test_one_failed_describe_preserves_all_clients(self, mock_get_client):
+        mock = _mock_client(mock_get_client, {"list_user_pool_clients": [
+            {"UserPoolClients": [{"ClientId": "c1", "ClientName": "unavailable"}]},
+            {"UserPoolClients": [{"ClientId": "c2", "ClientName": "public"}]},
+        ]})
+        mock.describe_user_pool_client.side_effect = [
+            _not_found("DescribeUserPoolClient"),
+            {"UserPoolClient": {"ClientId": "c2", "ClientName": "public"}},
+        ]
+        response = client.get(f"/api/cognito/user-pools/{POOL_ID}/clients")
+        assert response.status_code == 200
+        first, second = response.json()["clients"]
+        assert first["clientId"] == "c1"
+        assert first["clientName"] == "unavailable"
+        assert first["detailsAvailable"] is False
+        assert first["hasSecret"] is None
+        assert second["clientId"] == "c2"
+        assert second["detailsAvailable"] is True
+        assert second["hasSecret"] is False
 
 
 class TestIdentityPools:
@@ -569,3 +598,25 @@ class TestIdentityPools:
         mock.describe_identity_pool.side_effect = _not_found("DescribeIdentityPool")
         response = client.get(f"/api/cognito/identity-pools/{IDENTITY_POOL_ID}")
         assert response.status_code == 404
+
+
+@pytest.mark.parametrize("path", [
+    "/user-pools",
+    f"/user-pools/{POOL_ID}/users",
+    f"/user-pools/{POOL_ID}/groups",
+    f"/user-pools/{POOL_ID}/clients",
+    "/identity-pools",
+])
+@pytest.mark.parametrize("unsupported", [True, False])
+@patch("backend.routes.cognito.get_client")
+def test_list_errors_keep_classification(mock_get_client, path, unsupported):
+    mock = _mock_client(mock_get_client)
+    error = (
+        ClientError({"Error": {"Code": "NotImplemented", "Message": "not implemented"}}, "List")
+        if unsupported else EndpointConnectionError(endpoint_url="http://localhost:4566")
+    )
+    _raising_paginator(mock, error)
+    response = client.get(f"/api/cognito{path}")
+    assert response.status_code == (501 if unsupported else 502)
+    assert response.json()["error"]["kind"] == ("not_implemented" if unsupported else "unreachable")
+    assert response.json()["error"]["hint"]
