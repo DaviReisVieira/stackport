@@ -283,7 +283,7 @@ To reset, type the endpoint's name to confirm. StackPort sends the emulator's ow
 
 ## Service views
 
-### Dedicated views (14 services)
+### Dedicated views (16 services)
 
 | Service | Browse | Write operations |
 |---------|--------|------------------|
@@ -300,9 +300,11 @@ To reset, type the endpoint's name to confirm. StackPort sends the emulator's ow
 | **RDS** | Instances, clusters, snapshots, parameter groups | Read-only |
 | **CloudWatch** | Dashboards, alarms, metric charts | Read-only |
 | **KMS** | Keys, key policies, grants, aliases | Read-only |
+| **Cognito User Pools** | User pools, users with text search, groups and members, app clients, configuration; export lists to JSON or CSV | Edit user pool tags |
+| **Cognito Identity Pools** | Identity pools, providers, roles and role mapping rules; export lists to JSON or CSV | Read-only |
 | **Bedrock** | Text foundation models, custom models | Playground: send a prompt to a model through Converse, with a system prompt, max tokens, temperature and top P. On real AWS it runs on your account and is billed per token |
 
-### Generic resource browser (37 services)
+### Generic resource browser (35 services)
 
 Every other service uses a searchable resource table with a JSON detail view, tag editing where supported, pagination, and export to JSON or CSV.
 
@@ -528,7 +530,7 @@ backend/
     activity.py     CloudTrail event history for the Activity page
     explorer.py     API Explorer: any operation botocore knows
     s3.py, dynamodb.py, lambda_svc.py, sqs.py, sns.py, iam.py, ec2.py,
-    rds.py, logs.py, monitoring.py, secretsmanager.py, kms.py,
+    rds.py, logs.py, monitoring.py, secretsmanager.py, kms.py, cognito.py,
     stepfunctions.py   One module per dedicated view
 
 ui/src/

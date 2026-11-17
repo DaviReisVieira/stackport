@@ -2,11 +2,14 @@ import { useCallback, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCollection } from '@cloudscape-design/collection-hooks'
 import Alert from '@cloudscape-design/components/alert'
+import AttributeEditor from '@cloudscape-design/components/attribute-editor'
 import Badge from '@cloudscape-design/components/badge'
 import Box from '@cloudscape-design/components/box'
 import Button from '@cloudscape-design/components/button'
+import ButtonDropdown from '@cloudscape-design/components/button-dropdown'
 import ColumnLayout from '@cloudscape-design/components/column-layout'
 import Header from '@cloudscape-design/components/header'
+import Input from '@cloudscape-design/components/input'
 import Link from '@cloudscape-design/components/link'
 import Modal from '@cloudscape-design/components/modal'
 import Pagination from '@cloudscape-design/components/pagination'
@@ -15,7 +18,11 @@ import StatusIndicator, { type StatusIndicatorProps } from '@cloudscape-design/c
 import Table from '@cloudscape-design/components/table'
 import Tabs from '@cloudscape-design/components/tabs'
 import TextFilter from '@cloudscape-design/components/text-filter'
+import { toast } from 'sonner'
+import { ClassifiedErrorDetails } from '@/components/cloudscape/ServiceStatus'
 import { useEndpoint } from '@/hooks/useEndpoint'
+import { useHealth } from '@/hooks/useHealth'
+import { exportData } from '@/lib/export'
 import { useFetch } from '@/hooks/useFetch'
 import {
   fetchCognitoClients,
@@ -27,8 +34,11 @@ import {
   fetchCognitoUserPool,
   fetchCognitoUserPools,
   fetchCognitoUsers,
+  fetchResourceTags,
+  updateResourceTags,
 } from '@/lib/api'
 import type {
+  ClassifiedError,
   CognitoGroup,
   CognitoGroupDetail,
   CognitoIdentityPool,
@@ -88,6 +98,47 @@ function listOrDash(values?: string[] | null) {
   return values && values.length > 0 ? values.join(', ') : EMPTY
 }
 
+function FetchError({ error, errorDetail, loading, refresh }: {
+  error: string | null
+  errorDetail: ClassifiedError | null
+  loading: boolean
+  refresh: () => Promise<void>
+}) {
+  if (!error) return null
+  return (
+    <Alert
+      type="error"
+      header={error}
+      action={<Button loading={loading} onClick={() => refresh()}>Retry</Button>}
+    >
+      {errorDetail && <ClassifiedErrorDetails error={errorDetail} />}
+    </Alert>
+  )
+}
+
+function ExportList({ data, resourceType, service = 'cognito-idp' }: {
+  data: object[]
+  resourceType: string
+  service?: string
+}) {
+  return (
+    <ButtonDropdown
+      disabled={data.length === 0}
+      items={[{ id: 'json', text: 'Export JSON' }, { id: 'csv', text: 'Export CSV' }]}
+      onItemClick={({ detail }) =>
+        exportData({
+          service,
+          resourceType,
+          data: data.map((row) => ({ ...row })),
+          format: detail.id === 'csv' ? 'csv' : 'json',
+        })
+      }
+    >
+      Export
+    </ButtonDropdown>
+  )
+}
+
 // --- User pools: users ---
 
 function UserDetailModal({ poolId, username, onClose }: { poolId: string; username: string; onClose: () => void }) {
@@ -145,19 +196,28 @@ function UserDetailModal({ poolId, username, onClose }: { poolId: string; userna
   )
 }
 
-function UsersPanel({ poolId }: { poolId: string }) {
+function UsersPanel({ poolId, refreshKey }: { poolId: string; refreshKey: number }) {
   const { activeEndpoint } = useEndpoint()
   const fetcher = useCallback(() => fetchCognitoUsers(poolId, activeEndpoint), [poolId, activeEndpoint])
-  const { data, loading } = useFetch<{ users: CognitoUser[] }>(fetcher)
+  const { data, loading, error, errorDetail, refresh } = useFetch<{ users: CognitoUser[] }>(fetcher, undefined, { refreshKey })
   const [selected, setSelected] = useState<string | null>(null)
 
-  const { items, collectionProps, paginationProps } = useCollection(data?.users ?? [], {
+  const { items, collectionProps, filterProps, filteredItemsCount, paginationProps } = useCollection(data?.users ?? [], {
+    filtering: {
+      filteringFunction: (item, text) =>
+        [item.username, item.status, ...Object.values(item.attributes)].some((value) =>
+          value?.toLowerCase().includes(text.toLowerCase()),
+        ),
+      empty: emptyState('No users in this pool'),
+      noMatch: emptyState('No matching users'),
+    },
     pagination: { pageSize: 25 },
     sorting: {},
   })
 
   return (
-    <>
+    <SpaceBetween size="m">
+      <FetchError {...{ error, errorDetail, loading, refresh }} />
       <Table
         {...collectionProps}
         items={items}
@@ -165,7 +225,9 @@ function UsersPanel({ poolId }: { poolId: string }) {
         variant="embedded"
         loading={loading && !data}
         loadingText="Loading users"
-        empty={emptyState('No users in this pool')}
+        empty={error ? emptyState('Could not load users') : collectionProps.empty}
+        header={<Header variant="h3" actions={<ExportList data={data?.users ?? []} resourceType="users" />}>Users</Header>}
+        filter={<TextFilter {...filterProps} filteringPlaceholder="Find users" countText={`${filteredItemsCount ?? 0} matches`} />}
         onRowClick={({ detail }) => setSelected(detail.item.username)}
         columnDefinitions={[
           {
@@ -192,7 +254,7 @@ function UsersPanel({ poolId }: { poolId: string }) {
         pagination={<Pagination {...paginationProps} />}
       />
       {selected && <UserDetailModal poolId={poolId} username={selected} onClose={() => setSelected(null)} />}
-    </>
+    </SpaceBetween>
   )
 }
 
@@ -220,7 +282,9 @@ function GroupDetailModal({ poolId, name, onClose }: { poolId: string; name: str
             ['Created', formatDate(data.created)],
             ['Last modified', formatDate(data.modified)],
           ])}
-          <Table
+          {data.members === null ? (
+            <Box color="text-status-inactive">Could not load members</Box>
+          ) : <Table
             items={data.members}
             trackBy="username"
             variant="embedded"
@@ -232,17 +296,17 @@ function GroupDetailModal({ poolId, name, onClose }: { poolId: string; name: str
               { id: 'email', header: 'Email', cell: (m) => m.email ?? EMPTY },
               { id: 'enabled', header: 'Enabled', cell: (m) => formatBool(m.enabled) },
             ]}
-          />
+          />}
         </SpaceBetween>
       ) : null}
     </Modal>
   )
 }
 
-function GroupsPanel({ poolId }: { poolId: string }) {
+function GroupsPanel({ poolId, refreshKey }: { poolId: string; refreshKey: number }) {
   const { activeEndpoint } = useEndpoint()
   const fetcher = useCallback(() => fetchCognitoGroups(poolId, activeEndpoint), [poolId, activeEndpoint])
-  const { data, loading } = useFetch<{ groups: CognitoGroup[] }>(fetcher)
+  const { data, loading, error, errorDetail, refresh } = useFetch<{ groups: CognitoGroup[] }>(fetcher, undefined, { refreshKey })
   const [selected, setSelected] = useState<string | null>(null)
 
   const { items, collectionProps, paginationProps } = useCollection(data?.groups ?? [], {
@@ -251,7 +315,8 @@ function GroupsPanel({ poolId }: { poolId: string }) {
   })
 
   return (
-    <>
+    <SpaceBetween size="m">
+      <FetchError {...{ error, errorDetail, loading, refresh }} />
       <Table
         {...collectionProps}
         items={items}
@@ -259,7 +324,8 @@ function GroupsPanel({ poolId }: { poolId: string }) {
         variant="embedded"
         loading={loading && !data}
         loadingText="Loading groups"
-        empty={emptyState('No groups in this pool')}
+        empty={emptyState(error ? 'Could not load groups' : 'No groups in this pool')}
+        header={<Header variant="h3" actions={<ExportList data={data?.groups ?? []} resourceType="groups" />}>Groups</Header>}
         onRowClick={({ detail }) => setSelected(detail.item.name)}
         columnDefinitions={[
           {
@@ -285,7 +351,7 @@ function GroupsPanel({ poolId }: { poolId: string }) {
         pagination={<Pagination {...paginationProps} />}
       />
       {selected && <GroupDetailModal poolId={poolId} name={selected} onClose={() => setSelected(null)} />}
-    </>
+    </SpaceBetween>
   )
 }
 
@@ -302,10 +368,10 @@ function tokenValidity(client: CognitoUserPoolClient): string {
   return parts.length > 0 ? parts.join(', ') : EMPTY
 }
 
-function ClientsPanel({ poolId }: { poolId: string }) {
+function ClientsPanel({ poolId, refreshKey }: { poolId: string; refreshKey: number }) {
   const { activeEndpoint } = useEndpoint()
   const fetcher = useCallback(() => fetchCognitoClients(poolId, activeEndpoint), [poolId, activeEndpoint])
-  const { data, loading } = useFetch<{ clients: CognitoUserPoolClient[] }>(fetcher)
+  const { data, loading, error, errorDetail, refresh } = useFetch<{ clients: CognitoUserPoolClient[] }>(fetcher, undefined, { refreshKey })
 
   const { items, collectionProps, paginationProps } = useCollection(data?.clients ?? [], {
     pagination: { pageSize: 25 },
@@ -313,41 +379,132 @@ function ClientsPanel({ poolId }: { poolId: string }) {
   })
 
   return (
-    <Table
-      {...collectionProps}
-      items={items}
-      trackBy="clientId"
-      variant="embedded"
-      loading={loading && !data}
-      loadingText="Loading app clients"
-      empty={emptyState('No app clients in this pool')}
-      columnDefinitions={[
-        { id: 'name', header: 'Name', sortingField: 'clientName', cell: (c) => c.clientName ?? EMPTY },
-        { id: 'id', header: 'Client ID', cell: (c) => c.clientId },
-        { id: 'authFlows', header: 'Auth flows', cell: (c) => listOrDash(c.explicitAuthFlows) },
-        { id: 'oauthFlows', header: 'OAuth flows', cell: (c) => listOrDash(c.allowedOAuthFlows) },
-        { id: 'callbacks', header: 'Callback URLs', cell: (c) => listOrDash(c.callbackURLs) },
-        { id: 'tokens', header: 'Token validity', cell: (c) => tokenValidity(c) },
-      ]}
-      pagination={<Pagination {...paginationProps} />}
-    />
+    <SpaceBetween size="m">
+      <FetchError {...{ error, errorDetail, loading, refresh }} />
+      <Table
+        {...collectionProps}
+        items={items}
+        trackBy="clientId"
+        variant="embedded"
+        loading={loading && !data}
+        loadingText="Loading app clients"
+        empty={emptyState(error ? 'Could not load app clients' : 'No app clients in this pool')}
+        header={
+          <Header variant="h3" actions={<ExportList data={data?.clients ?? []} resourceType="app_clients" />}>
+            App clients
+          </Header>
+        }
+        columnDefinitions={[
+          { id: 'name', header: 'Name', sortingField: 'clientName', cell: (c) => c.clientName ?? EMPTY },
+          { id: 'id', header: 'Client ID', cell: (c) => c.clientId },
+          { id: 'details', header: 'Details', cell: (c) => c.detailsAvailable ? 'Loaded' : 'Could not load details' },
+          { id: 'secret', header: 'Has secret', cell: (c) => formatBool(c.hasSecret) },
+          { id: 'authFlows', header: 'Auth flows', cell: (c) => listOrDash(c.explicitAuthFlows) },
+          { id: 'oauthFlows', header: 'OAuth flows', cell: (c) => listOrDash(c.allowedOAuthFlows) },
+          { id: 'callbacks', header: 'Callback URLs', cell: (c) => listOrDash(c.callbackURLs) },
+          { id: 'tokens', header: 'Token validity', cell: (c) => tokenValidity(c) },
+        ]}
+        pagination={<Pagination {...paginationProps} />}
+      />
+    </SpaceBetween>
   )
 }
 
 // --- User pools: configuration ---
 
-function ConfigurationPanel({ pool }: { pool: CognitoUserPoolDetail }) {
+function UserPoolTags({ pool, refreshKey }: { pool: CognitoUserPoolDetail; refreshKey: number }) {
+  const { activeEndpoint } = useEndpoint()
+  const { data: health } = useHealth()
+  const fetcher = useCallback(() => fetchResourceTags('cognito-idp', 'user_pools', pool.Id, activeEndpoint), [pool.Id, activeEndpoint])
+  const { data, loading, error, errorDetail, refresh } = useFetch(fetcher, undefined, { refreshKey })
+  const [draft, setDraft] = useState<Array<{ key: string; value: string }> | null>(null)
+  const [saved, setSaved] = useState<{ tags: Record<string, string>; source: typeof data } | null>(null)
+  const [saving, setSaving] = useState(false)
+  // Failed reloads retain data's identity. Keep the saved tags until a fresh response replaces it.
+  const visibleTags = saved && saved.source === data ? saved.tags : data?.tags ?? pool.UserPoolTags ?? {}
+  const items = draft ?? Object.entries(visibleTags).map(([key, value]) => ({ key, value }))
+  const readOnly = !health?.writes_enabled || !data || loading || !!error || saving
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const tags = Object.fromEntries(items.filter((item) => item.key.trim()).map((item) => [item.key.trim(), item.value]))
+      await updateResourceTags('cognito-idp', 'user_pools', pool.Id, tags, activeEndpoint)
+      setSaved({ tags, source: data })
+      setDraft(null)
+      toast.success('Tags updated')
+      await refresh()
+    } catch (err) {
+      toast.error(`Failed to update tags: ${err}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <SpaceBetween size="m">
+      <Header variant="h3">Tags</Header>
+      <FetchError {...{ error, errorDetail, loading, refresh }} />
+      <AttributeEditor
+        items={items}
+        addButtonText="Add tag"
+        removeButtonText="Remove"
+        isItemRemovable={() => !readOnly}
+        disableAddButton={readOnly}
+        empty={loading ? 'Loading tags' : 'No tags'}
+        onAddButtonClick={() => setDraft([...items, { key: '', value: '' }])}
+        onRemoveButtonClick={({ detail }) => setDraft(items.filter((_, index) => index !== detail.itemIndex))}
+        definition={[
+          {
+            label: 'Key',
+            control: (item, index) => (
+              <Input
+                ariaLabel={`Tag key ${index + 1}`}
+                value={item.key}
+                disabled={readOnly}
+                onChange={({ detail }) =>
+                  setDraft(items.map((entry, i) => i === index ? { ...entry, key: detail.value } : entry))
+                }
+              />
+            ),
+          },
+          {
+            label: 'Value',
+            control: (item, index) => (
+              <Input
+                ariaLabel={`Tag value ${index + 1}`}
+                value={item.value}
+                disabled={readOnly}
+                onChange={({ detail }) =>
+                  setDraft(items.map((entry, i) => i === index ? { ...entry, value: detail.value } : entry))
+                }
+              />
+            ),
+          },
+        ]}
+      />
+      <Button variant="primary" disabled={readOnly || draft === null} loading={saving} onClick={save}>
+        Save tags
+      </Button>
+    </SpaceBetween>
+  )
+}
+
+function ConfigurationPanel({ pool, refreshKey }: { pool: CognitoUserPoolDetail; refreshKey: number }) {
   const policy = pool.Policies?.PasswordPolicy
-  const triggers = Object.entries(pool.LambdaConfig ?? {}).map(([trigger, value]) => ({
-    trigger,
-    target: typeof value === 'string' ? value : value.LambdaArn ?? JSON.stringify(value),
-  }))
+  const triggers = Object.entries(pool.LambdaConfig ?? {})
+    .filter(([trigger]) => trigger !== 'KMSKeyID')
+    .map(([trigger, value]) => ({
+      trigger,
+      target: typeof value === 'string' ? value : value.LambdaArn ?? JSON.stringify(value),
+    }))
 
   return (
     <SpaceBetween size="l">
       {kvGrid([
         ['Estimated users', pool.EstimatedNumberOfUsers ?? EMPTY],
         ['MFA', pool.MfaConfiguration ?? EMPTY],
+        ['Lambda trigger KMS key', typeof pool.LambdaConfig?.KMSKeyID === 'string' ? pool.LambdaConfig.KMSKeyID : EMPTY],
         ['Created', formatDate(pool.CreationDate)],
         ['Last modified', formatDate(pool.LastModifiedDate)],
       ])}
@@ -390,6 +547,7 @@ function ConfigurationPanel({ pool }: { pool: CognitoUserPoolDetail }) {
           { id: 'target', header: 'Target', cell: (t) => t.target },
         ]}
       />
+      <UserPoolTags key={pool.Id} pool={pool} refreshKey={refreshKey} />
     </SpaceBetween>
   )
 }
@@ -397,7 +555,12 @@ function ConfigurationPanel({ pool }: { pool: CognitoUserPoolDetail }) {
 function UserPoolDetailView({ poolId, onBack }: { poolId: string; onBack: () => void }) {
   const { activeEndpoint } = useEndpoint()
   const fetcher = useCallback(() => fetchCognitoUserPool(poolId, activeEndpoint), [poolId, activeEndpoint])
-  const { data: pool, loading, error, refresh } = useFetch<CognitoUserPoolDetail>(fetcher)
+  const { data: pool, loading, error, errorDetail, refresh } = useFetch<CognitoUserPoolDetail>(fetcher)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const refreshPool = () => {
+    void refresh()
+    setRefreshKey((key) => key + 1)
+  }
 
   if (loading && !pool) return <StatusIndicator type="loading">Loading user pool</StatusIndicator>
   if (error && !pool) {
@@ -405,9 +568,15 @@ function UserPoolDetailView({ poolId, onBack }: { poolId: string; onBack: () => 
       <Alert
         type="error"
         header="Could not load user pool"
-        action={<Button onClick={onBack}>Back to user pools</Button>}
+        action={
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button onClick={onBack}>Back to user pools</Button>
+            <Button onClick={() => refresh()}>Retry</Button>
+          </SpaceBetween>
+        }
       >
         {error}
+        {errorDetail && <ClassifiedErrorDetails error={errorDetail} />}
       </Alert>
     )
   }
@@ -421,18 +590,19 @@ function UserPoolDetailView({ poolId, onBack }: { poolId: string; onBack: () => 
         actions={
           <SpaceBetween direction="horizontal" size="xs">
             <Button onClick={onBack}>Back to user pools</Button>
-            <Button iconName="refresh" onClick={() => refresh()} ariaLabel="Refresh user pool" />
+            <Button iconName="refresh" onClick={refreshPool} loading={loading} ariaLabel="Refresh user pool" />
           </SpaceBetween>
         }
       >
         {pool.Name}
       </Header>
+      <FetchError {...{ error, errorDetail, loading, refresh }} />
       <Tabs
         tabs={[
-          { id: 'users', label: 'Users', content: <UsersPanel poolId={poolId} /> },
-          { id: 'groups', label: 'Groups', content: <GroupsPanel poolId={poolId} /> },
-          { id: 'clients', label: 'App clients', content: <ClientsPanel poolId={poolId} /> },
-          { id: 'configuration', label: 'Configuration', content: <ConfigurationPanel pool={pool} /> },
+          { id: 'users', label: 'Users', content: <UsersPanel poolId={poolId} refreshKey={refreshKey} /> },
+          { id: 'groups', label: 'Groups', content: <GroupsPanel poolId={poolId} refreshKey={refreshKey} /> },
+          { id: 'clients', label: 'App clients', content: <ClientsPanel poolId={poolId} refreshKey={refreshKey} /> },
+          { id: 'configuration', label: 'Configuration', content: <ConfigurationPanel pool={pool} refreshKey={refreshKey} /> },
         ]}
       />
     </SpaceBetween>
@@ -444,11 +614,14 @@ export function CloudscapeCognitoUserPoolsBrowser() {
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedPool = searchParams.get('pool')
   const fetcher = useCallback(() => fetchCognitoUserPools(activeEndpoint), [activeEndpoint])
-  const { data, loading, refresh } = useFetch<{ userPools: CognitoUserPool[] }>(fetcher, 15000)
+  const { data, loading, error, errorDetail, refresh } = useFetch<{ userPools: CognitoUserPool[] }>(fetcher, 15000)
   const pools = data?.userPools ?? []
 
   const { items, filteredItemsCount, collectionProps, filterProps, paginationProps } = useCollection(pools, {
-    filtering: {},
+    filtering: {
+      empty: emptyState('No user pools exist yet'),
+      noMatch: emptyState('No matching user pools'),
+    },
     pagination: { pageSize: 25 },
     sorting: {},
   })
@@ -458,57 +631,65 @@ export function CloudscapeCognitoUserPoolsBrowser() {
   if (selectedPool) return <UserPoolDetailView poolId={selectedPool} onBack={backToList} />
 
   return (
-    <Table
-      {...collectionProps}
-      items={items}
-      trackBy="id"
-      variant="borderless"
-      loading={loading && !data}
-      loadingText="Loading user pools"
-      empty={emptyState('No user pools exist yet')}
-      header={
-        <Header
-          counter={`(${pools.length})`}
-          actions={<Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh user pools" />}
-        >
-          User pools
-        </Header>
-      }
-      columnDefinitions={[
-        {
-          id: 'name',
-          header: 'Name',
-          sortingField: 'name',
-          cell: (p) => (
-            <Link
-              href={`?pool=${encodeURIComponent(p.id)}`}
-              onFollow={(event) => {
-                event.preventDefault()
-                setSearchParams({ pool: p.id })
-              }}
-            >
-              {p.name}
-            </Link>
-          ),
-        },
-        { id: 'id', header: 'Pool ID', sortingField: 'id', cell: (p) => p.id },
-        {
-          id: 'estimatedUsers',
-          header: 'Estimated users',
-          sortingField: 'estimatedNumberOfUsers',
-          cell: (p) => p.estimatedNumberOfUsers ?? EMPTY,
-        },
-        { id: 'created', header: 'Created', sortingField: 'creationDate', cell: (p) => formatDate(p.creationDate) },
-      ]}
-      filter={
-        <TextFilter
-          {...filterProps}
-          filteringPlaceholder="Find user pools"
-          countText={filteredItemsCount !== undefined ? `${filteredItemsCount} matches` : ''}
-        />
-      }
-      pagination={<Pagination {...paginationProps} />}
-    />
+    <SpaceBetween size="m">
+      <FetchError {...{ error, errorDetail, loading, refresh }} />
+      <Table
+        {...collectionProps}
+        items={items}
+        trackBy="id"
+        variant="borderless"
+        loading={loading && !data}
+        loadingText="Loading user pools"
+        empty={error ? emptyState('Could not load user pools') : collectionProps.empty}
+        header={
+          <Header
+            counter={`(${pools.length})`}
+            actions={
+              <SpaceBetween direction="horizontal" size="xs">
+                <ExportList data={pools} resourceType="user_pools" />
+                <Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh user pools" />
+              </SpaceBetween>
+            }
+          >
+            User pools
+          </Header>
+        }
+        columnDefinitions={[
+          {
+            id: 'name',
+            header: 'Name',
+            sortingField: 'name',
+            cell: (p) => (
+              <Link
+                href={`?pool=${encodeURIComponent(p.id)}`}
+                onFollow={(event) => {
+                  event.preventDefault()
+                  setSearchParams({ pool: p.id })
+                }}
+              >
+                {p.name}
+              </Link>
+            ),
+          },
+          { id: 'id', header: 'Pool ID', sortingField: 'id', cell: (p) => p.id },
+          {
+            id: 'estimatedUsers',
+            header: 'Estimated users',
+            sortingField: 'estimatedNumberOfUsers',
+            cell: (p) => p.estimatedNumberOfUsers ?? EMPTY,
+          },
+          { id: 'created', header: 'Created', sortingField: 'creationDate', cell: (p) => formatDate(p.creationDate) },
+        ]}
+        filter={
+          <TextFilter
+            {...filterProps}
+            filteringPlaceholder="Find user pools"
+            countText={filteredItemsCount !== undefined ? `${filteredItemsCount} matches` : ''}
+          />
+        }
+        pagination={<Pagination {...paginationProps} />}
+      />
+    </SpaceBetween>
   )
 }
 
@@ -623,11 +804,14 @@ export function CloudscapeCognitoIdentityPoolsBrowser() {
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedPool = searchParams.get('pool')
   const fetcher = useCallback(() => fetchCognitoIdentityPools(activeEndpoint), [activeEndpoint])
-  const { data, loading, refresh } = useFetch<{ identityPools: CognitoIdentityPool[] }>(fetcher, 15000)
+  const { data, loading, error, errorDetail, refresh } = useFetch<{ identityPools: CognitoIdentityPool[] }>(fetcher, 15000)
   const pools = data?.identityPools ?? []
 
   const { items, filteredItemsCount, collectionProps, filterProps, paginationProps } = useCollection(pools, {
-    filtering: {},
+    filtering: {
+      empty: emptyState('No identity pools exist yet'),
+      noMatch: emptyState('No matching identity pools'),
+    },
     pagination: { pageSize: 25 },
     sorting: {},
   })
@@ -637,6 +821,7 @@ export function CloudscapeCognitoIdentityPoolsBrowser() {
 
   return (
     <SpaceBetween size="l">
+      <FetchError {...{ error, errorDetail, loading, refresh }} />
       <Table
         {...collectionProps}
         items={items}
@@ -644,13 +829,15 @@ export function CloudscapeCognitoIdentityPoolsBrowser() {
         variant="borderless"
         loading={loading && !data}
         loadingText="Loading identity pools"
-        empty={emptyState('No identity pools exist yet')}
-        onRowClick={({ detail }) => openPool(detail.item.id)}
+        empty={error ? emptyState('Could not load identity pools') : collectionProps.empty}
         header={
           <Header
             counter={`(${pools.length})`}
             actions={
-              <Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh identity pools" />
+              <SpaceBetween direction="horizontal" size="xs">
+                <ExportList data={pools} resourceType="identity_pools" service="cognito-identity" />
+                <Button iconName="refresh" onClick={() => refresh()} loading={loading} ariaLabel="Refresh identity pools" />
+              </SpaceBetween>
             }
           >
             Identity pools

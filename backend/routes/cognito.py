@@ -145,12 +145,16 @@ def list_groups(pool_id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
 
 @router.get("/user-pools/{pool_id}/groups/{group_name:path}")
 def get_group(pool_id: str, group_name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
-    """Get one group with its members. `:path` keeps group names containing "/" routable."""
+    """Get a group with members (null when unavailable). `:path` keeps "/" routable."""
     try:
         client = get_client("cognito-idp", **ep.client_kwargs())
         group = client.get_group(GroupName=group_name, UserPoolId=pool_id)["Group"]
+    except Exception as e:
+        _raise_error(e, f"Group {group_name} not found", f"get group {group_name} in {pool_id}")
+
+    members: list[dict[str, Any]] | None = []
+    try:
         paginator = client.get_paginator("list_users_in_group")
-        members = []
         for page in paginator.paginate(UserPoolId=pool_id, GroupName=group_name):
             for user in page.get("Users", []):
                 members.append(
@@ -161,17 +165,18 @@ def get_group(pool_id: str, group_name: str, ep: EndpointInfo = Depends(get_endp
                         "email": _attributes(user.get("Attributes")).get("email"),
                     }
                 )
-        return {
-            "name": group.get("GroupName"),
-            "description": group.get("Description"),
-            "precedence": group.get("Precedence"),
-            "roleArn": group.get("RoleArn"),
-            "created": group.get("CreationDate"),
-            "modified": group.get("LastModifiedDate"),
-            "members": members,
-        }
-    except Exception as e:
-        _raise_error(e, f"Group {group_name} not found", f"get group {group_name} in {pool_id}")
+    except Exception:
+        logger.warning("Could not list members for group %s in %s", group_name, pool_id, exc_info=True)
+        members = None
+    return {
+        "name": group.get("GroupName"),
+        "description": group.get("Description"),
+        "precedence": group.get("Precedence"),
+        "roleArn": group.get("RoleArn"),
+        "created": group.get("CreationDate"),
+        "modified": group.get("LastModifiedDate"),
+        "members": members,
+    }
 
 
 @router.get("/user-pools/{pool_id}/clients")
@@ -183,13 +188,29 @@ def list_clients(pool_id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
         clients = []
         for page in paginator.paginate(UserPoolId=pool_id):
             for summary in page.get("UserPoolClients", []):
-                detail = client.describe_user_pool_client(
-                    UserPoolId=pool_id, ClientId=summary["ClientId"]
-                )["UserPoolClient"]
+                try:
+                    detail = client.describe_user_pool_client(
+                        UserPoolId=pool_id, ClientId=summary["ClientId"]
+                    )["UserPoolClient"]
+                except Exception:
+                    logger.warning("Could not describe app client %s in %s", summary["ClientId"], pool_id, exc_info=True)
+                    clients.append({
+                        "clientId": summary["ClientId"],
+                        "clientName": summary.get("ClientName"),
+                        "detailsAvailable": False,
+                        "hasSecret": None,
+                        "explicitAuthFlows": [],
+                        "allowedOAuthFlows": [],
+                        "callbackURLs": [],
+                        "tokenValidity": {},
+                    })
+                    continue
                 clients.append(
                     {
                         "clientId": detail.get("ClientId"),
                         "clientName": detail.get("ClientName"),
+                        "detailsAvailable": True,
+                        "hasSecret": bool(detail.get("ClientSecret")),
                         "explicitAuthFlows": detail.get("ExplicitAuthFlows", []),
                         "allowedOAuthFlows": detail.get("AllowedOAuthFlows", []),
                         "callbackURLs": detail.get("CallbackURLs", []),

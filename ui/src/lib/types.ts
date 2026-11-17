@@ -1787,6 +1787,7 @@ export interface CognitoUserPoolDetail {
   MfaConfiguration?: string
   Policies?: { PasswordPolicy?: CognitoPasswordPolicy }
   SchemaAttributes?: CognitoSchemaAttribute[]
+  UserPoolTags?: Record<string, string>
   LambdaConfig?: Record<string, string | Record<string, string>>
 }
 
@@ -1821,12 +1822,14 @@ export interface CognitoGroupMember {
 export interface CognitoGroupDetail extends CognitoGroup {
   created?: string | null
   modified?: string | null
-  members: CognitoGroupMember[]
+  members: CognitoGroupMember[] | null
 }
 
 export interface CognitoUserPoolClient {
   clientId: string
   clientName?: string | null
+  detailsAvailable: boolean
+  hasSecret: boolean | null
   explicitAuthFlows: string[]
   allowedOAuthFlows: string[]
   callbackURLs: string[]
