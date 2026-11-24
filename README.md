@@ -41,7 +41,7 @@ Local emulators give you AWS on your laptop. StackPort gives you a console to lo
 ## Features
 
 - **51 AWS services** discovered and counted on a live dashboard (WebSocket updates, pinned favorites, light and dark themes)
-- **14 dedicated service views**: S3, DynamoDB, Lambda, SQS, SNS, IAM, EC2, RDS, CloudWatch Logs, CloudWatch metrics and alarms, Secrets Manager, KMS, Step Functions, and Bedrock with a model playground. Every other service gets a searchable resource table
+- **16 dedicated service views**: S3, DynamoDB, Lambda, SQS, SNS, IAM, EC2, RDS, CloudWatch Logs, CloudWatch metrics and alarms, Secrets Manager, KMS, Step Functions, Cognito user pools and identity pools, and Bedrock with a model playground. Every other service gets a searchable resource table
 - **Write operations** in 9 of those views, from S3 uploads and DynamoDB item edits to SQS messages, Lambda invokes, EC2 start/stop, and Step Functions executions
 - **API Explorer** to call any operation of any service boto3 knows, with a form built from the API's own model and the same request ready to copy as an AWS CLI command or boto3 code
 - **Activity**: recent API calls from CloudTrail's event history, with who made them, what they touched and how they went

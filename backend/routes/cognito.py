@@ -210,7 +210,8 @@ def list_clients(pool_id: str, ep: EndpointInfo = Depends(get_endpoint_info)):
                         "clientId": detail.get("ClientId"),
                         "clientName": detail.get("ClientName"),
                         "detailsAvailable": True,
-                        "hasSecret": bool(detail.get("ClientSecret")),
+                        # Newer responses give ClientSecretArn instead when Secrets Manager keeps the secret
+                        "hasSecret": bool(detail.get("ClientSecret") or detail.get("ClientSecretArn")),
                         "explicitAuthFlows": detail.get("ExplicitAuthFlows", []),
                         "allowedOAuthFlows": detail.get("AllowedOAuthFlows", []),
                         "callbackURLs": detail.get("CallbackURLs", []),

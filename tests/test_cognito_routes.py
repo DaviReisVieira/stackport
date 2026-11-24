@@ -410,6 +410,21 @@ class TestGetGroup:
 
 class TestListClients:
     @patch("backend.routes.cognito.get_client")
+    def test_a_secret_kept_in_secrets_manager_counts(self, mock_get_client):
+        mock = _mock_client(
+            mock_get_client,
+            {"list_user_pool_clients": [{"UserPoolClients": [{"ClientId": "c1", "ClientName": "web"}]}]},
+        )
+        arn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:cognito-c1"
+        mock.describe_user_pool_client.return_value = {
+            "UserPoolClient": {"UserPoolId": POOL_ID, "ClientId": "c1", "ClientName": "web", "ClientSecretArn": arn}
+        }
+        response = client.get(f"/api/cognito/user-pools/{POOL_ID}/clients")
+        assert response.status_code == 200
+        assert response.json()["clients"][0]["hasSecret"] is True
+        assert arn not in response.text
+
+    @patch("backend.routes.cognito.get_client")
     def test_list_never_returns_secret(self, mock_get_client):
         mock = _mock_client(
             mock_get_client,
