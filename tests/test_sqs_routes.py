@@ -884,6 +884,40 @@ class TestUpdateRedrivePolicy:
         )
         assert resp.status_code == 422
 
+    @patch("backend.routes.sqs.get_client")
+    def test_update_redrive_policy_clear_with_nulls(self, mock_get_client):
+        """Unchecking the DLQ in Edit settings clears the policy instead of 422ing."""
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.put(
+            "/api/sqs/queues/test-queue/redrive-policy",
+            json={"deadLetterTargetArn": None, "maxReceiveCount": None},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        attributes = mock_sqs.set_queue_attributes.call_args[1]["Attributes"]
+        assert attributes == {"RedrivePolicy": ""}
+        assert_valid_queue_attributes(attributes)
+
+    @patch("backend.routes.sqs.get_client")
+    def test_update_redrive_policy_half_clear_is_rejected(self, mock_get_client):
+        """Exactly one null field is a mistake: reject it and touch nothing."""
+        mock_sqs = MagicMock()
+        mock_get_client.return_value = mock_sqs
+        mock_sqs.exceptions.QueueDoesNotExist = type("QueueDoesNotExist", (Exception,), {})
+        mock_sqs.get_queue_url.return_value = {"QueueUrl": QUEUE_URL}
+
+        resp = client.put(
+            "/api/sqs/queues/test-queue/redrive-policy",
+            json={"deadLetterTargetArn": None, "maxReceiveCount": 5},
+        )
+        assert resp.status_code == 422
+        mock_sqs.set_queue_attributes.assert_not_called()
+
 
 # --- Through a real boto3 client --------------------------------------------
 # The tests below stub the endpoint's answers on a real SQS client, so request

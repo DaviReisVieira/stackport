@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class SQSRequest(BaseModel):
@@ -88,5 +88,21 @@ class UpdateAttributesRequest(SQSRequest):
 
 
 class UpdateRedrivePolicyRequest(SQSRequest):
-    dead_letter_target_arn: str = Field(alias="deadLetterTargetArn", min_length=1)
-    max_receive_count: int = Field(alias="maxReceiveCount", ge=1)
+    """Set a redrive policy, or clear it by sending both fields as null.
+
+    SQS removes the policy when ``RedrivePolicy`` is set to an empty string,
+    so both fields null means "clear" while either field on its own is a
+    mistake, not a half-applied update.
+    """
+
+    dead_letter_target_arn: str | None = Field(default=None, alias="deadLetterTargetArn", min_length=1)
+    max_receive_count: int | None = Field(default=None, alias="maxReceiveCount", ge=1)
+
+    @model_validator(mode="after")
+    def _all_or_nothing(self) -> "UpdateRedrivePolicyRequest":
+        if (self.dead_letter_target_arn is None) != (self.max_receive_count is None):
+            raise ValueError(
+                "deadLetterTargetArn and maxReceiveCount must be set together, "
+                "or both be null to clear the redrive policy"
+            )
+        return self
