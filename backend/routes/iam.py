@@ -27,7 +27,7 @@ def _policy_document(document: object) -> dict:
 @router.get("/users")
 def list_users(ep: EndpointInfo = Depends(get_endpoint_info)):
     iam = get_client("iam", **ep.client_kwargs())
-    response = iam.list_users()
+    pages = iam.get_paginator("list_users").paginate()
     users = [
         {
             "UserName": u["UserName"],
@@ -36,7 +36,8 @@ def list_users(ep: EndpointInfo = Depends(get_endpoint_info)):
             "Path": u.get("Path", "/"),
             "CreateDate": u["CreateDate"].isoformat(),
         }
-        for u in response.get("Users", [])
+        for page in pages
+        for u in page.get("Users", [])
     ]
     return {"users": users}
 
@@ -104,7 +105,7 @@ def get_user_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
 @router.get("/roles")
 def list_roles(ep: EndpointInfo = Depends(get_endpoint_info)):
     iam = get_client("iam", **ep.client_kwargs())
-    response = iam.list_roles()
+    pages = iam.get_paginator("list_roles").paginate()
     roles = [
         {
             "RoleName": r["RoleName"],
@@ -114,7 +115,8 @@ def list_roles(ep: EndpointInfo = Depends(get_endpoint_info)):
             "CreateDate": r["CreateDate"].isoformat(),
             "MaxSessionDuration": r.get("MaxSessionDuration"),
         }
-        for r in response.get("Roles", [])
+        for page in pages
+        for r in page.get("Roles", [])
     ]
     return {"roles": roles}
 
@@ -170,7 +172,7 @@ def get_role_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
 @router.get("/groups")
 def list_groups(ep: EndpointInfo = Depends(get_endpoint_info)):
     iam = get_client("iam", **ep.client_kwargs())
-    response = iam.list_groups()
+    pages = iam.get_paginator("list_groups").paginate()
     groups = [
         {
             "GroupName": g["GroupName"],
@@ -179,7 +181,8 @@ def list_groups(ep: EndpointInfo = Depends(get_endpoint_info)):
             "Path": g.get("Path", "/"),
             "CreateDate": g["CreateDate"].isoformat(),
         }
-        for g in response.get("Groups", [])
+        for page in pages
+        for g in page.get("Groups", [])
     ]
     return {"groups": groups}
 
@@ -188,10 +191,13 @@ def list_groups(ep: EndpointInfo = Depends(get_endpoint_info)):
 def get_group_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     iam = get_client("iam", **ep.client_kwargs())
 
-    # Get group detail and members
-    group_resp = iam.get_group(GroupName=name)
-    group = group_resp["Group"]
-    users = group_resp.get("Users", [])
+    # Get group detail and members. A group can have any number of members, and
+    # every page repeats the group.
+    group = None
+    users = []
+    for page in iam.get_paginator("get_group").paginate(GroupName=name):
+        group = page["Group"]
+        users.extend(page.get("Users", []))
 
     # Get attached managed policies
     attached_resp = iam.list_attached_group_policies(GroupName=name)
@@ -229,7 +235,7 @@ def list_policies(scope: str = Query(default="Local", description="Policy scope:
     if scope in ["Local", "AWS"]:
         params["Scope"] = scope
 
-    response = iam.list_policies(**params)
+    pages = iam.get_paginator("list_policies").paginate(**params)
     policies = [
         {
             "PolicyName": p["PolicyName"],
@@ -241,7 +247,8 @@ def list_policies(scope: str = Query(default="Local", description="Policy scope:
             "CreateDate": p["CreateDate"].isoformat(),
             "UpdateDate": p["UpdateDate"].isoformat(),
         }
-        for p in response.get("Policies", [])
+        for page in pages
+        for p in page.get("Policies", [])
     ]
     return {"policies": policies}
 
@@ -267,12 +274,12 @@ def get_policy_detail(arn: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     # Get attached entities
     attached_to = {"users": [], "roles": [], "groups": []}
     try:
-        entities_resp = iam.list_entities_for_policy(PolicyArn=arn)
-        attached_to = {
-            "users": entities_resp.get("PolicyUsers", []),
-            "roles": entities_resp.get("PolicyRoles", []),
-            "groups": entities_resp.get("PolicyGroups", []),
-        }
+        entities = {"users": [], "roles": [], "groups": []}
+        for page in iam.get_paginator("list_entities_for_policy").paginate(PolicyArn=arn):
+            entities["users"].extend(page.get("PolicyUsers", []))
+            entities["roles"].extend(page.get("PolicyRoles", []))
+            entities["groups"].extend(page.get("PolicyGroups", []))
+        attached_to = entities
     except Exception:
         logger.debug("Failed to get attached entities for %s", arn, exc_info=True)
 

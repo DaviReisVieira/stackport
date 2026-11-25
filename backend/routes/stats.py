@@ -178,6 +178,14 @@ _METHOD_KWARGS: dict[tuple[str, str], dict] = {
     ("iam", "list_policies"): {"Scope": "Local"},
 }
 
+# List calls whose results come in pages, followed to the last one. IAM stops at
+# 100 items a page.
+_PAGINATED: set[tuple[str, str]] = {
+    ("iam", "list_roles"),
+    ("iam", "list_users"),
+    ("iam", "list_policies"),
+}
+
 # Responses that group their resources: (boto3 service, method) -> the key that
 # holds the resources inside each group. describe_instances answers with
 # reservations, each holding the instances launched together.
@@ -216,6 +224,11 @@ def list_items(client, boto3_service: str, method_name: str, response_key: str) 
     kwargs = _METHOD_KWARGS.get((boto3_service, method_name), {})
     method = getattr(client, method_name)
     per_parent = _PER_PARENT.get((boto3_service, method_name))
+    if (boto3_service, method_name) in _PAGINATED:
+        pages = client.get_paginator(method_name).paginate(**kwargs)
+        return [
+            item for page in pages for item in _response_items(page, boto3_service, method_name, response_key)
+        ]
     if per_parent is None:
         return _response_items(method(**kwargs), boto3_service, method_name, response_key)
 

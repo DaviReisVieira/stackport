@@ -8,10 +8,13 @@ os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:4566")
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import boto3
 import pytest
+from botocore.stub import Stubber
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.routes.stats import list_items
 from tests.moto_aws import aws, moto_account
 
 client = TestClient(app)
@@ -41,6 +44,11 @@ def iam():
 
 def managed_policy(iam, name: str, document: dict) -> str:
     return iam.create_policy(PolicyName=name, PolicyDocument=json.dumps(document))["Policy"]["Arn"]
+
+
+def paginated(mock_iam, *responses: dict) -> None:
+    """Make the mocked client's paginator yield ``responses`` as its pages."""
+    mock_iam.get_paginator.return_value.paginate.return_value = list(responses)
 
 
 class TestPolicyDocuments:
@@ -121,7 +129,7 @@ class TestListUsers:
     def test_list_users_empty(self, mock_get_client):
         mock_iam = MagicMock()
         mock_get_client.return_value = mock_iam
-        mock_iam.list_users.return_value = {"Users": []}
+        paginated(mock_iam, {"Users": []})
 
         resp = client.get("/api/iam/users")
         assert resp.status_code == 200
@@ -132,7 +140,7 @@ class TestListUsers:
     def test_list_users_with_data(self, mock_get_client):
         mock_iam = MagicMock()
         mock_get_client.return_value = mock_iam
-        mock_iam.list_users.return_value = {
+        paginated(mock_iam, {
             "Users": [
                 {
                     "UserName": "alice",
@@ -142,7 +150,7 @@ class TestListUsers:
                     "CreateDate": NOW,
                 }
             ]
-        }
+        })
 
         resp = client.get("/api/iam/users")
         assert resp.status_code == 200
@@ -157,7 +165,7 @@ class TestListRoles:
     def test_list_roles_empty(self, mock_get_client):
         mock_iam = MagicMock()
         mock_get_client.return_value = mock_iam
-        mock_iam.list_roles.return_value = {"Roles": []}
+        paginated(mock_iam, {"Roles": []})
 
         resp = client.get("/api/iam/roles")
         assert resp.status_code == 200
@@ -167,7 +175,7 @@ class TestListRoles:
     def test_list_roles_with_data(self, mock_get_client):
         mock_iam = MagicMock()
         mock_get_client.return_value = mock_iam
-        mock_iam.list_roles.return_value = {
+        paginated(mock_iam, {
             "Roles": [
                 {
                     "RoleName": "lambda-exec",
@@ -178,7 +186,7 @@ class TestListRoles:
                     "MaxSessionDuration": 3600,
                 }
             ]
-        }
+        })
 
         resp = client.get("/api/iam/roles")
         assert resp.status_code == 200
@@ -193,7 +201,7 @@ class TestListGroups:
     def test_list_groups_empty(self, mock_get_client):
         mock_iam = MagicMock()
         mock_get_client.return_value = mock_iam
-        mock_iam.list_groups.return_value = {"Groups": []}
+        paginated(mock_iam, {"Groups": []})
 
         resp = client.get("/api/iam/groups")
         assert resp.status_code == 200
@@ -203,7 +211,7 @@ class TestListGroups:
     def test_list_groups_with_data(self, mock_get_client):
         mock_iam = MagicMock()
         mock_get_client.return_value = mock_iam
-        mock_iam.list_groups.return_value = {
+        paginated(mock_iam, {
             "Groups": [
                 {
                     "GroupName": "admins",
@@ -213,7 +221,7 @@ class TestListGroups:
                     "CreateDate": NOW,
                 }
             ]
-        }
+        })
 
         resp = client.get("/api/iam/groups")
         assert resp.status_code == 200
@@ -227,7 +235,7 @@ class TestListPolicies:
     def test_list_policies_empty(self, mock_get_client):
         mock_iam = MagicMock()
         mock_get_client.return_value = mock_iam
-        mock_iam.list_policies.return_value = {"Policies": []}
+        paginated(mock_iam, {"Policies": []})
 
         resp = client.get("/api/iam/policies")
         assert resp.status_code == 200
@@ -237,7 +245,7 @@ class TestListPolicies:
     def test_list_policies_with_data(self, mock_get_client):
         mock_iam = MagicMock()
         mock_get_client.return_value = mock_iam
-        mock_iam.list_policies.return_value = {
+        paginated(mock_iam, {
             "Policies": [
                 {
                     "PolicyName": "MyPolicy",
@@ -250,7 +258,7 @@ class TestListPolicies:
                     "UpdateDate": NOW,
                 }
             ]
-        }
+        })
 
         resp = client.get("/api/iam/policies")
         assert resp.status_code == 200
@@ -263,10 +271,10 @@ class TestListPolicies:
     def test_list_policies_scope_param(self, mock_get_client):
         mock_iam = MagicMock()
         mock_get_client.return_value = mock_iam
-        mock_iam.list_policies.return_value = {"Policies": []}
+        paginated(mock_iam, {"Policies": []})
 
         client.get("/api/iam/policies?scope=AWS")
-        call_kwargs = mock_iam.list_policies.call_args[1]
+        call_kwargs = mock_iam.get_paginator.return_value.paginate.call_args[1]
         assert call_kwargs["Scope"] == "AWS"
 
 
@@ -287,11 +295,7 @@ class TestGetPolicyDetail:
                 "UpdateDate": NOW,
             }
         }
-        mock_iam.list_entities_for_policy.return_value = {
-            "PolicyUsers": [],
-            "PolicyRoles": [],
-            "PolicyGroups": [],
-        }
+        paginated(mock_iam, {"PolicyUsers": [], "PolicyRoles": [], "PolicyGroups": []})
         mock_iam.list_policy_tags.return_value = {"Tags": []}
 
         resp = client.get(f"/api/iam/policies/{arn}")
@@ -299,3 +303,117 @@ class TestGetPolicyDetail:
         data = resp.json()
         assert data["document"] == {}
         assert data["attached_to"]["users"] == []
+
+
+class TestListsPastTheFirstPage:
+    """IAM answers a hundred items at a time, so the lists have to follow the pages to the end (#237)."""
+
+    COUNT = 105  # past the first page of 100
+
+    # moto pages roles and policies the way IAM does, so those run against it. It returns every user and
+    # group at once, so for those the pages are scripted on a real client with botocore's Stubber, which
+    # fails the test unless the second request carries the Marker of the first answer.
+
+    def test_roles(self, iam):
+        for i in range(self.COUNT):
+            iam.create_role(RoleName=f"role-{i:03}", AssumeRolePolicyDocument=json.dumps(TRUST_LAMBDA))
+
+        resp = client.get("/api/iam/roles")
+
+        assert resp.status_code == 200
+        names = [r["RoleName"] for r in resp.json()["roles"]]
+        assert sorted(names) == [f"role-{i:03}" for i in range(self.COUNT)]
+
+    def test_policies(self, iam):
+        for i in range(self.COUNT):
+            managed_policy(iam, f"policy-{i:03}", READ_REPORTS)
+
+        resp = client.get("/api/iam/policies")
+
+        assert resp.status_code == 200
+        names = [p["PolicyName"] for p in resp.json()["policies"]]
+        assert sorted(names) == [f"policy-{i:03}" for i in range(self.COUNT)]
+
+    def test_users(self):
+        iam = boto3.client("iam", region_name="us-east-1", aws_access_key_id="test", aws_secret_access_key="test")
+        first = {"UserName": "alice", "UserId": "AIDAEXAMPLEUSER01", "Arn": "arn:aws:iam::000:user/alice", "Path": "/", "CreateDate": NOW}
+        second = {"UserName": "bob", "UserId": "AIDAEXAMPLEUSER02", "Arn": "arn:aws:iam::000:user/bob", "Path": "/", "CreateDate": NOW}
+
+        with Stubber(iam) as stubber:
+            stubber.add_response("list_users", {"Users": [first], "IsTruncated": True, "Marker": "page-2"}, {})
+            stubber.add_response("list_users", {"Users": [second], "IsTruncated": False}, {"Marker": "page-2"})
+            with patch("backend.routes.iam.get_client", return_value=iam):
+                resp = client.get("/api/iam/users")
+            stubber.assert_no_pending_responses()
+
+        assert resp.status_code == 200
+        assert [u["UserName"] for u in resp.json()["users"]] == ["alice", "bob"]
+
+    def test_groups(self):
+        iam = boto3.client("iam", region_name="us-east-1", aws_access_key_id="test", aws_secret_access_key="test")
+        first = {"GroupName": "admins", "GroupId": "AGPAEXAMPLEGROUP01", "Arn": "arn:aws:iam::000:group/admins", "Path": "/", "CreateDate": NOW}
+        second = {"GroupName": "devs", "GroupId": "AGPAEXAMPLEGROUP02", "Arn": "arn:aws:iam::000:group/devs", "Path": "/", "CreateDate": NOW}
+
+        with Stubber(iam) as stubber:
+            stubber.add_response("list_groups", {"Groups": [first], "IsTruncated": True, "Marker": "page-2"}, {})
+            stubber.add_response("list_groups", {"Groups": [second], "IsTruncated": False}, {"Marker": "page-2"})
+            with patch("backend.routes.iam.get_client", return_value=iam):
+                resp = client.get("/api/iam/groups")
+            stubber.assert_no_pending_responses()
+
+        assert resp.status_code == 200
+        assert [g["GroupName"] for g in resp.json()["groups"]] == ["admins", "devs"]
+
+    def test_dashboard_count(self, iam):
+        """The dashboard counts with list_items, which follows the pages too."""
+        for i in range(self.COUNT):
+            iam.create_role(RoleName=f"role-{i:03}", AssumeRolePolicyDocument=json.dumps(TRUST_LAMBDA))
+
+        assert len(list_items(iam, "iam", "list_roles", "Roles")) == self.COUNT
+
+    def test_group_members(self):
+        iam = boto3.client("iam", region_name="us-east-1", aws_access_key_id="test", aws_secret_access_key="test")
+        group = {"GroupName": "admins", "GroupId": "AGPAEXAMPLEGROUP01", "Arn": "arn:aws:iam::000:group/admins", "Path": "/", "CreateDate": NOW}
+        first = {"UserName": "alice", "UserId": "AIDAEXAMPLEUSER01", "Arn": "arn:aws:iam::000:user/alice", "Path": "/", "CreateDate": NOW}
+        second = {"UserName": "bob", "UserId": "AIDAEXAMPLEUSER02", "Arn": "arn:aws:iam::000:user/bob", "Path": "/", "CreateDate": NOW}
+
+        with Stubber(iam) as stubber:
+            stubber.add_response("get_group", {"Group": group, "Users": [first], "IsTruncated": True, "Marker": "page-2"}, {"GroupName": "admins"})
+            stubber.add_response("get_group", {"Group": group, "Users": [second], "IsTruncated": False}, {"GroupName": "admins", "Marker": "page-2"})
+            stubber.add_response("list_attached_group_policies", {"AttachedPolicies": []}, {"GroupName": "admins"})
+            stubber.add_response("list_group_policies", {"PolicyNames": []}, {"GroupName": "admins"})
+            with patch("backend.routes.iam.get_client", return_value=iam):
+                resp = client.get("/api/iam/groups/admins")
+            stubber.assert_no_pending_responses()
+
+        assert resp.status_code == 200
+        assert resp.json()["group"]["GroupName"] == "admins"
+        assert [u["UserName"] for u in resp.json()["users"]] == ["alice", "bob"]
+
+    def test_policy_attached_entities(self):
+        iam = boto3.client("iam", region_name="us-east-1", aws_access_key_id="test", aws_secret_access_key="test")
+        arn = "arn:aws:iam::000:policy/ReadReports"
+        policy = {"PolicyName": "ReadReports", "PolicyId": "ANPAEXAMPLEPOLICY01", "Arn": arn, "Path": "/", "AttachmentCount": 3, "CreateDate": NOW, "UpdateDate": NOW}
+
+        with Stubber(iam) as stubber:
+            stubber.add_response("get_policy", {"Policy": policy}, {"PolicyArn": arn})
+            stubber.add_response(
+                "list_entities_for_policy",
+                {"PolicyUsers": [{"UserName": "alice"}], "PolicyRoles": [{"RoleName": "lambda-exec"}], "PolicyGroups": [], "IsTruncated": True, "Marker": "page-2"},
+                {"PolicyArn": arn},
+            )
+            stubber.add_response(
+                "list_entities_for_policy",
+                {"PolicyUsers": [{"UserName": "bob"}], "PolicyRoles": [], "PolicyGroups": [{"GroupName": "admins"}], "IsTruncated": False},
+                {"PolicyArn": arn, "Marker": "page-2"},
+            )
+            stubber.add_response("list_policy_tags", {"Tags": []}, {"PolicyArn": arn})
+            with patch("backend.routes.iam.get_client", return_value=iam):
+                resp = client.get(f"/api/iam/policies/{arn}")
+            stubber.assert_no_pending_responses()
+
+        assert resp.status_code == 200
+        attached = resp.json()["attached_to"]
+        assert [u["UserName"] for u in attached["users"]] == ["alice", "bob"]
+        assert [r["RoleName"] for r in attached["roles"]] == ["lambda-exec"]
+        assert [g["GroupName"] for g in attached["groups"]] == ["admins"]
