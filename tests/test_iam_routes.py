@@ -14,6 +14,7 @@ from botocore.stub import Stubber
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.routes.stats import list_items
 from tests.moto_aws import aws, moto_account
 
 client = TestClient(app)
@@ -294,11 +295,7 @@ class TestGetPolicyDetail:
                 "UpdateDate": NOW,
             }
         }
-        mock_iam.list_entities_for_policy.return_value = {
-            "PolicyUsers": [],
-            "PolicyRoles": [],
-            "PolicyGroups": [],
-        }
+        paginated(mock_iam, {"PolicyUsers": [], "PolicyRoles": [], "PolicyGroups": []})
         mock_iam.list_policy_tags.return_value = {"Tags": []}
 
         resp = client.get(f"/api/iam/policies/{arn}")
@@ -366,3 +363,57 @@ class TestListsPastTheFirstPage:
 
         assert resp.status_code == 200
         assert [g["GroupName"] for g in resp.json()["groups"]] == ["admins", "devs"]
+
+    def test_dashboard_count(self, iam):
+        """The dashboard counts with list_items, which follows the pages too."""
+        for i in range(self.COUNT):
+            iam.create_role(RoleName=f"role-{i:03}", AssumeRolePolicyDocument=json.dumps(TRUST_LAMBDA))
+
+        assert len(list_items(iam, "iam", "list_roles", "Roles")) == self.COUNT
+
+    def test_group_members(self):
+        iam = boto3.client("iam", region_name="us-east-1", aws_access_key_id="test", aws_secret_access_key="test")
+        group = {"GroupName": "admins", "GroupId": "AGPAEXAMPLEGROUP01", "Arn": "arn:aws:iam::000:group/admins", "Path": "/", "CreateDate": NOW}
+        first = {"UserName": "alice", "UserId": "AIDAEXAMPLEUSER01", "Arn": "arn:aws:iam::000:user/alice", "Path": "/", "CreateDate": NOW}
+        second = {"UserName": "bob", "UserId": "AIDAEXAMPLEUSER02", "Arn": "arn:aws:iam::000:user/bob", "Path": "/", "CreateDate": NOW}
+
+        with Stubber(iam) as stubber:
+            stubber.add_response("get_group", {"Group": group, "Users": [first], "IsTruncated": True, "Marker": "page-2"}, {"GroupName": "admins"})
+            stubber.add_response("get_group", {"Group": group, "Users": [second], "IsTruncated": False}, {"GroupName": "admins", "Marker": "page-2"})
+            stubber.add_response("list_attached_group_policies", {"AttachedPolicies": []}, {"GroupName": "admins"})
+            stubber.add_response("list_group_policies", {"PolicyNames": []}, {"GroupName": "admins"})
+            with patch("backend.routes.iam.get_client", return_value=iam):
+                resp = client.get("/api/iam/groups/admins")
+            stubber.assert_no_pending_responses()
+
+        assert resp.status_code == 200
+        assert resp.json()["group"]["GroupName"] == "admins"
+        assert [u["UserName"] for u in resp.json()["users"]] == ["alice", "bob"]
+
+    def test_policy_attached_entities(self):
+        iam = boto3.client("iam", region_name="us-east-1", aws_access_key_id="test", aws_secret_access_key="test")
+        arn = "arn:aws:iam::000:policy/ReadReports"
+        policy = {"PolicyName": "ReadReports", "PolicyId": "ANPAEXAMPLEPOLICY01", "Arn": arn, "Path": "/", "AttachmentCount": 3, "CreateDate": NOW, "UpdateDate": NOW}
+
+        with Stubber(iam) as stubber:
+            stubber.add_response("get_policy", {"Policy": policy}, {"PolicyArn": arn})
+            stubber.add_response(
+                "list_entities_for_policy",
+                {"PolicyUsers": [{"UserName": "alice"}], "PolicyRoles": [{"RoleName": "lambda-exec"}], "PolicyGroups": [], "IsTruncated": True, "Marker": "page-2"},
+                {"PolicyArn": arn},
+            )
+            stubber.add_response(
+                "list_entities_for_policy",
+                {"PolicyUsers": [{"UserName": "bob"}], "PolicyRoles": [], "PolicyGroups": [{"GroupName": "admins"}], "IsTruncated": False},
+                {"PolicyArn": arn, "Marker": "page-2"},
+            )
+            stubber.add_response("list_policy_tags", {"Tags": []}, {"PolicyArn": arn})
+            with patch("backend.routes.iam.get_client", return_value=iam):
+                resp = client.get(f"/api/iam/policies/{arn}")
+            stubber.assert_no_pending_responses()
+
+        assert resp.status_code == 200
+        attached = resp.json()["attached_to"]
+        assert [u["UserName"] for u in attached["users"]] == ["alice", "bob"]
+        assert [r["RoleName"] for r in attached["roles"]] == ["lambda-exec"]
+        assert [g["GroupName"] for g in attached["groups"]] == ["admins"]

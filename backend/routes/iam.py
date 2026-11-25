@@ -191,10 +191,13 @@ def list_groups(ep: EndpointInfo = Depends(get_endpoint_info)):
 def get_group_detail(name: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     iam = get_client("iam", **ep.client_kwargs())
 
-    # Get group detail and members
-    group_resp = iam.get_group(GroupName=name)
-    group = group_resp["Group"]
-    users = group_resp.get("Users", [])
+    # Get group detail and members. A group can have any number of members, and
+    # every page repeats the group.
+    group = None
+    users = []
+    for page in iam.get_paginator("get_group").paginate(GroupName=name):
+        group = page["Group"]
+        users.extend(page.get("Users", []))
 
     # Get attached managed policies
     attached_resp = iam.list_attached_group_policies(GroupName=name)
@@ -271,12 +274,12 @@ def get_policy_detail(arn: str, ep: EndpointInfo = Depends(get_endpoint_info)):
     # Get attached entities
     attached_to = {"users": [], "roles": [], "groups": []}
     try:
-        entities_resp = iam.list_entities_for_policy(PolicyArn=arn)
-        attached_to = {
-            "users": entities_resp.get("PolicyUsers", []),
-            "roles": entities_resp.get("PolicyRoles", []),
-            "groups": entities_resp.get("PolicyGroups", []),
-        }
+        entities = {"users": [], "roles": [], "groups": []}
+        for page in iam.get_paginator("list_entities_for_policy").paginate(PolicyArn=arn):
+            entities["users"].extend(page.get("PolicyUsers", []))
+            entities["roles"].extend(page.get("PolicyRoles", []))
+            entities["groups"].extend(page.get("PolicyGroups", []))
+        attached_to = entities
     except Exception:
         logger.debug("Failed to get attached entities for %s", arn, exc_info=True)
 

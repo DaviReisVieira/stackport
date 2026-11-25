@@ -191,6 +191,10 @@ class TestPreferredIdField:
         for _, _, method, key in SERVICE_REGISTRY[service]:
             getattr(client, method).return_value = {key: []}
         getattr(client, list_method).return_value = {response_key: [item]}
+        # A paginated list call reads its one page from the same mocked method.
+        client.get_paginator.side_effect = lambda method: MagicMock(
+            paginate=lambda **kwargs: [getattr(client, method)(**kwargs)]
+        )
         monkeypatch.setattr("backend.cli.get_client", lambda *args, **kwargs: client)
 
         result = CliRunner().invoke(cli, ["list", service, "--output", output])
