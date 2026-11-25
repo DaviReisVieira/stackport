@@ -572,17 +572,23 @@ def update_redrive_policy(queue_name: str, body: UpdateRedrivePolicyRequest, ep:
         url_response = client.get_queue_url(QueueName=queue_name)
         queue_url = url_response["QueueUrl"]
 
-        redrive_policy = {
-            "deadLetterTargetArn": body.dead_letter_target_arn,
-            "maxReceiveCount": body.max_receive_count,
-        }
-        attributes = {"RedrivePolicy": json.dumps(redrive_policy)}
+        if body.dead_letter_target_arn is None and body.max_receive_count is None:
+            # AWS removes the policy when RedrivePolicy is set to an empty string.
+            attributes = {"RedrivePolicy": ""}
+            message = f"Queue {queue_name} redrive policy cleared"
+        else:
+            redrive_policy = {
+                "deadLetterTargetArn": body.dead_letter_target_arn,
+                "maxReceiveCount": body.max_receive_count,
+            }
+            attributes = {"RedrivePolicy": json.dumps(redrive_policy)}
+            message = f"Queue {queue_name} redrive policy updated successfully"
 
         client.set_queue_attributes(QueueUrl=queue_url, Attributes=attributes)
 
         return {
             "success": True,
-            "message": f"Queue {queue_name} redrive policy updated successfully",
+            "message": message,
         }
     except client.exceptions.QueueDoesNotExist:
         raise HTTPException(status_code=404, detail=f"Queue {queue_name} not found")
